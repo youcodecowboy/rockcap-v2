@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 async function getAuthenticatedUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -32,7 +33,10 @@ function matchesScope(row: { scope?: string }, wanted: "personal" | "organizatio
 export const getToday = query({
   args: { scope: scopeArg },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return null;
     const today = getTodayDateString();
     const wanted = args.scope ?? "personal";
 

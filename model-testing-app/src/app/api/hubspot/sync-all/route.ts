@@ -233,7 +233,14 @@ export async function POST(request: NextRequest) {
             const hubspotUrl = await generateHubSpotContactUrl(contact.id);
             const customProperties = extractCustomProperties(contact.properties);
 
-            const name = `${contact.properties.firstname || ''} ${contact.properties.lastname || ''}`.trim();
+            // Fall back to the email address when HubSpot has no name —
+            // contacts auto-created by email logging (hs_object_source
+            // EXTENSION) arrive nameless but carry exactly the sender
+            // emails inbound-reply matching needs. Skipping them broke the
+            // reply → contact → prospect chain.
+            const name =
+              `${contact.properties.firstname || ''} ${contact.properties.lastname || ''}`.trim() ||
+              (contact.properties.email || '').trim();
             if (!name) {
               continue;
             }
@@ -268,7 +275,9 @@ export async function POST(request: NextRequest) {
 
             // Only include fields that have actual non-null, non-empty string values
             if (hasValue(contact.properties.email)) {
-              contactData.email = contact.properties.email;
+              // Lowercase to match the Gmail poller's normalisation — the
+              // contacts.by_email index lookup is case-sensitive.
+              contactData.email = contact.properties.email.toLowerCase();
             }
             // Phone: prefer primary; fall back to mobilephone when primary empty
             if (hasValue(contact.properties.phone)) {

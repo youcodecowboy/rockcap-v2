@@ -124,6 +124,10 @@ export const create = mutation({
     phone: v.optional(v.string()),
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
+    // LinkedIn profile (e.g. from an Apollo lookup). Stored as a first-class
+    // field so the UI can offer a LinkedIn-outreach path when no email exists,
+    // rather than burying the URL in notes.
+    linkedinUrl: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     sourceDocumentId: v.optional(v.id("documents")),
@@ -140,6 +144,7 @@ export const create = mutation({
       phone: args.phone,
       company: args.company,
       notes: args.notes,
+      linkedinUrl: args.linkedinUrl,
       clientId: args.clientId,
       projectId: args.projectId,
       sourceDocumentId: args.sourceDocumentId,
@@ -276,6 +281,89 @@ export const findByEmailInternal = internalQuery({
       .first();
   },
 });
+
+// Internal query: resolve an inbound reply's email to a contact AND a client.
+//
+// Replaces the naive findByEmailInternal + contact.clientId chain in the
+// reply processor, which broke two ways in production:
+//   (a) duplicate contacts share an email (old HubSpot import without
+//       clientId + newer prospect-intel row with it) and `.first()` returned
+//       the old row, so the reply never linked to the prospect;
+//   (b) HubSpot-synced contacts only carry clientId if their company was
+//       already promoted at sync time — contacts synced before promotion
+//       have linkedCompanyIds but no clientId.
+// This resolver mirrors getByClient's two-path union: prefer a candidate
+// with a direct clientId, else bridge linkedCompanyIds → the linked
+// company's promotedToClientId. Falls back to a lowercased lookup because
+// the Gmail poller lowercases sender addresses but HubSpot-sourced contact
+// emails are stored verbatim.
+export const resolveByEmailInternal = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await resolveEmailToContactClient(ctx, args.email);
+  },
+});
+
+// Shared resolution logic — also used by the migrations backfill to relink
+// historical replyEvents that ingested before this resolver existed.
+export async function resolveEmailToContactClient(
+  ctx: { db: any },
+  email: string,
+): Promise<{ contactId: string; clientId?: string } | null> {
+  const lookup = async (e: string) =>
+    await ctx.db
+      .query("contacts")
+      .withIndex("by_email", (q: any) => q.eq("email", e))
+      .collect();
+
+  let candidates = await lookup(email);
+  const lower = email.toLowerCase();
+  if (candidates.length === 0 && lower !== email) {
+    candidates = await lookup(lower);
+  }
+  candidates = candidates.filter((c: any) => !c.isDeleted);
+  if (candidates.length === 0) return null;
+
+  // Path (1): a candidate with a direct clientId wins.
+  const direct = candidates.find((c: any) => c.clientId);
+  if (direct) {
+    return { contactId: direct._id, clientId: direct.clientId };
+  }
+
+  // Path (2): bridge via a linked company that's been promoted to a client.
+  for (const c of candidates) {
+    for (const companyId of c.linkedCompanyIds ?? []) {
+      const company = await ctx.db.get(companyId);
+      if (company?.promotedToClientId) {
+        return { contactId: c._id, clientId: company.promotedToClientId };
+      }
+    }
+  }
+
+  // Contact known, but no client linkage either way.
+  return { contactId: candidates[0]._id, clientId: undefined };
+}
+
+// Helper (not a registered function): when a company is promoted to a
+// client, back-fill clientId onto every contact linked to that company.
+// Without this, contacts synced from HubSpot BEFORE the promotion keep
+// linkedCompanyIds but never gain a clientId, so inbound replies from them
+// don't link to the prospect. Mirrors getByClient's in-memory scan over
+// linkedCompanyIds (array field, no compound index). Manually-assigned
+// clientIds are never overwritten.
+export async function backfillContactClientLinks(
+  ctx: { db: any },
+  companyId: string,
+  clientId: string,
+) {
+  const all = await ctx.db.query("contacts").collect();
+  for (const c of all) {
+    if (c.isDeleted || c.clientId) continue;
+    if ((c.linkedCompanyIds ?? []).some((id: string) => id === companyId)) {
+      await ctx.db.patch(c._id, { clientId });
+    }
+  }
+}
 
 // Internal mutation: mark a contact as opted-out.
 // Sets optedOutAt and audit trail back to the triggering replyEvent.

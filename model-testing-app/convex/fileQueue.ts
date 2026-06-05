@@ -1,6 +1,16 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getAuthenticatedUser } from "./authHelpers";
+import type { Doc, Id } from "./_generated/dataModel";
+import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
+
+// Notification read-state is per-user: a job is visible to the whole team, but
+// each user clears their own notifications. A job counts as read for a user if
+// they're in readByUserIds, OR if the legacy global isRead flag is set (so
+// notifications cleared before this change stay cleared for everyone).
+function isReadByUser(job: Doc<"fileUploadQueue">, userId: Id<"users">): boolean {
+  if (job.isRead === true) return true;
+  return (job.readByUserIds ?? []).includes(userId);
+}
 
 // Mutation: Create a new queue job
 export const createJob = mutation({
@@ -141,67 +151,75 @@ export const getRecentJobs = query({
     includeRead: v.optional(v.boolean()), // Include read notifications
   },
   handler: async (ctx, args) => {
+    // Jobs are visible org-wide; the unread filter is per-viewer.
+    const user = await getAuthenticatedUserOrNull(ctx);
     // Query all jobs (no index needed for full table scan)
     const allJobs = await ctx.db
       .query("fileUploadQueue")
       .collect();
-    
+
     // Sort by createdAt descending
-    const sorted = allJobs.sort((a, b) => 
+    const sorted = allJobs.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    
-    // Filter out read notifications if includeRead is false
+
+    // Filter out notifications THIS user has read if includeRead is false
     const filtered = args.includeRead === false
-      ? sorted.filter(job => !job.isRead)
+      ? sorted.filter(job => !(user && isReadByUser(job, user._id)))
       : sorted;
-    
+
     // Return last 20
     return filtered.slice(0, 20);
   },
 });
 
-// Query: Get unread count
+// Query: Get unread count (for the current viewer)
 export const getUnreadCount = query({
   handler: async (ctx) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return 0;
     const allJobs = await ctx.db.query("fileUploadQueue").collect();
-    return allJobs.filter(job => !job.isRead && 
+    return allJobs.filter(job => !isReadByUser(job, user._id) &&
       (job.status === "completed" || job.status === "needs_confirmation" || job.status === "error")
     ).length;
   },
 });
 
-// Mutation: Mark job as read
+// Mutation: Mark job as read (for the current user only)
 export const markAsRead = mutation({
   args: { jobId: v.id("fileUploadQueue") },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
     const existing = await ctx.db.get(args.jobId);
     if (!existing) {
       throw new Error("Job not found");
     }
-    
-    await ctx.db.patch(args.jobId, {
-      isRead: true,
-      updatedAt: new Date().toISOString(),
-    });
+    const readBy = existing.readByUserIds ?? [];
+    if (!readBy.includes(user._id)) {
+      await ctx.db.patch(args.jobId, {
+        readByUserIds: [...readBy, user._id],
+        updatedAt: new Date().toISOString(),
+      });
+    }
     return args.jobId;
   },
 });
 
-// Mutation: Mark all as read
+// Mutation: Mark all as read (for the current user only)
 export const markAllAsRead = mutation({
   handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
     const allJobs = await ctx.db.query("fileUploadQueue").collect();
-    const unreadJobs = allJobs.filter(job => !job.isRead);
-    
-    for (const job of unreadJobs) {
+    let marked = 0;
+    for (const job of allJobs) {
+      if (isReadByUser(job, user._id)) continue;
       await ctx.db.patch(job._id, {
-        isRead: true,
+        readByUserIds: [...(job.readByUserIds ?? []), user._id],
         updatedAt: new Date().toISOString(),
       });
+      marked++;
     }
-    
-    return unreadJobs.length;
+    return marked;
   },
 });
 

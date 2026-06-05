@@ -186,7 +186,7 @@ export default function ProspectDetailPage() {
               }
             />
           )}
-          {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
+          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
           {activeTab === "files" && <FilesTab prospect={prospect} />}
@@ -210,6 +210,13 @@ export default function ProspectDetailPage() {
         onApprove={async () => {
           if (!packageId) { alert("No package to approve"); return; }
           await approvePackage({ packageId });
+          // Approving the package is gate 3 of 4: it activates the cadence.
+          // The dispatcher stages each touch as a gmail_send approval at its
+          // send date — the email only leaves after that final approve in
+          // /approvals. Without this note operators read "approved" as "sent".
+          alert(
+            "Cadence approved. Each email will appear in Approvals at its send date for final send sign-off — it is not sent yet.",
+          );
           router.push("/prospects");
         }}
         onDeny={async () => {

@@ -1,0 +1,29 @@
+{
+  /* This TypeScript project config describes the environment that
+   * Convex functions run in and is used to typecheck them at push time.
+   * Added 2026-06-05 after an unimported symbol shipped to the live
+   * deployment as a runtime ReferenceError — without this file,
+   * `convex dev` skips typechecking entirely.
+   */
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "moduleResolution": "Bundler",
+
+    /* convex/migrations imports src/lib code that uses the app's `@/` alias */
+    "baseUrl": "..",
+    "paths": { "@/*": ["src/*"] },
+
+    /* Required by Convex */
+    "target": "ESNext",
+    "lib": ["ES2021", "dom"],
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["./**/*"],
+  "exclude": ["./_generated"]
+}

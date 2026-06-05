@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Touchpoints (BL-4.9): unified exchange ledger across all integrations.
 // Skills query this for recent history with a contact, deal, or client
@@ -109,7 +110,9 @@ export const getByContact = query({
 export const getByProject = query({
   args: { projectId: v.id("projects"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    if (!(await getAuthenticatedUserOrNull(ctx))) return [];
     const limit = args.limit ?? 50;
     return ctx.db
       .query("touchpoints")

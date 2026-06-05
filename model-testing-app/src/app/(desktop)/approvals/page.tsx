@@ -244,13 +244,15 @@ function ApprovalRow({ approval }: { approval: any }) {
                 <div>
                   <span style={{ color: colors.text.muted }}>To: </span>
                   <span style={{ fontWeight: 500, color: colors.text.primary }}>
-                    {(approval.draftPayload.to ?? []).join(", ")}
+                    {/* draftPayload is untyped server-side; legacy producers
+                        staged recipients as a bare string — render either. */}
+                    {[approval.draftPayload.to ?? []].flat().join(", ")}
                   </span>
                 </div>
-                {approval.draftPayload.cc?.length > 0 && (
+                {(approval.draftPayload.cc?.length ?? 0) > 0 && (
                   <div>
                     <span style={{ color: colors.text.muted }}>Cc: </span>
-                    <span style={{ color: colors.text.primary }}>{approval.draftPayload.cc.join(", ")}</span>
+                    <span style={{ color: colors.text.primary }}>{[approval.draftPayload.cc].flat().join(", ")}</span>
                   </div>
                 )}
                 <div>

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Gmail integration: separate OAuth client from Google Calendar per
 // confirmed decision in docs/INTEGRATIONS/gmail-scoping.md.
@@ -91,7 +92,13 @@ export const disconnect = mutation({
 export const getConnectionStatus = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Always-on UI query (desktop homepage + settings): can fire before
+    // Clerk's token reaches Convex on a cold page load. A missing identity
+    // must render as "not connected", not crash the page via useQuery.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) {
+      return { connected: false } as const;
+    }
     const row = await ctx.db
       .query("googleGmailTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))

@@ -583,6 +583,7 @@ export const createCustomItem = mutation({
       isBlocking: args.isBlocking,
       order: maxOrder + 1,
       status: "missing",
+      isCustom: true, // this is the custom-item creation path
       createdAt: now,
       updatedAt: now,
     });

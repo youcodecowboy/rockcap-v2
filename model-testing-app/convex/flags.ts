@@ -12,7 +12,10 @@ export const getMyFlags = query({
     status: v.optional(v.union(v.literal("open"), v.literal("resolved"))),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
 
     let flags;
     if (args.status) {

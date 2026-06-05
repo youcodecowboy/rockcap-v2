@@ -8,6 +8,7 @@ import {
   rankByRecency,
 } from "./lib/schemeGrouping";
 import { classifyLenderTier } from "./lib/lenderTiers";
+import { backfillContactClientLinks } from "./contacts";
 
 /**
  * Get company by ID
@@ -205,6 +206,10 @@ export const promoteToClient = mutation({
     await ctx.db.patch(args.id, {
       promotedToClientId: clientId,
     });
+
+    // Back-fill clientId onto contacts already linked to this company so
+    // inbound replies from them resolve to the new client immediately.
+    await backfillContactClientLinks(ctx, args.id, clientId);
 
     return clientId;
   },

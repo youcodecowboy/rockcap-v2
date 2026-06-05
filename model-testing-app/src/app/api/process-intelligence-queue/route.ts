@@ -213,6 +213,14 @@ Only include fields and attributes where you have confidence >= 0.5.`;
  * 5. Updates the job status
  */
 export async function POST(request: NextRequest) {
+  // Public in middleware (no Clerk cookie when triggered out-of-band), so it
+  // self-authenticates via the shared CRON_SECRET — otherwise anyone could
+  // trigger org-wide intelligence processing (compute spend + data access).
+  const cronSecret = request.headers.get('x-cron-secret');
+  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const limit = body.limit || 5;
@@ -414,7 +422,11 @@ export async function POST(request: NextRequest) {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
       const meetingResponse = await fetch(`${baseUrl}/api/process-meeting-queue`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Forward the shared secret — the meeting queue self-authenticates.
+          'x-cron-secret': process.env.CRON_SECRET || '',
+        },
         body: JSON.stringify({ limit: 5 }),
       });
       if (meetingResponse.ok) {

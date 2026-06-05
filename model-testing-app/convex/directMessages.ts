@@ -1,6 +1,7 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import { getAuthenticatedUser } from "./authHelpers";
+import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
 // ============================================================================
 // Queries
@@ -12,7 +13,10 @@ export const getByConversation = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     const limit = args.limit || 100;
 
     const conv = await ctx.db.get(args.conversationId);
@@ -103,7 +107,7 @@ export const send = mutation({
 
       const cursorId = readCursors[pid as string];
       if (cursorId) {
-        const cursorMsg = await ctx.db.get(cursorId as any);
+        const cursorMsg = await ctx.db.get(cursorId as Id<"directMessages">);
         if (cursorMsg) {
           const cursorTime = new Date(cursorMsg.createdAt).getTime();
           const nowTime = new Date(now).getTime();

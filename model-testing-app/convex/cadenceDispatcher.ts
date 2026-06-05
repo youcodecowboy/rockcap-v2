@@ -77,6 +77,20 @@ export const tick = internalAction({
         continue;
       }
 
+      // No deliverable address → record a failure rather than staging an
+      // approval whose send can never succeed. (The gmail_send executor
+      // requires a non-empty recipient array; a placeholder string would
+      // just defer the failure to approve time, where it's invisible.)
+      if (!contact?.email) {
+        await ctx.runMutation(internal.cadences.recordFailureInternal, {
+          cadenceId: row._id,
+          step: "no_contact_email",
+          message: "Contact has no email address on file; cannot stage send",
+        });
+        failed++;
+        continue;
+      }
+
       // Branch on drafting mode
       if (row.preDraftedTouch) {
         // Pre-drafted: create the approval row first. If that fails, record
@@ -92,7 +106,11 @@ export const tick = internalAction({
             entityType: "gmail_send",
             summary: row.preDraftedTouch.subject.slice(0, 200),
             draftPayload: {
-              to: contact?.email ?? "(no email on contact)",
+              // MUST be an array: the gmail_send executor's composeRfc822
+              // maps over payload.to (requestSend validates this shape, but
+              // internalCreate's draftPayload is untyped — see #wiring bug
+              // where a bare string crashed the send at approve time).
+              to: [contact.email],
               subject: row.preDraftedTouch.subject,
               bodyText: row.preDraftedTouch.bodyText,
               bodyHtml: row.preDraftedTouch.bodyHtml,
@@ -217,7 +235,9 @@ export const tick = internalAction({
             entityType: "gmail_send",
             summary: composeResult.touch.subject.slice(0, 200),
             draftPayload: {
-              to: contact?.email ?? "(no email on contact)",
+              // Array shape required by the gmail_send executor — see the
+              // pre-drafted branch above.
+              to: [contact.email],
               subject: composeResult.touch.subject,
               bodyText: composeResult.touch.bodyText,
               bodyHtml: composeResult.touch.bodyHtml,

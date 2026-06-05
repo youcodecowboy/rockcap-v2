@@ -1,6 +1,13 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
+
+// Google sends event status as a free string; the events schema declares a
+// literal union. Anything unrecognised collapses to "confirmed".
+function normalizeEventStatus(s?: string): "confirmed" | "tentative" | "cancelled" {
+  return s === "tentative" || s === "cancelled" ? s : "confirmed";
+}
 
 // ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
@@ -151,7 +158,19 @@ export const deleteChannel = mutation({
 export const getSyncStatus = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Always-on UI query (desktop homepage, calendar, mobile brief): it can
+    // fire before Clerk's token reaches Convex on a cold page load, so a
+    // missing identity must render as "not connected", not crash the page.
+    // See authHelpers.getAuthenticatedUserOrNull for the full rationale.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) {
+      return {
+        isConnected: false,
+        connectedEmail: null,
+        connectedAt: null,
+        needsReconnect: false,
+      };
+    }
     const tokens = await ctx.db
       .query("googleCalendarTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))
@@ -223,7 +242,7 @@ export const syncGoogleEvent = mutation({
         startTime: args.startTime,
         endTime: args.endTime,
         allDay: args.allDay ?? false,
-        status: args.status || "confirmed",
+        status: normalizeEventStatus(args.status),
         attendees: args.attendees,
         syncStatus: "synced",
         lastGoogleSync: now,
@@ -238,7 +257,7 @@ export const syncGoogleEvent = mutation({
       startTime: args.startTime,
       endTime: args.endTime,
       allDay: args.allDay ?? false,
-      status: args.status || "confirmed",
+      status: normalizeEventStatus(args.status),
       attendees: args.attendees,
       googleEventId: args.googleEventId,
       syncStatus: "synced",
@@ -283,7 +302,7 @@ export const upsertGoogleEvent = internalMutation({
         startTime: args.startTime,
         endTime: args.endTime,
         allDay: args.allDay ?? false,
-        status: args.status || "confirmed",
+        status: normalizeEventStatus(args.status),
         attendees: args.attendees,
         syncStatus: "synced",
         lastGoogleSync: now,
@@ -298,7 +317,7 @@ export const upsertGoogleEvent = internalMutation({
       startTime: args.startTime,
       endTime: args.endTime,
       allDay: args.allDay ?? false,
-      status: args.status || "confirmed",
+      status: normalizeEventStatus(args.status),
       attendees: args.attendees,
       googleEventId: args.googleEventId,
       syncStatus: "synced",

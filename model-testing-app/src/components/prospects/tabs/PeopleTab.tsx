@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { ExternalLink, UserPlus, Search, Mail, Loader2 } from "lucide-react";
+import { ExternalLink, UserPlus, Search, Mail, Loader2, Linkedin } from "lucide-react";
 import { matchPersonToContact } from "@/lib/prospects/matchPersonToContact";
 
 interface PeopleTabProps {
@@ -150,6 +150,7 @@ export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTab
           ...(apolloFor?.email ? {
             email: apolloFor.email,
           } : {}),
+          ...(apolloFor?.linkedinUrl ? { linkedinUrl: apolloFor.linkedinUrl } : {}),
           notes: `Linked from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
           clientId: prospect?._id,
         });
@@ -162,6 +163,7 @@ export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTab
           email: apolloFor?.email,
           emailStatus: apolloFor?.emailStatus,
           emailSource: apolloFor?.email ? "apollo" : undefined,
+          linkedinUrl: apolloFor?.linkedinUrl,
           company: companyName,
           notes: `Imported from prospect-intel skillRun ${intelRun?._id?.slice(-12) ?? ""}. CH role/PSC: ${person.roleNote ?? person.bullets["ch role + appointment"] ?? "—"}. DOB ${person.bullets["dob"] ?? "—"}. Nationality ${person.bullets["nationality"] ?? "—"}.${apolloFor?.email ? ` Email via Apollo (${apolloFor.emailStatus ?? "unknown status"}).` : ""}${apolloFor?.linkedinUrl ? ` LinkedIn: ${apolloFor.linkedinUrl}.` : ""}`,
           clientId: prospect?._id,
@@ -234,6 +236,13 @@ export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTab
         const addedContactId = added[person.name];
         const matched = matchPersonToContact(person.name, contacts ?? []);
         const onFileEmail = matched?.email;
+        // LinkedIn fallback: no email anywhere (on file OR from a live Apollo
+        // hit) but a profile is known → surface LinkedIn as the outreach channel.
+        const liveResult = apolloByPerson[person.name]?.result;
+        const fallbackLinkedin =
+          !onFileEmail && !liveResult?.email
+            ? (matched?.linkedinUrl ?? liveResult?.linkedinUrl)
+            : undefined;
         return (
           <div
             key={person.name}
@@ -316,6 +325,11 @@ export function PeopleTab({ prospect, intelRun, chProfile, contacts }: PeopleTab
                 searched via Apollo (found, but no published email) — reflect that
                 persisted result instead of the un-searched prompt; (3) otherwise
                 offer a live Apollo discovery. A live re-search supersedes (2). */}
+            {/* No email but a LinkedIn profile is known → make LinkedIn the
+                obvious outreach channel (a staff member reaches out there). */}
+            {fallbackLinkedin && (
+              <LinkedInFallbackBlock url={fallbackLinkedin} colors={colors} />
+            )}
             {onFileEmail ? (
               <OnFileEmailBlock
                 email={onFileEmail}
@@ -419,6 +433,60 @@ function DiscoveryButton({
       {icon}
       {label}
     </a>
+  );
+}
+
+// Prominent LinkedIn callout shown when a person has NO email (on file or
+// found) but a known LinkedIn profile. Email cadences can't reach them, so a
+// staff member reaches out on LinkedIn manually — this makes that path the
+// obvious one instead of burying the URL in a small detail row.
+function LinkedInFallbackBlock({ url, colors }: { url: string; colors: any }) {
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        background: "#0a66c208",
+        border: "1px solid #0a66c250",
+        borderLeft: "3px solid #0a66c2",
+        borderRadius: 4,
+        marginBottom: 14,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+          <Linkedin size={13} color="#0a66c2" />
+          No email — reach out on LinkedIn
+        </div>
+        <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 3, wordBreak: "break-all" }}>
+          {url.replace(/^https?:\/\/(www\.)?/, "")}
+        </div>
+      </div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 14px",
+          background: "#0a66c2",
+          color: "#ffffff",
+          borderRadius: 4,
+          fontSize: 11,
+          fontWeight: 500,
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <Linkedin size={12} /> Open profile
+      </a>
+    </div>
   );
 }
 

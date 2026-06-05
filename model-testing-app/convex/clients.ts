@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { backfillContactClientLinks } from "./contacts";
 
 // Query: Get all clients
 export const list = query({
@@ -918,6 +919,9 @@ export const createWithPromotion = mutation({
 
     if (promoteFromCompanyId) {
       await ctx.db.patch(promoteFromCompanyId, { promotedToClientId: clientId });
+      // Back-fill clientId onto contacts already linked to this company so
+      // inbound replies from them resolve to the new client immediately.
+      await backfillContactClientLinks(ctx, promoteFromCompanyId, clientId);
     }
 
     await bootstrapNewClient(ctx, clientId, args.type);

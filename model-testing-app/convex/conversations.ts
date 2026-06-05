@@ -1,6 +1,7 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import { getAuthenticatedUser } from "./authHelpers";
+import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
 // ============================================================================
 // Queries
@@ -12,7 +13,10 @@ export const getMyConversations = query({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
 
     const allConversations = await ctx.db
       .query("conversations")
@@ -34,7 +38,7 @@ export const getMyConversations = query({
     const enriched = await Promise.all(
       myConversations.map(async (conv) => {
         const participants = await Promise.all(
-          conv.participantIds.map(async (pid: any) => {
+          conv.participantIds.map(async (pid: Id<"users">) => {
             const u = await ctx.db.get(pid);
             return u ? { id: u._id, name: u.name || u.email || "Unknown" } : null;
           })
@@ -85,7 +89,10 @@ export const getMyConversations = query({
 export const get = query({
   args: { id: v.id("conversations") },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return null;
     const conv = await ctx.db.get(args.id);
     if (!conv) throw new Error("Conversation not found");
 
@@ -94,7 +101,7 @@ export const get = query({
     }
 
     const participants = await Promise.all(
-      conv.participantIds.map(async (pid: any) => {
+      conv.participantIds.map(async (pid: Id<"users">) => {
         const u = await ctx.db.get(pid);
         return u ? { id: u._id, name: u.name || u.email || "Unknown" } : null;
       })
@@ -124,7 +131,10 @@ export const get = query({
 export const getUnreadCount = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return 0;
 
     const allConversations = await ctx.db
       .query("conversations")
