@@ -37,8 +37,19 @@ export function ProspectsTab() {
   // Outreach-ready filter (2026-05-30): surface the "accepted, awaiting draft"
   // pool at a glance. Reads outreachReadyAt off the client rows already in scope.
   const [readyOnly, setReadyOnly] = useState(false);
+  // Rung filter: null = all groups; a rung key (or "holding") narrows the
+  // table to that group so the operator never scrolls past dozens of rows
+  // to reach the one they want.
+  const [rungFilter, setRungFilter] = useState<string | null>(null);
 
   const allClients = useQuery(api.clients.list as any, {}) ?? [];
+  // Batched per-prospect rollup: real sends (outbound gmail touchpoints) +
+  // latest inbound reply. Powers the Emails sent / Last reply columns.
+  const outreachStats =
+    (useQuery(api.prospects.outreachStats as any, {}) as Record<
+      string,
+      { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }
+    > | undefined) ?? {};
   const allProspects = (allClients as any[]).filter(
     (c) => c.status === "prospect" && c.prospectState,
   );
@@ -62,6 +73,19 @@ export function ProspectsTab() {
     0,
   );
 
+  // Which groups render under the current rung filter. "holding" narrows to
+  // the holding block (forced open); a ladder rung narrows to that rung; null
+  // shows everything.
+  const visibleRungs =
+    rungFilter === null
+      ? PROSPECT_RUNGS
+      : PROSPECT_RUNGS.filter((r) => r.key === rungFilter);
+  const showHolding = (rungFilter === null || rungFilter === "holding") && holdingCount > 0;
+  const holdingExpanded = holdingOpen || rungFilter === "holding";
+  const visibleRowCount =
+    visibleRungs.reduce((sum, r) => sum + (byRung.get(r.key)?.length ?? 0), 0) +
+    (showHolding ? holdingCount : 0);
+
   return (
     <div
       style={{
@@ -74,10 +98,40 @@ export function ProspectsTab() {
       {/* Filter bar — "Ready for outreach" surfaces the accepted-but-not-drafted
           pool (clients with outreachReadyAt set). */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 8,
+        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const,
         padding: "8px 14px", borderBottom: `1px solid ${colors.border.default}`,
         background: colors.bg.card,
       }}>
+        {/* Rung filter buttons — jump straight to a group instead of
+            scrolling the whole ladder. Counts respect the ready-only toggle. */}
+        <RungFilterButton
+          label="All"
+          count={prospects.length}
+          active={rungFilter === null}
+          dot={null}
+          onClick={() => setRungFilter(null)}
+          colors={colors}
+        />
+        {PROSPECT_RUNGS.map((rung) => (
+          <RungFilterButton
+            key={rung.key}
+            label={rung.label}
+            count={byRung.get(rung.key)?.length ?? 0}
+            active={rungFilter === rung.key}
+            dot={rungDotColor(rung.key, colors)}
+            onClick={() => setRungFilter((f) => (f === rung.key ? null : rung.key))}
+            colors={colors}
+          />
+        ))}
+        <RungFilterButton
+          label="Holding"
+          count={holdingCount}
+          active={rungFilter === "holding"}
+          dot={colors.text.dim}
+          onClick={() => setRungFilter((f) => (f === "holding" ? null : "holding"))}
+          colors={colors}
+        />
+        <span style={{ width: 1, alignSelf: "stretch", background: colors.border.default, margin: "0 4px" }} />
         <button
           onClick={() => setReadyOnly((v) => !v)}
           style={{
@@ -113,16 +167,20 @@ export function ProspectsTab() {
           </tr>
         </thead>
         <tbody>
-          {prospects.length === 0 && (
+          {visibleRowCount === 0 && (
             <tr>
               <td colSpan={7} style={{ ...tdStyle(colors), color: colors.text.muted, textAlign: "center" }}>
-                {readyOnly ? "No prospects marked ready for outreach yet." : "No prospects in the ladder yet."}
+                {readyOnly
+                  ? "No prospects marked ready for outreach yet."
+                  : rungFilter
+                    ? "No prospects in this group."
+                    : "No prospects in the ladder yet."}
               </td>
             </tr>
           )}
 
           {/* Active ladder — researched → … → meeting booked */}
-          {PROSPECT_RUNGS.map((rung) => {
+          {visibleRungs.map((rung) => {
             const rows = byRung.get(rung.key) ?? [];
             if (rows.length === 0) return null;
             return (
@@ -130,14 +188,16 @@ export function ProspectsTab() {
                 key={rung.key}
                 rung={rung}
                 rows={rows}
+                stats={outreachStats}
                 colors={colors}
                 router={router}
               />
             );
           })}
 
-          {/* Holding — promoted / parked / lost, collapsed by default */}
-          {holdingCount > 0 && (
+          {/* Holding — promoted / parked / lost, collapsed by default
+              (forced open when the Holding filter is selected) */}
+          {showHolding && (
             <>
               <tr
                 onClick={() => setHoldingOpen((o) => !o)}
@@ -148,12 +208,12 @@ export function ProspectsTab() {
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: colors.text.dim }} />
                     Holding · {holdingCount}
                     <span style={{ color: colors.text.muted, fontWeight: 400 }}>
-                      {holdingOpen ? "▾" : "▸"}
+                      {holdingExpanded ? "▾" : "▸"}
                     </span>
                   </span>
                 </td>
               </tr>
-              {holdingOpen &&
+              {holdingExpanded &&
                 HOLDING_RUNGS.map((rung) => {
                   const rows = byRung.get(rung.key) ?? [];
                   return rows.map((c: any) => (
@@ -161,6 +221,7 @@ export function ProspectsTab() {
                       key={c._id}
                       client={c}
                       rungLabel={rung.label}
+                      stats={outreachStats[c._id]}
                       colors={colors}
                       router={router}
                     />
@@ -174,7 +235,43 @@ export function ProspectsTab() {
   );
 }
 
-function RungGroup({ rung, rows, colors, router }: { rung: { key: string; label: string }; rows: any[]; colors: any; router: any }) {
+function RungFilterButton({
+  label,
+  count,
+  active,
+  dot,
+  onClick,
+  colors,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  dot: string | null;
+  onClick: () => void;
+  colors: any;
+}) {
+  const accent = colors.entityTypes.prospect;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "5px 10px", borderRadius: 4, cursor: "pointer",
+        fontSize: 10, fontWeight: active ? 600 : 500, letterSpacing: "0.04em",
+        textTransform: "uppercase" as const,
+        border: `1px solid ${active ? accent : colors.border.default}`,
+        background: active ? `${accent}14` : colors.bg.card,
+        color: active ? colors.text.primary : colors.text.muted,
+      }}
+    >
+      {dot && <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot }} />}
+      {label}
+      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10 }}>{count}</span>
+    </button>
+  );
+}
+
+function RungGroup({ rung, rows, stats, colors, router }: { rung: { key: string; label: string }; rows: any[]; stats: Record<string, { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }>; colors: any; router: any }) {
   return (
     <>
       <tr style={{ background: colors.bg.cardAlt }}>
@@ -186,13 +283,13 @@ function RungGroup({ rung, rows, colors, router }: { rung: { key: string; label:
         </td>
       </tr>
       {rows.map((c: any) => (
-        <ProspectRow key={c._id} client={c} rungLabel={rung.label} colors={colors} router={router} />
+        <ProspectRow key={c._id} client={c} rungLabel={rung.label} stats={stats[c._id]} colors={colors} router={router} />
       ))}
     </>
   );
 }
 
-function ProspectRow({ client, rungLabel, colors, router }: { client: any; rungLabel: string; colors: any; router: any }) {
+function ProspectRow({ client, rungLabel, stats, colors, router }: { client: any; rungLabel: string; stats?: { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }; colors: any; router: any }) {
   // Pass null for the intel run: clients.list carries no per-row skillRun, so
   // only the contact-presence flag resolves here. The rich gap flags live on
   // the detail Overview (which has the latest intel run in scope).
@@ -232,8 +329,23 @@ function ProspectRow({ client, rungLabel, colors, router }: { client: any; rungL
           )}
         </span>
       </td>
-      <td style={{ ...tdStyle(colors), color: colors.text.muted }}>—</td>
-      <td style={{ ...tdStyle(colors), color: colors.text.muted }}>—</td>
+      <td style={{ ...tdStyle(colors), color: stats?.emailsSent ? colors.text.primary : colors.text.muted }}>
+        {stats?.emailsSent ? (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontWeight: 500 }}>{stats.emailsSent}</span>
+            {stats.lastSentAt && (
+              <span style={{ fontSize: 10, color: colors.text.muted }}>
+                last {String(stats.lastSentAt).slice(0, 10)}
+              </span>
+            )}
+          </span>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td style={{ ...tdStyle(colors), color: stats?.lastReplyAt ? colors.text.primary : colors.text.muted }}>
+        {stats?.lastReplyAt ? String(stats.lastReplyAt).slice(0, 10) : "—"}
+      </td>
       <td style={tdStyle(colors)}>
         <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 4 }}>
           {flags.map((f, i) => (
