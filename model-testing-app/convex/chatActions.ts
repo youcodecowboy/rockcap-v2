@@ -9,7 +9,10 @@ export const listPending = query({
   },
   handler: async (ctx, args) => {
     // Get authenticated user
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     
     // Verify session belongs to user
     const session = await ctx.db.get(args.sessionId);

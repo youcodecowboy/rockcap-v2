@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // MCP token management (BL-5.9).
 // Per-user opaque bearer tokens for Claude Code authentication against the
@@ -91,7 +92,10 @@ export const mintToken = action({
 export const listMyTokens = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     return ctx.db
       .query("mcpTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))

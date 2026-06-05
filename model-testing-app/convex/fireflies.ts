@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Fireflies integration: per-user API token paste model (no OAuth).
 // Per docs/INTEGRATIONS/fireflies-scoping.md confirmed decisions:
@@ -67,7 +68,10 @@ export const disconnect = mutation({
 export const getConnectionStatus = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return { connected: false } as const;
     const row = await ctx.db
       .query("firefliesTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))

@@ -12,7 +12,10 @@ export const getMyConversations = query({
     projectId: v.optional(v.id("projects")),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
 
     const allConversations = await ctx.db
       .query("conversations")
@@ -85,7 +88,10 @@ export const getMyConversations = query({
 export const get = query({
   args: { id: v.id("conversations") },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return null;
     const conv = await ctx.db.get(args.id);
     if (!conv) throw new Error("Conversation not found");
 
@@ -124,7 +130,10 @@ export const get = query({
 export const getUnreadCount = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return 0;
 
     const allConversations = await ctx.db
       .query("conversations")

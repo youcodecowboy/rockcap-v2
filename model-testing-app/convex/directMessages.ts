@@ -12,7 +12,10 @@ export const getByConversation = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
     const limit = args.limit || 100;
 
     const conv = await ctx.db.get(args.conversationId);

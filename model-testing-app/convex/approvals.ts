@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Approvals (BL-1.9 surface, BL-5.7 queries + dispatch).
 // Cross-cutting staged-draft layer. Every output that leaves the building
@@ -105,7 +106,9 @@ export const listAll = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    if (!(await getAuthenticatedUserOrNull(ctx))) return [];
     const limit = args.limit ?? 100;
     const status = args.status ?? "pending";
     if (status === "all") {
@@ -130,7 +133,11 @@ export const get = query({
 export const getCounts = query({
   args: {},
   handler: async (ctx) => {
-    await getAuthenticatedUser(ctx);
+    // Tolerate the cold-load pre-auth window (Clerk token not yet at
+    // Convex): return an empty default instead of crashing useQuery callers.
+    if (!(await getAuthenticatedUserOrNull(ctx))) {
+      return { pending: 0, executionFailed: 0 };
+    }
     // Cheap counts via index walks. For larger volumes this would
     // become a separate denormalised counter; today the volume is zero.
     const pending = await ctx.db
