@@ -175,6 +175,35 @@ export const getById = query({
   },
 });
 
+// Find a Gmail-captured replyEvent for the same contact near a timestamp.
+// Used by the HubSpot-sweep ingest path to suppress contentless duplicate
+// rows: the Gmail OAuth poller (5-min) captures the same inbound mail with
+// full body/subject long before the 6h HubSpot engagement sweep sees it,
+// so when a Gmail twin exists the sweep row adds nothing but a "Body not
+// captured" duplicate on the Replies tab.
+export const findGmailTwinInternal = internalQuery({
+  args: {
+    contactId: v.id("contacts"),
+    receivedAt: v.string(),
+    windowMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const t = Date.parse(args.receivedAt);
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
+      .order("desc")
+      .take(100);
+    return (
+      rows.find(
+        (r) =>
+          r.source === "gmail_push" &&
+          Math.abs(Date.parse(r.receivedAt) - t) <= args.windowMs,
+      ) ?? null
+    );
+  },
+});
+
 // ── v1.3 public queries: power the Replies tab + operator-review queue ──
 
 // List replies for a contact, newest first. Used by the prospect-detail

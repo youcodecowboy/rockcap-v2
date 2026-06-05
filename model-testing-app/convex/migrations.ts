@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { resolveEmailToContactClient } from "./contacts";
 
+const GMAIL_TWIN_WINDOW_MS = 6 * 60 * 60 * 1000;
+
 // One-off backfills for the inbound-reply → prospect linkage fix
 // (2026-06-05). Both are cursor-paginated so they stay under mutation
 // read limits — run repeatedly via `npx convex run` until nextCursor
@@ -97,6 +99,49 @@ export const relinkReplyEvents = internalMutation({
     return {
       scanned: page.page.length,
       relinked,
+      nextCursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
+
+// Unlink historical contentless HubSpot-sweep rows that duplicate a
+// Gmail-captured reply (same contact, received within the twin window).
+// Ingest now skips these (processReplyEvent step 2.5); this hides the
+// already-created ones from the prospect Replies tab by clearing
+// linkedClientId. Rows are kept (not deleted) so any skillRun/approval
+// references stay valid.
+//
+//   npx convex run migrations:unlinkHubspotSweepDuplicates '{}'
+export const unlinkHubspotSweepDuplicates = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("replyEvents")
+      .paginate({ numItems: 200, cursor: args.cursor ?? null });
+    let unlinked = 0;
+    for (const r of page.page) {
+      if (r.source !== "hubspot_sync") continue;
+      if (r.replyBodyText) continue; // manual paste — always has a body
+      if (!r.contactId || !r.linkedClientId) continue;
+      const t = Date.parse(r.receivedAt);
+      const siblings = await ctx.db
+        .query("replyEvents")
+        .withIndex("by_contact", (q) => q.eq("contactId", r.contactId))
+        .order("desc")
+        .take(100);
+      const twin = siblings.find(
+        (s) =>
+          s.source === "gmail_push" &&
+          Math.abs(Date.parse(s.receivedAt) - t) <= GMAIL_TWIN_WINDOW_MS,
+      );
+      if (twin) {
+        await ctx.db.patch(r._id, { linkedClientId: undefined });
+        unlinked++;
+      }
+    }
+    return {
+      scanned: page.page.length,
+      unlinked,
       nextCursor: page.isDone ? null : page.continueCursor,
     };
   },
