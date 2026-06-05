@@ -101,6 +101,7 @@ import type * as mcp from "../mcp.js";
 import type * as mcpTokens from "../mcpTokens.js";
 import type * as meetingExtractionJobs from "../meetingExtractionJobs.js";
 import type * as meetings from "../meetings.js";
+import type * as migrations from "../migrations.js";
 import type * as migrations_addDocumentCodes from "../migrations/addDocumentCodes.js";
 import type * as migrations_addFileTypeTargetFolders from "../migrations/addFileTypeTargetFolders.js";
 import type * as migrations_clearFileQueue from "../migrations/clearFileQueue.js";
@@ -253,6 +254,7 @@ declare const fullApi: ApiFromModules<{
   mcpTokens: typeof mcpTokens;
   meetingExtractionJobs: typeof meetingExtractionJobs;
   meetings: typeof meetings;
+  migrations: typeof migrations;
   "migrations/addDocumentCodes": typeof migrations_addDocumentCodes;
   "migrations/addFileTypeTargetFolders": typeof migrations_addFileTypeTargetFolders;
   "migrations/clearFileQueue": typeof migrations_clearFileQueue;

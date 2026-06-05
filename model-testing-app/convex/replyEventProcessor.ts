@@ -251,18 +251,22 @@ async function processReplyEvent(
   }
 
   // Step 2: Contact match + client denormalisation
+  // resolveByEmailInternal prefers a contact with a direct clientId among
+  // duplicates and bridges linkedCompanyIds → company.promotedToClientId
+  // when the contact itself carries no clientId (HubSpot-synced contacts
+  // imported before their company was promoted to a client).
   let contactId: Id<"contacts"> | undefined = undefined;
   let linkedClientId: Id<"clients"> | undefined = undefined;
   if (args.contactEmail) {
-    const contact = await ctx.runQuery(
-      internal.contacts.findByEmailInternal,
+    const resolved = await ctx.runQuery(
+      internal.contacts.resolveByEmailInternal,
       { email: args.contactEmail },
-    ) as Doc<"contacts"> | null;
-    contactId = contact?._id;
-    // v1.3: denormalise the contact's clientId onto the replyEvent so the
+    ) as { contactId: Id<"contacts">; clientId?: Id<"clients"> } | null;
+    contactId = resolved?.contactId;
+    // v1.3: denormalise the resolved clientId onto the replyEvent so the
     // by_linked_client index serves prospect-detail-page reads without
     // requiring a contact->client JOIN.
-    linkedClientId = contact?.clientId;
+    linkedClientId = resolved?.clientId;
   }
 
   // Step 3: Create the event row
