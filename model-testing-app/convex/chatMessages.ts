@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getAuthenticatedUser } from "./authHelpers";
+import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Query: Get all messages for a session
 export const list = query({
