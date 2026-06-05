@@ -235,6 +235,50 @@ export const transitionStateInternal = internalMutation({
   },
 });
 
+// Per-prospect outreach rollup for the /prospects ladder table: how many
+// emails have actually gone OUT (outbound gmail touchpoints — written by the
+// send chokepoint in gmailSend.performApprovedSend, so this counts real
+// sends, not staged approvals) and when the latest inbound reply arrived.
+// Batched over all prospect rows in one query so the table holds a single
+// reactive subscription instead of one per row.
+export const outreachStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const clients = await ctx.db.query("clients").collect();
+    const prospects = clients.filter(
+      (c: any) => c.status === "prospect" && c.prospectState,
+    );
+    const stats: Record<
+      string,
+      { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }
+    > = {};
+    for (const p of prospects) {
+      const touchpoints = await ctx.db
+        .query("touchpoints")
+        .withIndex("by_related_client", (q) => q.eq("relatedClientId", p._id))
+        .collect();
+      const outbound = touchpoints.filter(
+        (t: any) => t.direction === "outbound" && t.kind === "email",
+      );
+      let lastSentAt: string | undefined;
+      for (const t of outbound) {
+        if (!lastSentAt || t.occurredAt > lastSentAt) lastSentAt = t.occurredAt;
+      }
+      const lastReply = await ctx.db
+        .query("replyEvents")
+        .withIndex("by_linked_client", (q) => q.eq("linkedClientId", p._id))
+        .order("desc")
+        .first();
+      stats[p._id] = {
+        emailsSent: outbound.length,
+        lastSentAt,
+        lastReplyAt: (lastReply as any)?.receivedAt,
+      };
+    }
+    return stats;
+  },
+});
+
 // Auto-transition on a successful outbound send: a prospect still in a
 // pre-outreach state (researched / drafted / needs_revision) moves to
 // "active" — outreach is now in flight. Called from the send chokepoint
