@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
@@ -151,7 +152,19 @@ export const deleteChannel = mutation({
 export const getSyncStatus = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Always-on UI query (desktop homepage, calendar, mobile brief): it can
+    // fire before Clerk's token reaches Convex on a cold page load, so a
+    // missing identity must render as "not connected", not crash the page.
+    // See authHelpers.getAuthenticatedUserOrNull for the full rationale.
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) {
+      return {
+        isConnected: false,
+        connectedEmail: null,
+        connectedAt: null,
+        needsReconnect: false,
+      };
+    }
     const tokens = await ctx.db
       .query("googleCalendarTokens")
       .withIndex("by_user", (q: any) => q.eq("userId", user._id))
