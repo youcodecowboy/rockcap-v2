@@ -186,7 +186,7 @@ export default function ProspectDetailPage() {
               }
             />
           )}
-          {activeTab === "outreach" && <OutreachTab cadences={cadences} />}
+          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
           {activeTab === "files" && <FilesTab prospect={prospect} />}

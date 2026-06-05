@@ -576,6 +576,73 @@ export const update = mutation({
   },
 });
 
+// Reassign the recipient for every UNFIRED touch in a package. Fired touches
+// keep their original contactId — the past doesn't move (same rule as
+// applyPresetSchedule). Attaching a contact to a held "needs_contact" draft
+// re-activates it as a normal pending package member so approval can flow.
+//
+// Deliberately does NOT enforce the v1.2.4 email guard here: the operator may
+// pick a contact with no email (LinkedIn-outreach path) — the dispatcher's
+// fire-time guard still blocks the actual send, and the Outreach tab surfaces
+// the no-email state prominently.
+export const setPackageContact = mutation({
+  args: {
+    packageId: v.string(),
+    contactId: v.id("contacts"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) throw new Error("contact_not_found");
+
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    if (rows.length === 0) {
+      return { ok: false as const, error: "package_not_found", packageId: args.packageId };
+    }
+
+    const now = new Date().toISOString();
+    let patched = 0;
+    let skippedFired = 0;
+    for (const row of rows) {
+      if (row.lastFiredAt) {
+        skippedFired++;
+        continue;
+      }
+      const patch: Record<string, unknown> = {
+        contactId: args.contactId,
+        editedByOperator: true,
+        editedAt: now,
+        editedBy: userId,
+        updatedAt: now,
+      };
+      if (row.packageApprovalStatus === "needs_contact") {
+        patch.packageApprovalStatus = "pending";
+        patch.needsContact = false;
+        patch.isActive = true;
+      }
+      await ctx.db.patch(row._id, patch);
+      patched++;
+    }
+
+    return {
+      ok: true as const,
+      packageId: args.packageId,
+      contactId: args.contactId,
+      contactName: contact.name,
+      patched,
+      skippedFired,
+    };
+  },
+});
+
 // Apply a preset schedule (Light / Moderate / Aggressive) to all unfired
 // cadences in a package. Touch 1's scheduled date stays as the anchor;
 // Touches 2-4 are rescheduled relative to Touch 1's nextDueAt (or

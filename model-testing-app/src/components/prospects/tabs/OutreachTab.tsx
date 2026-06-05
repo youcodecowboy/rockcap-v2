@@ -5,10 +5,11 @@ import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { CadencePresetPicker } from "../CadencePresetPicker";
-import { Save, RotateCcw, Eye, Edit3, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Save, RotateCcw, Eye, Edit3, CheckCircle2, AlertTriangle, Mail, Linkedin, User } from "lucide-react";
 
 interface OutreachTabProps {
   cadences: any[];
+  contacts?: any[];
 }
 
 // v1.2.1 Outreach tab. Per-touch inline editing of subject + body. Save
@@ -79,10 +80,11 @@ function inferCurrentPreset(cadences: any[]): string {
   return "custom";
 }
 
-export function OutreachTab({ cadences }: OutreachTabProps) {
+export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
   const colors = useColors();
   const updateCadence = useMutation(api.cadences.update);
   const applyPreset = useMutation(api.cadences.applyPresetSchedule);
+  const setPackageContact = useMutation(api.cadences.setPackageContact);
 
   const sorted = useMemo(
     () => [...cadences].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0)),
@@ -98,6 +100,29 @@ export function OutreachTab({ cadences }: OutreachTabProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [presetApplying, setPresetApplying] = useState<string | null>(null);
+  const [changingRecipient, setChangingRecipient] = useState(false);
+
+  // Current recipient — taken from the first UNFIRED touch (that's the row a
+  // recipient change would affect), falling back to Touch 1 if everything has
+  // fired. A package drafted contactless (needs_contact) has no contactId at
+  // all, in which case the selector below is how the operator attaches one.
+  const recipientContactId =
+    sorted.find((c) => !c.lastFiredAt)?.contactId ?? sorted[0]?.contactId;
+  const recipient = (contacts ?? []).find((ct) => ct._id === recipientContactId);
+  const hasUnfired = sorted.some((c) => !c.lastFiredAt);
+
+  async function handleRecipientChange(contactId: string) {
+    if (!packageId || !contactId || contactId === recipientContactId) return;
+    setChangingRecipient(true);
+    setError(null);
+    try {
+      await setPackageContact({ packageId, contactId: contactId as any });
+    } catch (e: any) {
+      setError(`Recipient change failed: ${e?.message ?? e}`);
+    } finally {
+      setChangingRecipient(false);
+    }
+  }
 
   // Initialize / reset drafts when cadences change (e.g., after a save the
   // useQuery re-runs and we want the new persisted values).
@@ -221,6 +246,20 @@ export function OutreachTab({ cadences }: OutreachTabProps) {
 
   return (
     <div>
+      {/* Recipient bar — who this whole package sends to. Changing it
+          re-points every unfired touch (fired touches keep their history),
+          so the package approval below is unambiguously "approve sending
+          these emails to THIS person". */}
+      <RecipientCard
+        recipient={recipient}
+        recipientContactId={recipientContactId}
+        contacts={contacts ?? []}
+        hasUnfired={hasUnfired}
+        changing={changingRecipient}
+        onChange={handleRecipientChange}
+        colors={colors}
+      />
+
       {/* Preset picker bar */}
       <div
         style={{
@@ -309,6 +348,195 @@ export function OutreachTab({ cadences }: OutreachTabProps) {
       })}
     </div>
   );
+}
+
+// "Sending to" bar at the top of the Outreach tab. Three states:
+//  1. Recipient with email   → green-tinted card, name + email + status pill
+//  2. Recipient, no email    → amber card, prominent LinkedIn button (a staff
+//                              member reaches out on LinkedIn instead) + note
+//                              that email touches can't fire without an email
+//  3. No recipient at all    → red card prompting selection before approval
+//                              (needs_contact held drafts land here)
+function RecipientCard({
+  recipient,
+  recipientContactId,
+  contacts,
+  hasUnfired,
+  changing,
+  onChange,
+  colors,
+}: {
+  recipient?: any;
+  recipientContactId?: string;
+  contacts: any[];
+  hasUnfired: boolean;
+  changing: boolean;
+  onChange: (contactId: string) => void;
+  colors: any;
+}) {
+  const noRecipient = !recipientContactId;
+  const noEmail = !!recipient && !recipient.email;
+  const accent = noRecipient
+    ? colors.accent.red
+    : noEmail
+      ? colors.accent.yellow
+      : colors.accent.green;
+  const emailPill = recipient?.emailStatus
+    ? emailStatusPill(recipient.emailStatus, colors)
+    : null;
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${accent}50`,
+        borderLeft: `3px solid ${accent}`,
+        borderRadius: 4,
+        background: `${accent}08`,
+        padding: "12px 14px",
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 9,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: colors.text.muted,
+            }}
+          >
+            Sending to
+          </div>
+          {noRecipient ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, color: colors.accent.red }}>
+              <AlertTriangle size={14} /> No recipient — select who this outreach goes to before approving
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 500, color: colors.text.primary }}>
+                <User size={14} color={accent} />
+                {recipient?.name ?? "Unknown contact"}
+              </div>
+              {recipient?.role && (
+                <span style={{ fontSize: 11, color: colors.text.muted }}>{recipient.role}</span>
+              )}
+              {recipient?.email ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "ui-monospace, monospace", fontSize: 12, color: colors.text.primary }}>
+                  <Mail size={12} color={colors.accent.green} />
+                  {recipient.email}
+                </span>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#92400e", fontWeight: 500 }}>
+                  <Mail size={12} /> No email on file
+                </span>
+              )}
+              {emailPill && (
+                <span
+                  style={{
+                    padding: "1px 6px",
+                    background: emailPill.bg,
+                    color: emailPill.fg,
+                    border: `1px solid ${emailPill.border}`,
+                    borderRadius: 2,
+                    fontFamily: "ui-monospace, monospace",
+                    fontSize: 9,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    fontWeight: 500,
+                  }}
+                >
+                  {recipient.emailStatus}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {recipient?.linkedinUrl && noEmail && (
+            <a
+              href={recipient.linkedinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                background: "#0a66c2",
+                color: "#ffffff",
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 500,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Linkedin size={12} /> Reach out on LinkedIn
+            </a>
+          )}
+          {contacts.length > 0 && (
+            <select
+              value={recipientContactId ?? ""}
+              disabled={changing || !hasUnfired}
+              onChange={(e) => onChange(e.target.value)}
+              style={{
+                padding: "6px 10px",
+                fontSize: 12,
+                borderRadius: 4,
+                border: `1px solid ${colors.border.default}`,
+                background: colors.bg.card,
+                color: colors.text.primary,
+                cursor: changing || !hasUnfired ? "default" : "pointer",
+                maxWidth: 260,
+              }}
+            >
+              {!recipientContactId && <option value="">Select recipient…</option>}
+              {/* The current recipient may be a contact not (or no longer) linked
+                  to this client — keep it selectable so the dropdown reflects truth. */}
+              {recipientContactId && !recipient && (
+                <option value={recipientContactId}>Unknown contact</option>
+              )}
+              {contacts.map((ct) => (
+                <option key={ct._id} value={ct._id}>
+                  {ct.name}
+                  {ct.email ? ` — ${ct.email}` : " — no email"}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {noEmail && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#92400e", lineHeight: 1.5 }}>
+          {recipient?.linkedinUrl
+            ? "Email touches can't send without an address — use the LinkedIn profile above for manual outreach, or pick a contact with an email."
+            : "Email touches can't send without an address, and no LinkedIn profile is on file. Try \"Find email via Apollo\" on the People tab."}
+        </div>
+      )}
+      {!hasUnfired && !noRecipient && (
+        <div style={{ marginTop: 8, fontSize: 10, color: colors.text.muted }}>
+          All touches have fired — recipient can no longer be changed.
+        </div>
+      )}
+      {changing && (
+        <div style={{ marginTop: 8, fontSize: 10, color: colors.text.muted }}>
+          Updating recipient on unfired touches…
+        </div>
+      )}
+    </div>
+  );
+}
+
+function emailStatusPill(status: string, colors: any): { bg: string; fg: string; border: string } {
+  const s = status.toLowerCase();
+  if (s === "verified") return { bg: "#dcfce7", fg: "#166534", border: "#86efac" };
+  if (s === "unverified" || s === "guessed") return { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" };
+  if (s === "questionable" || s === "spam_trap") return { bg: "#fee2e2", fg: "#7f1d1d", border: "#fca5a5" };
+  return { bg: colors.bg.cardAlt, fg: colors.text.muted, border: colors.border.default };
 }
 
 function TouchCard({

@@ -124,6 +124,10 @@ export const create = mutation({
     phone: v.optional(v.string()),
     company: v.optional(v.string()),
     notes: v.optional(v.string()),
+    // LinkedIn profile (e.g. from an Apollo lookup). Stored as a first-class
+    // field so the UI can offer a LinkedIn-outreach path when no email exists,
+    // rather than burying the URL in notes.
+    linkedinUrl: v.optional(v.string()),
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     sourceDocumentId: v.optional(v.id("documents")),
@@ -140,6 +144,7 @@ export const create = mutation({
       phone: args.phone,
       company: args.company,
       notes: args.notes,
+      linkedinUrl: args.linkedinUrl,
       clientId: args.clientId,
       projectId: args.projectId,
       sourceDocumentId: args.sourceDocumentId,
