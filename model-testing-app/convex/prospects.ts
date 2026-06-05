@@ -235,6 +235,39 @@ export const transitionStateInternal = internalMutation({
   },
 });
 
+// Auto-transition on a successful outbound send: a prospect still in a
+// pre-outreach state (researched / drafted / needs_revision) moves to
+// "active" — outreach is now in flight. Called from the send chokepoint
+// (gmailSend.performApprovedSend) AFTER the email has actually left, not at
+// approval-staging time: a staged draft awaiting /approvals sign-off is not
+// outreach in flight yet. Never downgrades: replied / engaged / promoted /
+// parked / lost stay where they are, and non-prospect clients are untouched.
+export const markOutreachInFlightInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) return { ok: false as const, reason: "client_not_found" };
+    const state = (client as any).prospectState;
+    if (state !== "researched" && state !== "drafted" && state !== "needs_revision") {
+      return { ok: false as const, reason: state ? `state_${state}_not_pre_outreach` : "not_a_prospect" };
+    }
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.clientId, {
+      prospectState: "active",
+      prospectStateChangedAt: now,
+      prospectStateChangedBy: args.userId,
+    });
+    await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
+      clientId: args.clientId,
+      newState: "active",
+    });
+    return { ok: true as const, from: state, to: "active" as const };
+  },
+});
+
 // Public state transition for the prospect detail UI — the operator can advance
 // the prospect to ANY stage manually (every step is operator-controllable, not
 // just the auto-triggers). Resolves the acting user from the Clerk identity
