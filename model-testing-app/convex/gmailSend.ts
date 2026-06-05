@@ -415,12 +415,31 @@ interface NormalizedSend {
   attachments?: Attachment[];
 }
 
+// Coerce a recipient field to a clean string[]. Approval payloads staged via
+// approvals.internalCreate bypass requestSend's validator, and at least one
+// producer (the cadence dispatcher, pre-fix) wrote `to` as a bare string —
+// which passed the length check but crashed composeRfc822's .map at send
+// time. Accept both shapes here so legacy staged rows still send.
+function toAddressArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((a): a is string => typeof a === "string" && !!a.trim());
+  }
+  if (typeof value === "string" && value.trim()) return [value];
+  return [];
+}
+
 async function performApprovedSend(
   ctx: any,
   approval: any,
   payload: NormalizedSend,
 ): Promise<{ gmailMessageId: string; gmailThreadId: string; touchpointId?: string }> {
-  if (!payload.to || payload.to.length === 0) {
+  payload = {
+    ...payload,
+    to: toAddressArray(payload.to),
+    cc: payload.cc !== undefined ? toAddressArray(payload.cc) : undefined,
+    bcc: payload.bcc !== undefined ? toAddressArray(payload.bcc) : undefined,
+  };
+  if (payload.to.length === 0) {
     throw new Error("Send requires at least one recipient");
   }
 
