@@ -269,6 +269,24 @@ async function processReplyEvent(
     linkedClientId = resolved?.clientId;
   }
 
+  // Step 2.5: HubSpot-sweep dedupe against Gmail capture. The Gmail OAuth
+  // poller (5-min) records the same inbound mail with full body/subject
+  // long before the 6h HubSpot engagement sweep, so a contentless sweep row
+  // (no replyBody — distinguishes the sweep from manual paste, which always
+  // carries a body) for a contact whose mail we already captured via Gmail
+  // is pure duplication on the Replies tab. Skip it; the Gmail row is
+  // canonical. Sweep rows still ingest when no Gmail twin exists — e.g.
+  // mail logged to HubSpot from a teammate's unconnected mailbox.
+  if (args.source === "hubspot_sync" && !args.replyBody && contactId) {
+    const twin = await ctx.runQuery(
+      internal.replyEvents.findGmailTwinInternal,
+      { contactId, receivedAt: args.receivedAt, windowMs: 6 * 60 * 60 * 1000 },
+    ) as Doc<"replyEvents"> | null;
+    if (twin) {
+      return { status: "duplicate_of_gmail" as const, replyEventId: twin._id };
+    }
+  }
+
   // Step 3: Create the event row
   const replyEventId = await ctx.runMutation(
     internal.replyEvents.createInternal,

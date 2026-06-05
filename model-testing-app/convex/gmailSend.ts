@@ -543,6 +543,23 @@ async function performApprovedSend(
     console.error("[gmailSend] touchpoint write failed:", err);
   }
 
+  // Prospect lifecycle: a successful outbound send to a pre-outreach prospect
+  // (researched / drafted / needs_revision) flips it to "active" — outreach is
+  // now genuinely in flight. The mutation is a guarded upgrade (it never
+  // downgrades replied/engaged/etc. and ignores non-prospect clients), and
+  // this chokepoint covers every send path (cadence, reply, lender outreach).
+  // Non-blocking, same as the touchpoint: the send already succeeded.
+  if (approval.relatedClientId) {
+    try {
+      await ctx.runMutation(internal.prospects.markOutreachInFlightInternal, {
+        clientId: approval.relatedClientId,
+        userId: approval.requestedBy,
+      });
+    } catch (err) {
+      console.error("[gmailSend] prospect state auto-advance failed:", err);
+    }
+  }
+
   return {
     gmailMessageId: sent.id,
     gmailThreadId: sent.threadId,
