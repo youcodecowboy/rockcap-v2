@@ -878,7 +878,7 @@ export const permanentDelete = mutation({
       "knowledgeBankEntries",
       "knowledgeItems",
       "codifiedExtractions",
-    ];
+    ] as const;
 
     for (const table of tables) {
       const records = await ctx.db.query(table).collect();

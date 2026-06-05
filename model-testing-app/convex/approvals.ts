@@ -1,6 +1,41 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query, internalMutation, internalQuery, internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { makeFunctionReference } from "convex/server";
+
+// String-built reference to this file's own executeApproval action.
+// `ctx.scheduler.runAfter(0, internal.approvals.executeApproval, ...)` hits
+// TS2589 (excessively deep type instantiation): the runAfter generic has to
+// resolve the full generated api type from inside the module that circularly
+// feeds it. A string reference bypasses the generated type entirely.
+const executeApprovalRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "approvals:executeApproval",
+);
+// Same TS2589 workaround for executeApproval's own self-file calls.
+const getApprovalForExecutionRef = makeFunctionReference<"query", { approvalId: Id<"approvals"> }>(
+  "approvals:getApprovalForExecution",
+);
+const markExecutedRef = makeFunctionReference<"mutation", { approvalId: Id<"approvals">; result?: any }>(
+  "approvals:markExecuted",
+);
+const markExecutionFailedRef = makeFunctionReference<"mutation", { approvalId: Id<"approvals">; error: string }>(
+  "approvals:markExecutionFailed",
+);
+// ...and for the dispatcher's per-entityType executors: once typeof internal
+// is poisoned by the circularity above, every use in this file hits TS2589,
+// cross-file references included.
+const executeApprovedSendRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "gmailSend:executeApprovedSend",
+);
+const recordPublishedDocsRef = makeFunctionReference<"mutation", { approvalId: Id<"approvals"> }>(
+  "documentPublish:recordPublishedDocs",
+);
+const executeClientCommunicationRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "gmailSend:executeClientCommunication",
+);
+const executeLenderOutreachRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "gmailSend:executeLenderOutreach",
+);
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Approvals (BL-1.9 surface, BL-5.7 queries + dispatch).
@@ -275,7 +310,11 @@ export const listByReplyEvent = query({
 
 export const approve = mutation({
   args: { approvalId: v.id("approvals") },
-  handler: async (ctx, args) => {
+  // Explicit return annotation breaks the TS2589 inference cycle: this
+  // handler references internal.approvals.* from inside approvals.ts, so
+  // inferring its return type would require resolving this file's own
+  // export types circularly.
+  handler: async (ctx, args): Promise<{ ok: boolean }> => {
     const user = await getAuthenticatedUser(ctx);
     const approval = await ctx.db.get(args.approvalId);
     if (!approval) throw new Error("Approval not found");
@@ -290,7 +329,7 @@ export const approve = mutation({
     // Dispatch the executor. Using scheduler.runAfter(0, ...) decouples
     // the mutation transaction from the action call (mutations cannot
     // call actions inline).
-    await ctx.scheduler.runAfter(0, internal.approvals.executeApproval, {
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
       approvalId: args.approvalId,
     });
     return { ok: true };
@@ -328,7 +367,8 @@ export const approveInternal = internalMutation({
     approvalId: v.id("approvals"),
     actorUserId: v.id("users"),
   },
-  handler: async (ctx, args) => {
+  // Return annotation: same TS2589 cycle-break as `approve`.
+  handler: async (ctx, args): Promise<{ ok: boolean; reason?: string }> => {
     const approval = await ctx.db.get(args.approvalId);
     if (!approval) throw new Error("Approval not found");
     if (approval.status !== "pending") {
@@ -339,7 +379,7 @@ export const approveInternal = internalMutation({
       approvedBy: args.actorUserId,
       approvedAt: new Date().toISOString(),
     });
-    await ctx.scheduler.runAfter(0, internal.approvals.executeApproval, {
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
       approvalId: args.approvalId,
     });
     return { ok: true };
@@ -432,7 +472,7 @@ export const executeApproval = internalAction({
   args: { approvalId: v.id("approvals") },
   handler: async (ctx, args): Promise<{ ok: true } | { ok: false; reason: string }> => {
     const approval: any = await ctx.runQuery(
-      internal.approvals.getApprovalForExecution,
+      getApprovalForExecutionRef,
       { approvalId: args.approvalId },
     );
     if (!approval) {
@@ -447,12 +487,12 @@ export const executeApproval = internalAction({
       let result: unknown;
       switch (approval.entityType) {
         case "gmail_send":
-          result = await ctx.runAction(internal.gmailSend.executeApprovedSend, {
+          result = await ctx.runAction(executeApprovedSendRef, {
             approvalId: args.approvalId,
           });
           break;
         case "document_publish":
-          result = await ctx.runMutation(internal.documentPublish.recordPublishedDocs, {
+          result = await ctx.runMutation(recordPublishedDocsRef, {
             approvalId: args.approvalId,
           });
           break;
@@ -464,7 +504,7 @@ export const executeApproval = internalAction({
           // sends; the latter just advances the lifecycle.
           const p: any = approval.draftPayload;
           if (p && p.kind === "email_reply") {
-            result = await ctx.runAction(internal.gmailSend.executeClientCommunication, {
+            result = await ctx.runAction(executeClientCommunicationRef, {
               approvalId: args.approvalId,
             });
           } else {
@@ -477,7 +517,7 @@ export const executeApproval = internalAction({
           // (attachedDocumentIds → multipart/mixed). Recipient resolves from
           // the related BDM contact. The entityType stays distinct only so the
           // approvals UI can apply lender-specific review gates.
-          result = await ctx.runAction(internal.gmailSend.executeLenderOutreach, {
+          result = await ctx.runAction(executeLenderOutreachRef, {
             approvalId: args.approvalId,
           });
           break;
@@ -492,14 +532,14 @@ export const executeApproval = internalAction({
         default:
           throw new Error(`No executor for entityType=${approval.entityType}`);
       }
-      await ctx.runMutation(internal.approvals.markExecuted, {
+      await ctx.runMutation(markExecutedRef, {
         approvalId: args.approvalId,
         result,
       });
       return { ok: true };
     } catch (err: any) {
       const message = err?.message ?? String(err);
-      await ctx.runMutation(internal.approvals.markExecutionFailed, {
+      await ctx.runMutation(markExecutionFailedRef, {
         approvalId: args.approvalId,
         error: message,
       });
@@ -517,5 +557,35 @@ export const getInternal = internalQuery({
   args: { approvalId: v.id("approvals") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.approvalId);
+  },
+});
+
+// One-off migration (2026-06-05): the cadence dispatcher staged
+// draftPayload.to as a bare string before the array-shape fix; both the
+// approvals UI (`to.join`) and the send executor (`to.map`) expect
+// string[]. Normalizes to/cc/bcc on every approval row. Idempotent —
+// safe to re-run; kept around in case another producer regresses.
+export const normalizeDraftPayloadRecipients = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("approvals").collect();
+    let patched = 0;
+    for (const row of rows) {
+      const p: any = row.draftPayload;
+      if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+      const next: any = { ...p };
+      let changed = false;
+      for (const k of ["to", "cc", "bcc"]) {
+        if (typeof next[k] === "string") {
+          next[k] = [next[k]];
+          changed = true;
+        }
+      }
+      if (changed) {
+        await ctx.db.patch(row._id, { draftPayload: next });
+        patched++;
+      }
+    }
+    return { scanned: rows.length, patched };
   },
 });

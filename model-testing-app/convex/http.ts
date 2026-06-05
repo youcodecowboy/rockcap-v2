@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import { httpAction } from "./_generated/server";
 import { mcpHandler } from "./mcp";
 import { pushWebhook } from "./gmailWatch";
 
@@ -21,7 +22,7 @@ http.route({
 http.route({
   path: "/mcp",
   method: "OPTIONS",
-  handler: async () => {
+  handler: httpAction(async () => {
     return new Response(null, {
       status: 204,
       headers: {
@@ -31,7 +32,7 @@ http.route({
         "Access-Control-Max-Age": "86400",
       },
     });
-  },
+  }),
 });
 
 http.route({

@@ -1977,13 +1977,9 @@ export const bulkDelete = mutation({
         deletedReason: "bulk_delete",
       });
 
-      const children = await ctx.db
-        .query("documents")
-        .filter((q) => q.eq(q.field("parentDocumentId"), docId))
-        .collect();
-      for (const child of children) {
-        await ctx.db.patch(child._id, { parentDocumentId: undefined });
-      }
+      // (A parent/child cleanup block lived here, but `parentDocumentId`
+      // was never in the documents schema and is written nowhere — the
+      // filter could never match. Removed 2026-06-05.)
 
       deletedCount++;
     }
@@ -2519,6 +2515,7 @@ export const createFromGeneration = mutation({
       projectId: args.projectId,
       projectName,
       isBaseDocument: args.isBaseDocument ?? false,
+      savedAt: now,
     });
 
     return { ok: true as const, documentId };

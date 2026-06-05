@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
 
@@ -796,7 +797,7 @@ export const mergeUnmergedExtractions = mutation({
     const results: { extractionId: string; documentName: string; projectId: string; result: string; itemCount: number }[] = [];
     
     for (const extraction of unmerged) {
-      const document = await ctx.db.get(extraction.documentId);
+      const document = await ctx.db.get(extraction.documentId as Id<"documents">);
       const documentName = document?.fileName ?? "Unknown Document";
       
       if (!extraction.projectId) {

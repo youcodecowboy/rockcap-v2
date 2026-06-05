@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
@@ -106,7 +107,7 @@ export const send = mutation({
 
       const cursorId = readCursors[pid as string];
       if (cursorId) {
-        const cursorMsg = await ctx.db.get(cursorId as any);
+        const cursorMsg = await ctx.db.get(cursorId as Id<"directMessages">);
         if (cursorMsg) {
           const cursorTime = new Date(cursorMsg.createdAt).getTime();
           const nowTime = new Date(now).getTime();

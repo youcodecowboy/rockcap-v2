@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, getAuthenticatedUserOrNull } from "./authHelpers";
 
@@ -37,7 +38,7 @@ export const getMyConversations = query({
     const enriched = await Promise.all(
       myConversations.map(async (conv) => {
         const participants = await Promise.all(
-          conv.participantIds.map(async (pid: any) => {
+          conv.participantIds.map(async (pid: Id<"users">) => {
             const u = await ctx.db.get(pid);
             return u ? { id: u._id, name: u.name || u.email || "Unknown" } : null;
           })
@@ -100,7 +101,7 @@ export const get = query({
     }
 
     const participants = await Promise.all(
-      conv.participantIds.map(async (pid: any) => {
+      conv.participantIds.map(async (pid: Id<"users">) => {
         const u = await ctx.db.get(pid);
         return u ? { id: u._id, name: u.name || u.email || "Unknown" } : null;
       })

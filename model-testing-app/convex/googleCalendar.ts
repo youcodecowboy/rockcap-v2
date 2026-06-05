@@ -3,6 +3,12 @@ import { mutation, query, internalMutation, internalQuery, action } from "./_gen
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 
+// Google sends event status as a free string; the events schema declares a
+// literal union. Anything unrecognised collapses to "confirmed".
+function normalizeEventStatus(s?: string): "confirmed" | "tentative" | "cancelled" {
+  return s === "tentative" || s === "cancelled" ? s : "confirmed";
+}
+
 // ── Auth helper ──────────────────────────────────────────────
 async function getAuthenticatedUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -236,7 +242,7 @@ export const syncGoogleEvent = mutation({
         startTime: args.startTime,
         endTime: args.endTime,
         allDay: args.allDay ?? false,
-        status: args.status || "confirmed",
+        status: normalizeEventStatus(args.status),
         attendees: args.attendees,
         syncStatus: "synced",
         lastGoogleSync: now,
@@ -251,7 +257,7 @@ export const syncGoogleEvent = mutation({
       startTime: args.startTime,
       endTime: args.endTime,
       allDay: args.allDay ?? false,
-      status: args.status || "confirmed",
+      status: normalizeEventStatus(args.status),
       attendees: args.attendees,
       googleEventId: args.googleEventId,
       syncStatus: "synced",
@@ -296,7 +302,7 @@ export const upsertGoogleEvent = internalMutation({
         startTime: args.startTime,
         endTime: args.endTime,
         allDay: args.allDay ?? false,
-        status: args.status || "confirmed",
+        status: normalizeEventStatus(args.status),
         attendees: args.attendees,
         syncStatus: "synced",
         lastGoogleSync: now,
@@ -311,7 +317,7 @@ export const upsertGoogleEvent = internalMutation({
       startTime: args.startTime,
       endTime: args.endTime,
       allDay: args.allDay ?? false,
-      status: args.status || "confirmed",
+      status: normalizeEventStatus(args.status),
       attendees: args.attendees,
       googleEventId: args.googleEventId,
       syncStatus: "synced",

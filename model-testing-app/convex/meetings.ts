@@ -634,7 +634,8 @@ export const promoteActionItemToTask = mutation({
       dueDate: args.taskDueDate || actionItem.dueDate,
       clientId: meeting.clientId,
       projectId: meeting.projectId,
-      assignedTo: args.assignedTo,
+      // tasks.assignedTo is an array; promote the single assignee
+      assignedTo: args.assignedTo ? [args.assignedTo] : undefined,
       createdBy: args.createdBy,
       createdAt: now,
       updatedAt: now,
