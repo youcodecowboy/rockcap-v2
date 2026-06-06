@@ -7,6 +7,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { MEETING_PREP_SKILL_PROMPT } from '@/lib/skillPrompts.generated';
+import { extractJsonObject } from '@/lib/extractJsonObject';
 
 // Meeting-prep responder — v1.1
 //
@@ -260,11 +261,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Strip any accidental code fences the model may have added.
-    const cleaned = textBlock.text
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```\s*$/i, '')
-      .trim();
+    // Extract the JSON object even when the model wraps it in prose
+    // and/or code fences (edge-stripping alone missed prose-prefixed
+    // responses and 502'd the whole book_meeting dispatch).
+    const cleaned = extractJsonObject(textBlock.text) ?? textBlock.text.trim();
 
     let parsed: RespondResult;
     try {
