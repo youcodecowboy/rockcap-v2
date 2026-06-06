@@ -2,6 +2,50 @@ import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { resolveEmailToContactClient } from "./contacts";
 
+// One-off: bulk-reject the stale pending approvals that accumulated while
+// the reply-intent classifier was broken (every reply fell through to a
+// pending client_communication "operator review" row — 227 of them by
+// 2026-06-06) plus the pre-single-gate pending gmail_send rows. The
+// operator confirmed all of these were handled manually outside the
+// system. Scoped by entityType + a creation cutoff so any approval staged
+// AFTER the fix is untouched.
+//
+//   npx convex run migrations:rejectStaleApprovals '{"beforeIso": "2026-06-06T15:00:00Z"}'
+export const rejectStaleApprovals = internalMutation({
+  args: {
+    beforeIso: v.string(),
+    cursor: v.optional(v.string()),
+    // Defaults to the reply-router + cadence types; pass explicitly to
+    // sweep other types (e.g. smoke-test skill_action/other rows).
+    entityTypes: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const types = args.entityTypes ?? ["client_communication", "gmail_send"];
+    const page = await ctx.db
+      .query("approvals")
+      .paginate({ numItems: 300, cursor: args.cursor ?? null });
+    const now = new Date().toISOString();
+    let rejected = 0;
+    for (const a of page.page) {
+      if (a.status !== "pending") continue;
+      if (!types.includes(a.entityType)) continue;
+      if (a.requestedAt >= args.beforeIso) continue;
+      await ctx.db.patch(a._id, {
+        status: "rejected",
+        approvedAt: now,
+        rejectedReason:
+          "stale — handled manually outside the system; bulk-cleared 2026-06-06 after classifier fix",
+      });
+      rejected++;
+    }
+    return {
+      scanned: page.page.length,
+      rejected,
+      nextCursor: page.isDone ? null : page.continueCursor,
+    };
+  },
+});
+
 const GMAIL_TWIN_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 // One-off backfills for the inbound-reply → prospect linkage fix
