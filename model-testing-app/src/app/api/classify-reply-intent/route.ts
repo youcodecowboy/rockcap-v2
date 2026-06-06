@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { promises as fs } from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
+import { CLASSIFY_REPLY_INTENT_PROMPT } from "@/lib/skillPrompts.generated";
 
 // Classify-reply-intent API (cadence-fire v1).
 //
@@ -25,10 +26,17 @@ let cachedSystemPrompt: string | null = null;
 async function getSystemPrompt(): Promise<string> {
   if (cachedSystemPrompt) return cachedSystemPrompt;
   // Path relative to monorepo root; model-testing-app runs from its own cwd
-  // so we go one level up to reach the repo root where skills/ lives.
-  const repoRoot = path.resolve(process.cwd(), "..");
-  const fullPath = path.join(repoRoot, SUB_SKILL_PATH);
-  cachedSystemPrompt = await fs.readFile(fullPath, "utf-8");
+  // so we go one level up to reach the repo root where skills/ lives. On
+  // Vercel ../skills/ is outside the project root and absent from the
+  // function bundle, so fall back to the embedded copy (regenerated via
+  // scripts/embed-skill-prompts.mjs).
+  try {
+    const repoRoot = path.resolve(process.cwd(), "..");
+    const fullPath = path.join(repoRoot, SUB_SKILL_PATH);
+    cachedSystemPrompt = await fs.readFile(fullPath, "utf-8");
+  } catch {
+    cachedSystemPrompt = CLASSIFY_REPLY_INTENT_PROMPT;
+  }
   return cachedSystemPrompt;
 }
 
@@ -46,6 +54,19 @@ interface ClassifyResponse {
 }
 
 export async function POST(request: NextRequest) {
+  // Server-to-server auth: same x-convex-internal-secret pattern as
+  // cadence-compose / meeting-prep-respond. The route is on the Clerk
+  // middleware public list (Clerk would otherwise 404 the cookie-less
+  // Convex fetch before it reached us), so this check is the only gate
+  // between the public internet and a Claude API call.
+  const internalSecret = request.headers.get("x-convex-internal-secret");
+  const secretOk =
+    !!process.env.CONVEX_INTERNAL_SECRET &&
+    internalSecret === process.env.CONVEX_INTERNAL_SECRET;
+  if (!secretOk) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   let body: ClassifyRequest;
   try {
     body = await request.json();
