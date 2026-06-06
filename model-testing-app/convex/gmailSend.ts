@@ -204,6 +204,42 @@ function quoteHeaderAddresses(addresses: string[]): string {
   return addresses.map((a) => a.trim()).filter(Boolean).join(", ");
 }
 
+// Standard (non-url) base64 of a UTF-8 string — for RFC 2047 header words.
+function utf8ToBase64(input: string): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(input, "utf-8").toString("base64");
+  }
+  return btoa(unescape(encodeURIComponent(input)));
+}
+
+// RFC 2047 encode a header value when it contains non-ASCII characters.
+// Message headers are ASCII-only by spec; raw UTF-8 in Subject (e.g. an
+// em-dash) reaches recipients as mojibake ("Ã¢Â€Â”"). Pure-ASCII values
+// pass through untouched. Non-ASCII values become one or more
+// =?UTF-8?B?...?= encoded-words, chunked at ≤45 UTF-8 bytes per word so
+// each encoded-word stays under the 75-char RFC limit, split on code
+// points so multibyte characters never straddle a chunk boundary.
+function encodeMimeHeaderValue(value: string): string {
+  if (/^[\x20-\x7e]*$/.test(value)) return value;
+  const utf8Len = (s: string): number =>
+    typeof Buffer !== "undefined"
+      ? Buffer.byteLength(s, "utf-8")
+      : new TextEncoder().encode(s).length;
+  const words: string[] = [];
+  let chunk = "";
+  for (const cp of Array.from(value)) {
+    if (chunk && utf8Len(chunk + cp) > 45) {
+      words.push(chunk);
+      chunk = cp;
+    } else {
+      chunk += cp;
+    }
+  }
+  if (chunk) words.push(chunk);
+  // Continuation words fold onto new lines (CRLF + space) per RFC 2047 §2.
+  return words.map((w) => `=?UTF-8?B?${utf8ToBase64(w)}?=`).join("\r\n ");
+}
+
 interface Attachment {
   filename: string;
   mimeType: string;
@@ -301,7 +337,7 @@ function composeRfc822(args: ComposeArgs): string {
   headers.push(`To: ${quoteHeaderAddresses(args.to)}`);
   if (args.cc && args.cc.length) headers.push(`Cc: ${quoteHeaderAddresses(args.cc)}`);
   if (args.bcc && args.bcc.length) headers.push(`Bcc: ${quoteHeaderAddresses(args.bcc)}`);
-  headers.push(`Subject: ${args.subject}`);
+  headers.push(`Subject: ${encodeMimeHeaderValue(args.subject)}`);
   headers.push(`MIME-Version: 1.0`);
   if (args.inReplyTo) headers.push(`In-Reply-To: ${args.inReplyTo}`);
   if (args.references && args.references.length) {

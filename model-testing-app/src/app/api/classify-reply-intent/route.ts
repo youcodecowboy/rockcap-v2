@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { CLASSIFY_REPLY_INTENT_PROMPT } from "@/lib/skillPrompts.generated";
+import { extractJsonObject } from "@/lib/extractJsonObject";
 
 // Classify-reply-intent API (cadence-fire v1).
 //
@@ -142,10 +143,8 @@ export async function POST(request: NextRequest) {
   // Strip code fence if model wraps response, then parse JSON
   let parsed: ClassifyResponse;
   try {
-    const cleaned = textBlock.text
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/i, "")
-      .trim();
+    // Prose/fence-tolerant extraction — see extractJsonObject.
+    const cleaned = extractJsonObject(textBlock.text) ?? textBlock.text.trim();
     parsed = JSON.parse(cleaned);
   } catch {
     console.error(
