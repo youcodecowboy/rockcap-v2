@@ -253,16 +253,26 @@ export const internalCreate = internalMutation({
     relatedReplyEventId: v.optional(v.id("replyEvents")),
     relatedSkillRunId: v.optional(v.id("skillRuns")),
     expiresAt: v.optional(v.string()),
+    // Single-gate model: when the operator has ALREADY approved this exact
+    // content upstream (a cadence package's "Approve & Schedule" covers the
+    // subject/body/recipient of every touch), creating a second pending
+    // gate here just parks the send invisibly at /approvals. autoApprove
+    // inserts the row pre-approved (audit trail intact: approvedBy =
+    // requester, requestSourceName says who authorised) and schedules the
+    // executor immediately. The gmail kill-switches are still enforced at
+    // execute time, so this never bypasses /settings/gmail.
+    autoApprove: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    return ctx.db.insert("approvals", {
+    const now = new Date().toISOString();
+    const approvalId = await ctx.db.insert("approvals", {
       entityType: args.entityType,
       summary: args.summary,
       draftPayload: args.draftPayload,
       entityRefId: args.entityRefId,
-      status: "pending",
+      status: args.autoApprove ? "approved" : "pending",
       requestedBy: args.requestedBy,
-      requestedAt: new Date().toISOString(),
+      requestedAt: now,
       requestSource: args.requestSource,
       requestSourceName: args.requestSourceName,
       relatedClientId: args.relatedClientId,
@@ -272,7 +282,14 @@ export const internalCreate = internalMutation({
       relatedReplyEventId: args.relatedReplyEventId,
       relatedSkillRunId: args.relatedSkillRunId,
       expiresAt: args.expiresAt,
+      ...(args.autoApprove
+        ? { approvedBy: args.requestedBy, approvedAt: now }
+        : {}),
     });
+    if (args.autoApprove) {
+      await ctx.scheduler.runAfter(0, executeApprovalRef, { approvalId });
+    }
+    return approvalId;
   },
 });
 

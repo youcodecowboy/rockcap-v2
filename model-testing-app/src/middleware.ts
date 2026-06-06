@@ -46,6 +46,15 @@ const isPublicRoute = createRouteMatcher([
   // here so Clerk doesn't 404-reject the request before the handler's own secret
   // check — same pattern as v4-analyze / hubspot bridges above.
   '/api/structure/render(.*)',
+  // Cadence-fire bridge routes — Convex actions POST here server-to-server
+  // (replyEventProcessor → classify-reply-intent / meeting-prep-respond,
+  // cadenceDispatcher → cadence-compose). All three self-authenticate via
+  // x-convex-internal-secret. Without these entries Clerk 404-rejected the
+  // cookie-less Convex fetches before the handlers ran, which is why every
+  // inbound reply classified as "unknown" (the classifier was never reached).
+  '/api/classify-reply-intent(.*)',
+  '/api/cadence-compose(.*)',
+  '/api/meeting-prep-respond(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.

@@ -66,6 +66,45 @@ async function createOperatorReviewApproval(
     requestSourceName: "cadence-fire/reply-router",
     relatedContactId: args.contactId,
   });
+  // Ping the operator's bell — the approval row alone sits invisibly in the
+  // /approvals queue; a reply that stopped a cadence needs an active nudge.
+  await notifyOperator(ctx, {
+    userId: args.userId,
+    title: "Reply needs your review",
+    message: `${await contactLabel(ctx, args.contactId)} replied${
+      args.replySubject ? ` — "${args.replySubject}"` : ""
+    } (intent: ${args.intent}). Their cadence is paused until you act.`,
+    relatedId: args.replyEventId,
+  });
+}
+
+// Resolve a human-readable label for notification copy.
+async function contactLabel(ctx: any, contactId: Id<"contacts">): Promise<string> {
+  try {
+    const contact = await ctx.runQuery(internal.contacts.getInternal, { contactId });
+    return contact?.name || contact?.email || "A contact";
+  } catch {
+    return "A contact";
+  }
+}
+
+// Best-effort bell notification — never let a notification failure break
+// reply processing itself.
+async function notifyOperator(
+  ctx: any,
+  args: { userId: Id<"users">; title: string; message: string; relatedId?: string },
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.notifications.internalCreate, {
+      userId: args.userId,
+      type: "flag" as const,
+      title: args.title,
+      message: args.message,
+      relatedId: args.relatedId,
+    });
+  } catch (err) {
+    console.error("[reply-router] notifyOperator failed:", err);
+  }
 }
 
 // ── Entry point: Gmail push ──────────────────────────────────────────
@@ -356,7 +395,12 @@ async function processReplyEvent(
     if (appUrl && args.replyBody) {
       const res = await fetch(`${appUrl}/api/classify-reply-intent`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Route self-authenticates (it's on the Clerk public list so the
+          // cookie-less server-to-server POST isn't 404'd by middleware).
+          "x-convex-internal-secret": process.env.CONVEX_INTERNAL_SECRET ?? "",
+        },
         body: JSON.stringify({
           replyBody: args.replyBody,
           replySubject: args.replySubject ?? "",
@@ -364,6 +408,14 @@ async function processReplyEvent(
           cancelledCadenceIds: cancelledIds,
         }),
       });
+      if (!res.ok) {
+        // Surface non-2xx responses — these were previously swallowed
+        // silently, which masked the middleware-404 breakage for weeks.
+        await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
+          replyEventId,
+          message: `classifier returned HTTP ${res.status}`,
+        });
+      }
       if (res.ok) {
         const data = await res.json() as {
           intent?: ClassifiedIntent;
@@ -569,6 +621,12 @@ async function dispatchByIntent(
         requestSource: "background_job",
         requestSourceName: "cadence-fire/meeting-prep-respond",
         relatedContactId: args.contactId,
+      });
+      await notifyOperator(ctx, {
+        userId: args.userId,
+        title: "Meeting request — drafted reply awaiting approval",
+        message: `${await contactLabel(ctx, args.contactId)} wants to meet. A drafted availability reply is waiting at /approvals.`,
+        relatedId: args.replyEventId,
       });
       return { destination: "meeting-prep" };
     }

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { isCadenceFireable } from "./lib/cadenceGating";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
@@ -351,6 +352,11 @@ export const approvePackageInternal = internalMutation({
       });
       patched++;
     }
+    // "Approve & Schedule" should feel immediate: run the dispatcher now so
+    // any touch already due (touch 1 usually is) fires within seconds
+    // instead of waiting up to 5 minutes for the next cron tick. Future
+    // touches are untouched — they fire on their own nextDueAt.
+    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
     return { ok: true, patched };
   },
 });
@@ -474,6 +480,9 @@ export const approvePackage = mutation({
         updatedAt: now,
       });
     }
+    // Fire due touches immediately (same rationale as approvePackageInternal:
+    // "Approve & Schedule" should send touch 1 now, not on the next cron tick).
+    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
     return { ok: true, patched: rows.length };
   },
 });

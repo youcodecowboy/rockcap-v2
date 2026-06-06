@@ -6,6 +6,7 @@ import { executeTool, getToolRegistry } from '@/lib/tools';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
+import { CADENCE_FIRE_SKILL_PROMPT } from '@/lib/skillPrompts.generated';
 
 // Cadence-fire v1.1 composer.
 //
@@ -51,9 +52,16 @@ let cachedSystemPrompt: string | null = null;
 
 async function getSystemPrompt(): Promise<string> {
   if (cachedSystemPrompt) return cachedSystemPrompt;
-  const repoRoot = path.resolve(process.cwd(), '..');
-  const fullPath = path.join(repoRoot, SKILL_PATH);
-  cachedSystemPrompt = await fs.readFile(fullPath, 'utf-8');
+  // ../skills/ is absent from the Vercel function bundle (outside the
+  // project root) — fall back to the embedded copy, regenerated via
+  // scripts/embed-skill-prompts.mjs.
+  try {
+    const repoRoot = path.resolve(process.cwd(), '..');
+    const fullPath = path.join(repoRoot, SKILL_PATH);
+    cachedSystemPrompt = await fs.readFile(fullPath, 'utf-8');
+  } catch {
+    cachedSystemPrompt = CADENCE_FIRE_SKILL_PROMPT;
+  }
   return cachedSystemPrompt;
 }
 

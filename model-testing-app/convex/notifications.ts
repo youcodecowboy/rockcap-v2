@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 // Helper function to get authenticated user
 async function getAuthenticatedUser(ctx: any) {
@@ -19,6 +19,37 @@ async function getAuthenticatedUser(ctx: any) {
 
   return user;
 }
+
+// Internal create — for background jobs (reply router, cadence dispatcher)
+// that have no user session. Same row shape as the public create.
+export const internalCreate = internalMutation({
+  args: {
+    userId: v.id("users"),
+    type: v.union(
+      v.literal("file_upload"),
+      v.literal("reminder"),
+      v.literal("task"),
+      v.literal("changelog"),
+      v.literal("flag"),
+      v.literal("mention"),
+      v.literal("message")
+    ),
+    title: v.string(),
+    message: v.string(),
+    relatedId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("notifications", {
+      userId: args.userId,
+      type: args.type,
+      title: args.title,
+      message: args.message,
+      relatedId: args.relatedId,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    });
+  },
+});
 
 // Mutation: Create notification
 export const create = mutation({

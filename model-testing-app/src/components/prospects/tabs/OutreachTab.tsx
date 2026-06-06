@@ -194,6 +194,20 @@ export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
     }
   }
 
+  // Persist a per-touch firing date immediately (separate from the
+  // subject/body draft flow — a date change is a small, atomic edit and
+  // shouldn't sit unsaved behind the Save button). Backend cadences.update
+  // already accepts nextDueAt.
+  async function handleReschedule(cadence: any, nextDueAtIso: string) {
+    setError(null);
+    try {
+      await updateCadence({ cadenceId: cadence._id, nextDueAt: nextDueAtIso });
+      setSavedFlash((p) => ({ ...p, [cadence._id]: Date.now() }));
+    } catch (e: any) {
+      setError(`Reschedule failed: ${e?.message ?? e}`);
+    }
+  }
+
   function handleRevert(cadence: any) {
     setDrafts((p) => ({
       ...p,
@@ -343,6 +357,7 @@ export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
             onChange={(d) => setDrafts((p) => ({ ...p, [c._id]: d }))}
             onSave={() => handleSave(c)}
             onRevert={() => handleRevert(c)}
+            onReschedule={(iso) => handleReschedule(c, iso)}
           />
         );
       })}
@@ -549,6 +564,7 @@ function TouchCard({
   onChange,
   onSave,
   onRevert,
+  onReschedule,
 }: {
   cadence: any;
   draft: TouchDraft;
@@ -559,10 +575,21 @@ function TouchCard({
   onChange: (d: TouchDraft) => void;
   onSave: () => void;
   onRevert: () => void;
+  onReschedule: (iso: string) => void;
 }) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const alreadyFired = !!cadence.lastFiredAt;
   const wasEdited = !!cadence.editedByOperator;
+
+  // datetime-local wants "YYYY-MM-DDTHH:mm" in LOCAL time; nextDueAt is a
+  // UTC ISO string. Convert for display, and back to UTC ISO on change.
+  const toLocalInputValue = (iso?: string): string => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   return (
     <div
@@ -597,17 +624,50 @@ function TouchCard({
           >
             Touch {cadence.packageOrder}
           </span>
-          <span
-            style={{
-              fontFamily: "ui-monospace, monospace",
-              fontSize: 10,
-              color: colors.text.muted,
-            }}
-          >
-            {alreadyFired
-              ? `fired ${cadence.lastFiredAt?.slice(0, 16) ?? ""}`
-              : `scheduled ${cadence.nextDueAt?.slice(0, 16) ?? "—"}`}
-          </span>
+          {alreadyFired ? (
+            <span
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 10,
+                color: colors.text.muted,
+              }}
+            >
+              {`fired ${cadence.lastFiredAt?.slice(0, 16) ?? ""}`}
+            </span>
+          ) : (
+            <span
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 10,
+                color: colors.text.muted,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              sends
+              <input
+                type="datetime-local"
+                value={toLocalInputValue(cadence.nextDueAt)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  const d = new Date(v);
+                  if (!isNaN(d.getTime())) onReschedule(d.toISOString());
+                }}
+                title="Edit when this touch fires"
+                style={{
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: 10,
+                  color: colors.text.primary,
+                  background: colors.bg.card,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 3,
+                  padding: "2px 4px",
+                }}
+              />
+            </span>
+          )}
           {alreadyFired && (
             <Pill colors={colors} bg={`${colors.accent.green}20`} fg={colors.accent.green} border={`${colors.accent.green}50`}>
               {cadence.lastResult === "approval_staged" ? "draft staged" : (cadence.lastResult ?? "—")}

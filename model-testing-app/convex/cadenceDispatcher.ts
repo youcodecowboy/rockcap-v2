@@ -122,6 +122,12 @@ export const tick = internalAction({
             relatedProjectId: row.relatedProjectId,
             relatedContactId: row.contactId,
             relatedCadenceId: row._id,
+            // Single-gate: the operator's package approval covered this
+            // exact pre-drafted touch, so don't park the send behind a
+            // second pending gate — execute immediately (kill-switches
+            // still enforced at execute time). Legacy/non-package rows
+            // (packageApprovalStatus undefined) keep the pending gate.
+            autoApprove: row.packageApprovalStatus === "approved",
           });
           approvalCreated = true;
         } catch (err) {
@@ -249,6 +255,10 @@ export const tick = internalAction({
             relatedProjectId: row.relatedProjectId,
             relatedContactId: row.contactId,
             relatedCadenceId: row._id,
+            // NOTE: composed touches are NOT auto-approved — unlike
+            // pre-drafted package touches, the operator has never seen this
+            // content (it was composed at fire time), so the pending
+            // approval gate is the operator's first review of it.
           });
           approvalCreated = true;
         } catch (err) {
