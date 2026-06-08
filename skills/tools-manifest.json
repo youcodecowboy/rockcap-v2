@@ -190,6 +190,11 @@
       "description": "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'."
     },
     {
+      "name": "prospect.import",
+      "domain": "client",
+      "description": "Onboard an EXISTING prospect (one you've already worked manually) directly at a chosen pipeline stage, in a single call. Unlike client.create (which always lands a prospect pre-funnel at prospectState=NULL on the assumption prospect-intel runs next), this sets prospectState explicitly so the company appears at the right rung immediately. Composes: create client → transition to prospectState → optional setProspectFacts → optional contacts (first = primary outreach target) → optional outreach-history note. Use for back-filling companies with prior manual outreach (e.g. 'add Acme Developments at active, emailed since Jan'); call once per company, map over a list to bulk-import. prospectState='promoted' also flips clients.status to 'active'; all other states keep 'prospect'. For a genuinely net-new prospect that should start top-of-funnel, use client.create + prospect-intel instead."
+    },
+    {
       "name": "client.get",
       "domain": "client",
       "description": "Get a single client by id. Returns the full client row including status, type, companyName, and metadata."
