@@ -3556,6 +3556,180 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Bulk/manual onboarding (2026-06-08): land an EXISTING prospect at any stage ──
+  // client.create always starts a prospect pre-funnel (prospectState=NULL) on the
+  // assumption prospect-intel runs next. That's wrong for companies the operator
+  // has ALREADY been working manually (hundreds, with prior outreach). This tool
+  // is the one-call onboard-at-stage path: create + transition + facts + contacts
+  // + a history note, so the prospect lands honestly at e.g. 'active' or 'engaged'
+  // without pretending the funnel started today. Call once per company; to bulk
+  // import, the caller maps over a list.
+  {
+    name: "prospect.import",
+    description:
+      "Onboard an EXISTING prospect (one you've already been working manually) directly at a chosen pipeline stage, in a single call. Unlike client.create (which always lands a prospect pre-funnel at prospectState=NULL on the assumption prospect-intel runs next), this sets prospectState explicitly so the company appears at the right rung immediately. Composes: create client → transition to prospectState → optional setProspectFacts → optional contacts → optional outreach-history note. Use for back-filling companies with prior manual outreach (e.g. 'add Acme Developments at active, we've emailed them since Jan'). For a genuinely net-new prospect that should start at the top of the funnel, use client.create + prospect-intel instead. To bulk import, call once per company. prospectState='promoted' also flips clients.status to 'active' (true promotion); all other states keep status='prospect'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Company name. REQUIRED unless promoteFromCompanyId is given (then defaults to the source company's name)." },
+        prospectState: {
+          type: "string",
+          enum: ["researched", "drafted", "needs_revision", "active", "replied", "engaged", "promoted", "parked", "lost"],
+          description: "Pipeline stage to land the prospect at. REQUIRED — that's the whole point of this tool. For manually-worked companies you've emailed, 'active' (outreach in flight) or 'engaged' (in conversation) are the usual choices; 'replied' if they've replied.",
+        },
+        type: { type: "string", description: "Client type: 'borrower' (default) or 'developer'." },
+        promoteFromCompanyId: { type: "string", description: "Optional Convex companies id to promote (inherits metadata + links synced contacts), instead of naked creation by name." },
+        companyName: { type: "string", description: "Optional legal name if different from name." },
+        website: { type: "string", description: "Full URL or 'not-found'." },
+        companiesHouseNumber: { type: "string", description: "Optional 8-digit CH number (or 6 digits prefixed SC/NI/OC). Lights up the CH/sourcing intel later; omit and enrich via prospect-intel if unknown." },
+        primaryDirectorName: { type: "string", description: "Optional operator-readable primary director/principal name." },
+        dealType: {
+          type: "string",
+          enum: ["new_development", "bridging", "existing_asset", "unclassifiable"],
+          description: "Optional canonical deal-type classification, if already known.",
+        },
+        dealSizeRange: { type: "string", description: "Optional display string for indicative deal size, e.g. '£2-5m, low confidence, operator estimate'. Never a naked number." },
+        contacts: {
+          type: "array",
+          description: "Optional people you've been in contact with at this company. The FIRST contact is set as the prospect's primaryContactId (cadence target). Each: { name (required), role?, email?, phone?, linkedinUrl? }.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              role: { type: "string" },
+              email: { type: "string" },
+              phone: { type: "string" },
+              linkedinUrl: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+        outreachHistoryNote: {
+          type: "string",
+          description: "Optional free-text summary of the manual outreach already done, e.g. '12 emails since Jan, last reply 14 May re: Woodberry Park'. Filed as a note on the client so the stage is honest. Use reply.ingestManual separately if you want the actual reply threads rebuilt.",
+        },
+        notes: { type: "string", description: "Optional 1-2 sentence summary stored on the client record." },
+      },
+      required: ["prospectState"],
+    },
+    handler: async (ctx, userId, args) => {
+      const VALID_STATES = [
+        "researched", "drafted", "needs_revision", "active",
+        "replied", "engaged", "promoted", "parked", "lost",
+      ];
+      if (!VALID_STATES.includes(args.prospectState)) {
+        return asText({ error: "invalid_prospect_state", note: `prospectState must be one of: ${VALID_STATES.join(", ")}.` });
+      }
+
+      const type = args.type ?? "borrower";
+      // 'promoted' is a true promotion to a live client; every other stage is
+      // still a prospect in the funnel.
+      const status = args.prospectState === "promoted" ? "active" : "prospect";
+
+      // 1) Create the client (promote an existing company, or naked-by-name).
+      let clientId: string;
+      let createMode: string;
+      if (args.promoteFromCompanyId) {
+        const company = await ctx.runQuery(api.companies.get, { id: args.promoteFromCompanyId });
+        if (!company) {
+          return asText({ error: "company_not_found", note: `companies row ${args.promoteFromCompanyId} not found.` });
+        }
+        clientId = await ctx.runMutation(api.clients.createWithPromotion, {
+          name: args.name ?? (company as any).name,
+          type,
+          status: status as any,
+          companyName: args.companyName ?? (company as any).name,
+          website: args.website ?? (company as any).website,
+          phone: (company as any).phone,
+          address: (company as any).address,
+          city: (company as any).city,
+          country: (company as any).country ?? "United Kingdom",
+          promoteFromCompanyId: args.promoteFromCompanyId as any,
+        });
+        createMode = "promoted";
+      } else {
+        if (!args.name) {
+          return asText({ error: "name_required", note: "Pass `name` (or `promoteFromCompanyId` to promote an existing company)." });
+        }
+        clientId = await ctx.runMutation(api.clients.create, {
+          name: args.name,
+          type,
+          status: status as any,
+          companyName: args.companyName,
+          notes: args.notes,
+          website: args.website,
+          country: "United Kingdom",
+          source: "manual" as const,
+        });
+        createMode = "created";
+      }
+
+      // 2) Land it at the requested pipeline stage (audit fields + HubSpot push-back).
+      await ctx.runMutation(internal.prospects.transitionStateInternal, {
+        clientId: clientId as any,
+        newState: args.prospectState,
+        userId,
+      });
+
+      // 3) Create any known contacts; first one becomes the primary outreach target.
+      const contactIds: string[] = [];
+      for (const c of (args.contacts ?? [])) {
+        if (!c?.name) continue;
+        const cid = await ctx.runMutation(api.contacts.create, {
+          name: c.name,
+          role: c.role,
+          email: c.email,
+          phone: c.phone,
+          linkedinUrl: c.linkedinUrl,
+          company: args.companyName ?? args.name,
+          clientId: clientId as any,
+        });
+        contactIds.push(cid as string);
+      }
+
+      // 4) Promote any known facts into queryable columns (incl. primary contact).
+      const hasFacts =
+        args.companiesHouseNumber || args.website || args.primaryDirectorName ||
+        args.dealType || args.dealSizeRange || contactIds.length > 0;
+      if (hasFacts) {
+        await ctx.runMutation(internal.clients.setProspectFactsInternal, {
+          clientId: clientId as any,
+          companiesHouseNumber: args.companiesHouseNumber,
+          website: args.website,
+          primaryDirectorName: args.primaryDirectorName,
+          primaryContactId: contactIds[0] as any,
+          dealType: args.dealType,
+          dealSizeRange: args.dealSizeRange,
+        });
+      }
+
+      // 5) File the manual-outreach history as a note so the stage is honest.
+      let noteId: string | undefined;
+      if (args.outreachHistoryNote) {
+        noteId = await ctx.runMutation(internal.notes.createFromMarkdownInternal, {
+          userId,
+          title: "Manual outreach history (imported)",
+          markdown: args.outreachHistoryNote,
+          emoji: "📨",
+          clientId: clientId as any,
+          tags: ["imported", "manual-outreach"],
+        }) as string;
+      }
+
+      return asText({
+        status: "imported",
+        clientId,
+        createMode,
+        prospectState: args.prospectState,
+        clientStatus: status,
+        contactsCreated: contactIds.length,
+        primaryContactId: contactIds[0],
+        noteId,
+        note: `Existing prospect onboarded at '${args.prospectState}'. ${args.companiesHouseNumber ? "" : "No CH number set — run prospect-intel to enrich CH/sourcing intel. "}It will not be picked up by the top-of-funnel prospect-intel sweep unless you run it explicitly.`,
+      });
+    },
+  },
+
   // ── Document ingestion (2026-06-01): drop docs → analyze → filed ──
   // The inbound half of close-the-loop. Two-step so file bytes never pass
   // through the model context: (1) requestUpload returns a pre-signed Convex
