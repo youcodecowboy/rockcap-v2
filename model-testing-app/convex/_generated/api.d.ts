@@ -34,6 +34,7 @@ import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dailyBriefs from "../dailyBriefs.js";
 import type * as dataLibrarySnapshots from "../dataLibrarySnapshots.js";
+import type * as dealBook from "../dealBook.js";
 import type * as dealHelpers from "../dealHelpers.js";
 import type * as deals from "../deals.js";
 import type * as directMessages from "../directMessages.js";
@@ -189,6 +190,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   dailyBriefs: typeof dailyBriefs;
   dataLibrarySnapshots: typeof dataLibrarySnapshots;
+  dealBook: typeof dealBook;
   dealHelpers: typeof dealHelpers;
   deals: typeof deals;
   directMessages: typeof directMessages;
