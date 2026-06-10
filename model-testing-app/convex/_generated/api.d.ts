@@ -17,6 +17,7 @@ import type * as bulkBackgroundProcessor from "../bulkBackgroundProcessor.js";
 import type * as bulkUpload from "../bulkUpload.js";
 import type * as cadenceDispatcher from "../cadenceDispatcher.js";
 import type * as cadences from "../cadences.js";
+import type * as caseStudies from "../caseStudies.js";
 import type * as categorySettings from "../categorySettings.js";
 import type * as changelog from "../changelog.js";
 import type * as chatActions from "../chatActions.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   bulkUpload: typeof bulkUpload;
   cadenceDispatcher: typeof cadenceDispatcher;
   cadences: typeof cadences;
+  caseStudies: typeof caseStudies;
   categorySettings: typeof categorySettings;
   changelog: typeof changelog;
   chatActions: typeof chatActions;
