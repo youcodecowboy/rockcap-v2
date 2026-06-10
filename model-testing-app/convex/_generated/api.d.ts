@@ -94,6 +94,7 @@ import type * as knowledgeLibrary from "../knowledgeLibrary.js";
 import type * as leads from "../leads.js";
 import type * as lib_buildGeneratedDocRow from "../lib/buildGeneratedDocRow.js";
 import type * as lib_cadenceGating from "../lib/cadenceGating.js";
+import type * as lib_dealBook from "../lib/dealBook.js";
 import type * as lib_lenderTiers from "../lib/lenderTiers.js";
 import type * as lib_markdownToTipTap from "../lib/markdownToTipTap.js";
 import type * as lib_schemeGrouping from "../lib/schemeGrouping.js";
@@ -247,6 +248,7 @@ declare const fullApi: ApiFromModules<{
   leads: typeof leads;
   "lib/buildGeneratedDocRow": typeof lib_buildGeneratedDocRow;
   "lib/cadenceGating": typeof lib_cadenceGating;
+  "lib/dealBook": typeof lib_dealBook;
   "lib/lenderTiers": typeof lib_lenderTiers;
   "lib/markdownToTipTap": typeof lib_markdownToTipTap;
   "lib/schemeGrouping": typeof lib_schemeGrouping;
