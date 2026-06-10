@@ -1,17 +1,19 @@
 {
   "generatedFrom": "model-testing-app/convex/mcp.ts (seed); refreshed live via meta.listTools",
-  "toolCount": 123,
-  "domainCount": 24,
+  "toolCount": 135,
+  "domainCount": 27,
   "domains": [
     "apollo",
     "approval",
     "bulkUpload",
     "cadence",
+    "caseStudy",
     "checklist",
     "client",
     "clients",
     "companies",
     "contact",
+    "dealBook",
     "document",
     "intelligence",
     "lender",
@@ -24,6 +26,7 @@
     "prospect",
     "reply",
     "skillRun",
+    "sourcing",
     "structure",
     "task",
     "touchpoint"
@@ -138,6 +141,31 @@
       "name": "cadence.update",
       "domain": "cadence",
       "description": "Edit an existing cadence row — its drafted content (`preDraftedTouch`), schedule (`nextDueAt`), recurrence config (`scheduleConfig`: intervalDays / anchorDate / customSchedule), and/or `cadenceType`. All fields optional; only what you pass is changed. Sets editedByOperator + editedAt audit fields (revision re-runs then skip overwriting unless the operator's note calls out the edited touch). Use to reconfigure a cadence from Claude Code — e.g. change a quarterly prospect_followup to monthly, retype it, or rewrite a touch."
+    },
+    {
+      "name": "caseStudy.confirm",
+      "domain": "caseStudy",
+      "description": "Operator confirms or edits a draft case study — sets sector, dealType, region, headline, and referenceable flag. Must be called before a case study is eligible to appear in hook-ladder rung 9 matches."
+    },
+    {
+      "name": "caseStudy.deriveDrafts",
+      "domain": "caseStudy",
+      "description": "Scan completed projects and create draft case-study entries (idempotent). Use to seed the Deal Book index from existing deal history. Existing confirmed entries are not overwritten."
+    },
+    {
+      "name": "caseStudy.list",
+      "domain": "caseStudy",
+      "description": "List case studies joined with project data for operator review and ops. Supports filtering by sector, region, referenceable status, and confirmation state."
+    },
+    {
+      "name": "caseStudy.matchForProspect",
+      "domain": "caseStudy",
+      "description": "Anonymised track-record match for hook-ladder rung 9. Given sector and region, returns operator-confirmed referenceable deals projected to {sector, region, sizeBand, headline} — no client or borrower names. Use in compose-outreach-hook after inferring the prospect's sector."
+    },
+    {
+      "name": "caseStudy.setReferenceable",
+      "domain": "caseStudy",
+      "description": "Toggle a case study's hook eligibility (referenceable true/false) without a full confirm pass. Use to quickly enable or disable a deal's appearance in rung-9 matches."
     },
     {
       "name": "checklist.createCustomItem",
@@ -293,6 +321,11 @@
       "name": "contact.update",
       "domain": "contact",
       "description": "Update an existing contact by id. Pass `id` (required) plus any subset of name/role/email/phone/company/notes to patch — omitted fields are left unchanged. To re-link to a different client pass clientId; to unlink from any client pass clientId=null. Common use: persisting an email discovered via apollo.findEmail (contact.update({id, email})) so a subsequent cadence.create passes the email guard."
+    },
+    {
+      "name": "dealBook.stats",
+      "domain": "dealBook",
+      "description": "Portfolio-level aggregates: open / closed / lost deal counts plus closed-deal time-window breakdowns (30 / 90 / 180 / 365 days). Use for high-level pipeline reporting and deal-velocity summaries."
     },
     {
       "name": "document.analyze",
@@ -598,6 +631,31 @@
       "name": "skillRun.start",
       "domain": "skillRun",
       "description": "Begin a skill execution. Creates a skillRuns row, returns runId. If dedupKey + dedupWindowDays are provided and a prior complete/complete_with_gaps run exists within the window for the same skill+dedupKey, returns status=duplicate_found with the prior run summary so the caller can surface it to the operator before continuing."
+    },
+    {
+      "name": "sourcing.fromLender",
+      "domain": "sourcing",
+      "description": "Source prospect CANDIDATES from a known lender: pull the companies that lender has charged (from the charges service), enrich each with one Companies House profile call (name/status/SIC/town), dedup against the existing client book, and store as `sourcedCompanies` candidates. These are NOT prospects yet — review then promote. Pass the EXACT canonical lender name from sourcing.searchLenders. Filters: status (all|outstanding|satisfied), registeredSince/registeredUntil (YYYY-MM-DD), jurisdiction (ew|sc|ni), entityType (company|llp), propertyContains (free-text scheme/location). Capped at 500 companies — narrow big lenders with registeredSince."
+    },
+    {
+      "name": "sourcing.list",
+      "domain": "sourcing",
+      "description": "List sourced prospect candidates. Filter by state (new|reviewed|promoted|dismissed), lender (canonical name), or batch. Set includeInBook=false to hide companies already in the client book. Returns candidates with CH profile + charge provenance, newest charge first."
+    },
+    {
+      "name": "sourcing.promote",
+      "domain": "sourcing",
+      "description": "Promote a sourced candidate into the prospect pipeline: creates a borrower client (status=prospect) linked to the CH number, schedules the full Companies House sync, and marks the candidate 'promoted'. Apollo / deep intel is a separate operator-driven step after this. Returns the new client id."
+    },
+    {
+      "name": "sourcing.searchLenders",
+      "domain": "sourcing",
+      "description": "Disambiguate a lender name against the charges dataset. Returns distinct canonical lenders matching the query with charge/company counts — e.g. 'PARAGON' resolves to PARAGON BANK PLC vs PARAGON DEVELOPMENT FINANCE LIMITED. Call this FIRST to get the exact canonical name to pass to sourcing.fromLender."
+    },
+    {
+      "name": "sourcing.setState",
+      "domain": "sourcing",
+      "description": "Set a sourced candidate's state to reviewed or dismissed (or back to new), with optional notes. Use to triage a sourcing batch without promoting."
     },
     {
       "name": "structure.renderChart",

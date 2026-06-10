@@ -6,7 +6,7 @@ Skills, sub-skills, references, corpora, and templates that power the RockCap Cl
 
 If you're an operator-agent (Claude Code) figuring out where to start:
 
-1. **`CATALOGUE.md`** — every MCP tool (123 across 24 domains), grouped by domain, with "when to use" guidance and common-pattern cookbooks. **Start here for tool discovery.**
+1. **`CATALOGUE.md`** — every MCP tool (129 across 25 domains), grouped by domain, with "when to use" guidance and common-pattern cookbooks. **Start here for tool discovery.**
 2. **`skills/README.md`** — the skill index. Lists all 22 skills with maturity status (v2-hardened vs skeleton) and lifecycle mapping.
 3. **`CONVENTIONS.md`** — cross-skill voice, style, and operating rules. Every skill follows these.
 4. **`SETUP.md`** — initial environment + integration setup.
@@ -56,7 +56,7 @@ The catalogue + skill index are the operator-agent's primary discovery surface. 
 
 **When you add a reference file under a skill's `references/`:** add it to that SKILL.md's References section in the same commit.
 
-The cost of staying disciplined is small (a one-line edit per change). The cost of letting it drift compounds — at 123 tools and 22 skills, Claude Code can already only pick well if the documentation is accurate. (This is now also enforced mechanically: `tools/validate-skills.mjs` blocks any commit that references a non-existent tool — see `CLAUDE.md` + `skill-forge`.)
+The cost of staying disciplined is small (a one-line edit per change). The cost of letting it drift compounds — at 129 tools and 22 skills, Claude Code can already only pick well if the documentation is accurate. (This is now also enforced mechanically: `tools/validate-skills.mjs` blocks any commit that references a non-existent tool — see `CLAUDE.md` + `skill-forge`.)
 
 ## Version timeline
 
