@@ -142,13 +142,17 @@ export default function DealBookPage() {
         </tbody>
       </table>
 
-      {confirmId && (
-        <ConfirmPanel
-          entry={caseStudies.find((c) => c._id === confirmId)}
-          onClose={() => setConfirmId(null)}
-          colors={colors}
-        />
-      )}
+      {(() => {
+        const entry = confirmId ? caseStudies.find((c) => c._id === confirmId) : null;
+        return entry ? (
+          <ConfirmPanel
+            key={entry._id}
+            entry={entry}
+            onClose={() => setConfirmId(null)}
+            colors={colors}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }
