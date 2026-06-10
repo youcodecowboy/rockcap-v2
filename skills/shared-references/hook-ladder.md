@@ -56,7 +56,7 @@ Verbatim: "looks like you have some really exciting schemes on at the moment"; "
 ### 9. Sub-sector match / RockCap recent deal (~5%, high specificity when available)
 References a RockCap deal that matches the prospect's sector. Name the deal RockCap led on, never the prospect-side counterparty.
 Verbatim: "we did some work on a co-living pipeline a client is building across the [REGION]"; "we've arranged funding on a couple of rental schemes in the [REGION]"; "we've done a couple of similar [TYPE] schemes".
-- **Our data:** the **Deal Book / case-study index** — query `caseStudy.matchForProspect({sector, region})`. Returns only operator-confirmed, `referenceable` deals, projected to an anonymised `{sector, region, sizeBand, headline}` (regions/sectors, never names). Sectors are the canonical set in `deal-sectors.md`. Hard rule: never name the prospect-side client; the RockCap-led deal may be named only if the operator has cleared it.
+- **Our data:** the **Deal Book / case-study index** — query `caseStudy.matchForProspect({sector, region})`. Returns only operator-confirmed, `referenceable` deals, projected to an anonymised `{sector, region, sizeBand, dealType, headline}` (regions/sectors, never names). Sectors are the canonical set in `deal-sectors.md`. Hard rule: never name the prospect-side client; the RockCap-led deal may be named only if the operator has cleared it.
 
 ### 10. Generic market (last resort, ~5%)
 Verbatim: "how are you finding the market at the moment?"

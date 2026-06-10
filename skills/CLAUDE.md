@@ -53,7 +53,7 @@ that saving happens for them.
 
 ## Where to look first
 
-1. **`CATALOGUE.md`** — every MCP tool (129 across 25 domains), grouped by
+1. **`CATALOGUE.md`** — every MCP tool (135 across 27 domains), grouped by
    domain, with "when to use" guidance. Start here for tool discovery.
 2. **`skills/README.md`** — the skill index: all skills + maturity status +
    deal-lifecycle map.
