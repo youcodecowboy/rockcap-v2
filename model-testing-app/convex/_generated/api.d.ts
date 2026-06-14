@@ -134,6 +134,7 @@ import type * as planning from "../planning.js";
 import type * as projectDataLibrary from "../projectDataLibrary.js";
 import type * as projects from "../projects.js";
 import type * as property from "../property.js";
+import type * as prospectStages from "../prospectStages.js";
 import type * as prospecting from "../prospecting.js";
 import type * as prospects from "../prospects.js";
 import type * as pushTokens from "../pushTokens.js";
@@ -287,6 +288,7 @@ declare const fullApi: ApiFromModules<{
   projectDataLibrary: typeof projectDataLibrary;
   projects: typeof projects;
   property: typeof property;
+  prospectStages: typeof prospectStages;
   prospecting: typeof prospecting;
   prospects: typeof prospects;
   pushTokens: typeof pushTokens;

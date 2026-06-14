@@ -6,6 +6,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { rungFor, RUNGS, PROSPECT_RUNGS } from "@/lib/prospects/ladder";
+import { derivePipelineStage, type PipelineStage } from "@/lib/prospects/stages";
 import { computeProspectFlags } from "@/lib/prospects/flags";
 import { FlagChip } from "../FlagChip";
 
@@ -30,7 +31,7 @@ function dealTypeLabel(dealType: string | undefined | null): string {
 // Holding rungs shown collapsed beneath the active ladder.
 const HOLDING_RUNGS = [RUNGS.promoted, RUNGS.parked, RUNGS.lost];
 
-export function ProspectsTab() {
+export function ProspectsTab({ pipelineStage }: { pipelineStage?: PipelineStage } = {}) {
   const colors = useColors();
   const router = useRouter();
   const [holdingOpen, setHoldingOpen] = useState(false);
@@ -51,7 +52,11 @@ export function ProspectsTab() {
       { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }
     > | undefined) ?? {};
   const allProspects = (allClients as any[]).filter(
-    (c) => c.status === "prospect" && c.prospectState,
+    (c) =>
+      c.status === "prospect" &&
+      c.prospectState &&
+      // When rendered inside a stage dashboard, narrow to that pipeline stage.
+      (!pipelineStage || derivePipelineStage(c) === pipelineStage),
   );
   const readyCount = allProspects.filter((c) => c.outreachReadyAt).length;
   const prospects = readyOnly

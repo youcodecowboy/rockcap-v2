@@ -7,6 +7,7 @@ import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
 import { FlagChip } from "./FlagChip";
+import { PIPELINE_STAGES, derivePipelineStage } from "@/lib/prospects/stages";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
@@ -29,8 +30,25 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
   const transition = useMutation(api.prospects.transitionState as any);
+  const promoteStage = useMutation(api.prospectStages.promoteStage as any);
   const [promoting, setPromoting] = useState(false);
   const [changingStage, setChangingStage] = useState(false);
+  const [changingPipeline, setChangingPipeline] = useState(false);
+
+  // Effective pipeline stage (stored value wins; else derived from prospectState).
+  const pipelineStage = derivePipelineStage(prospect ?? {});
+
+  const handlePipelineChange = async (toStage: string) => {
+    if (!prospect?._id || changingPipeline || toStage === pipelineStage) return;
+    setChangingPipeline(true);
+    try {
+      await promoteStage({ clientId: prospect._id as string, toStage });
+    } catch (err) {
+      console.error("Failed to change pipeline stage", err);
+    } finally {
+      setChangingPipeline(false);
+    }
+  };
 
   // Collapse the chrome (breadcrumb + metrics cards + title meta) once the
   // operator scrolls into the content, so the sticky header stops eating half
@@ -144,7 +162,31 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Manual stage control — operator can advance to any stage. */}
+            {/* Manual pipeline-stage promotion — moves the prospect between the
+                5 dashboards. Separate axis from prospectState (the Stage control). */}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
+              Pipeline
+              <select
+                value={pipelineStage ?? ""}
+                disabled={changingPipeline}
+                onChange={(e) => handlePipelineChange(e.target.value)}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: `1px solid ${colors.border.default}`,
+                  background: colors.bg.card,
+                  color: colors.text.primary,
+                  cursor: changingPipeline ? "default" : "pointer",
+                }}
+              >
+                {!pipelineStage && <option value="">— holding —</option>}
+                {PIPELINE_STAGES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            {/* Manual stage control — operator can advance prospectState to any stage. */}
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
               Stage
               <select

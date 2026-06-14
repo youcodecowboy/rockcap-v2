@@ -116,6 +116,24 @@ export default defineSchema({
     // ready-but-not-yet-drafted prospects via clients.listOutreachReady.
     outreachReadyAt: v.optional(v.string()), // ISO timestamp of the accept
     outreachReadyBy: v.optional(v.id("users")), // operator who accepted
+
+    // ── Pipeline stage (v2 — stage-by-stage dashboards, 2026-06-14) ──
+    // The operator's MANUAL 5-stage pipeline position, a separate axis from
+    // prospectState (which the outreach engine moves automatically). Drives the
+    // stage-by-stage prospecting dashboards. When unset, the dashboards derive a
+    // stage from prospectState (see src/lib/prospects/stages.ts → derivePipelineStage),
+    // so existing prospects appear with no migration. Operators promote between
+    // stages via prospectStages.promoteStage. Prospects sit in "qualified" until
+    // manually promoted to a client (clients.activate).
+    pipelineStage: v.optional(v.union(
+      v.literal("cold_outreach"),
+      v.literal("warm_pre_meeting"),
+      v.literal("warm_post_meeting"),
+      v.literal("pre_qualification"),
+      v.literal("qualified"),
+    )),
+    pipelineStageChangedAt: v.optional(v.string()),
+    pipelineStageChangedBy: v.optional(v.id("users")),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
@@ -123,6 +141,7 @@ export default defineSchema({
     .index("by_hubspot_id", ["hubspotCompanyId"])
     .index("by_last_accessed", ["lastAccessedAt"])
     .index("by_prospect_state", ["prospectState"])
+    .index("by_pipeline_stage", ["pipelineStage"])
     .index("by_companies_house_number", ["companiesHouseNumber"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
