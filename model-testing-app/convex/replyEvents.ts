@@ -109,6 +109,7 @@ export const markProcessedInternal = internalMutation({
       v.literal("operator_review"),
       v.literal("restored_cadences"),
       v.literal("no_contact_match"),
+      v.literal("unlinked_no_review"),
     ),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
   },

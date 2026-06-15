@@ -4303,6 +4303,9 @@ export default defineSchema({
       v.literal("operator_review"),
       v.literal("restored_cadences"),
       v.literal("no_contact_match"),
+      // Contact matched but is not tied to a client/prospect — recorded but
+      // not classified or reviewed (suppresses non-prospect review noise).
+      v.literal("unlinked_no_review"),
     )),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
     processed: v.boolean(),
