@@ -18,6 +18,9 @@ export const rejectStaleApprovals = internalMutation({
     // Defaults to the reply-router + cadence types; pass explicitly to
     // sweep other types (e.g. smoke-test skill_action/other rows).
     entityTypes: v.optional(v.array(v.string())),
+    // Override the rejection reason recorded on each swept row. Defaults to
+    // the original 2026-06-06 classifier-fix cleanup wording.
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const types = args.entityTypes ?? ["client_communication", "gmail_send"];
@@ -34,6 +37,7 @@ export const rejectStaleApprovals = internalMutation({
         status: "rejected",
         approvedAt: now,
         rejectedReason:
+          args.reason ??
           "stale — handled manually outside the system; bulk-cleared 2026-06-06 after classifier fix",
       });
       rejected++;
