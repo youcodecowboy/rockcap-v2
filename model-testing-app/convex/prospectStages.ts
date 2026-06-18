@@ -2,14 +2,14 @@
 // Prospect PIPELINE STAGE dashboards (v2) — server aggregation.
 //
 //   pipelineOverview  → per-stage counts + pipeline value + action-item counts
-//                       (powers the /prospects summary page)
-//   stageDashboard    → full KPI set + normalized action-items list for ONE
-//                       stage (powers /prospects/[stage])
+//                       + the curated cross-pipeline KPI strip (summary page)
+//   stageDashboard    → bespoke KPI set + ladder + action-items for ONE stage
 //   promoteStage      → operator moves a prospect between the 5 manual stages
+//   setQualSubStage   → operator advances a prospect's pre-qual / qualified step
 //
-// Stage derivation is duplicated here from src/lib/prospects/stages.ts because
-// importing app code across the Convex bundle boundary is fragile. KEEP THE TWO
-// IN SYNC: the stage keys + derivesFrom mapping must match.
+// Stage derivation + the ladder keys + targets are duplicated here from
+// src/lib/prospects/stages.ts because importing app code across the Convex
+// bundle boundary is fragile. KEEP THE TWO IN SYNC.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { query, mutation } from "./_generated/server";
@@ -26,7 +26,6 @@ const STAGE_KEYS = [
 type Stage = (typeof STAGE_KEYS)[number];
 
 // prospectState → default stage (only when no pipelineStage is stored).
-// Mirrors derivesFrom in src/lib/prospects/stages.ts.
 const DERIVE: Record<string, Stage> = {
   researched: "cold_outreach",
   drafted: "cold_outreach",
@@ -34,6 +33,42 @@ const DERIVE: Record<string, Stage> = {
   active: "cold_outreach",
   replied: "warm_pre_meeting",
   engaged: "warm_post_meeting",
+};
+
+// Ladder step keys — KEEP IN SYNC with PRE_QUAL_STEPS / QUALIFIED_STEPS.
+const PRE_QUAL_KEYS = [
+  "modelling_required",
+  "modelling_review_required",
+  "qualitative_feedback_required",
+  "feedback_given",
+  "feedback_discussed",
+] as const;
+const QUALIFIED_KEYS = [
+  "terms_requested",
+  "terms_presented",
+  "progression_to_credit",
+  "formal_dd",
+  "credit_approved",
+] as const;
+const SUBSTAGE_LABELS: Record<string, string> = {
+  modelling_required: "Modelling required",
+  modelling_review_required: "Modelling review required",
+  qualitative_feedback_required: "Qualitative feedback required",
+  feedback_given: "Feedback given",
+  feedback_discussed: "Feedback discussed",
+  terms_requested: "Terms requested",
+  terms_presented: "Terms presented",
+  progression_to_credit: "Progression to credit",
+  formal_dd: "Formal due diligence",
+  credit_approved: "Credit approved",
+};
+
+// House targets — KEEP IN SYNC with PIPELINE_TARGETS in src/lib/prospects/stages.ts.
+const TARGETS = {
+  weeklyReachOut: 10,
+  weeklyFollowUp: 10,
+  monthlyMeetings: 8,
+  monthlyTermsRequested: 5,
 };
 
 function effectiveStage(c: any): Stage | null {
@@ -44,9 +79,8 @@ function effectiveStage(c: any): Stage | null {
   return DERIVE[c.prospectState as string] ?? null;
 }
 
-// Best-effort numeric value (GBP) parsed from the dealSizeRange display string
-// (e.g. "£2-5m, medium confidence …" → 3_500_000). Returns null when absent /
-// unparseable so callers can treat value as unknown rather than zero.
+// ── Value parsing ────────────────────────────────────────────────────────────
+
 function parseDealValueGBP(s?: string | null): number | null {
   if (!s) return null;
   const m = s.match(/£\s*([\d.]+)\s*(?:[-–—]|to)?\s*([\d.]+)?\s*(m|k|bn)?/i);
@@ -72,30 +106,71 @@ function pct(numer: number, denom: number): string {
   return `${Math.round((numer / denom) * 100)}%`;
 }
 
+// ── Time-window engine ───────────────────────────────────────────────────────
+// All KPIs that say "this week / this month / rolling average" reduce to
+// bucketing a list of ISO timestamps. "This X" uses the calendar period (so a
+// weekly target resets Monday); rolling averages use trailing windows.
+
+const DAY = 86_400_000;
+
+function startOfWeekUTC(now: number): number {
+  const d = new Date(now);
+  const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - dow * DAY;
+}
+function startOfMonthUTC(now: number): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
+
+/** Parse ISO strings → epoch ms, dropping anything unparseable. */
+function epochs(values: (string | undefined | null)[]): number[] {
+  const out: number[] = [];
+  for (const s of values) {
+    if (!s) continue;
+    const t = Date.parse(s);
+    if (isFinite(t)) out.push(t);
+  }
+  return out;
+}
+const since = (ts: number[], from: number, to: number) =>
+  ts.filter((t) => t >= from && t <= to).length;
+const perWeek = (ts: number[], now: number, weeks = 8) =>
+  since(ts, now - weeks * 7 * DAY, now) / weeks;
+const perMonth = (ts: number[], now: number, months = 6) =>
+  since(ts, now - Math.round(months * 30.44) * DAY, now) / months;
+const f1 = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+
+// ── KPI shape ────────────────────────────────────────────────────────────────
+
+type Kpi = {
+  label: string;
+  value: string;
+  meta?: string;
+  accentKey?: string;
+  /** When present, the tile renders value vs. this house target. */
+  target?: number;
+};
+
 // ── Gather the "requires action" signals once, keyed by clientId ─────────────
-// Returns maps so per-stage / per-prospect rollups are O(1) lookups.
 
 async function gatherActionSignals(ctx: any) {
-  // Unrouted inbound replies awaiting operator triage.
   const unrouted = await ctx.db
     .query("replyEvents")
     .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", "operator_review"))
     .collect();
   const replies = unrouted.filter((r: any) => !r.processed && r.linkedClientId);
 
-  // Pending approvals (overnight drafts / sends awaiting review).
   const pendingApprovals = (await ctx.db
     .query("approvals")
     .withIndex("by_status", (q: any) => q.eq("status", "pending"))
     .collect()) as any[];
 
-  // Cadence packages awaiting approval ("overnight templates to review").
   const pendingCadences = (await ctx.db
     .query("cadences")
     .withIndex("by_package_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
     .collect()) as any[];
 
-  // Intel runs that failed or completed with gaps → "intelligence to rerun".
   const failedRuns = (await ctx.db
     .query("skillRuns")
     .withIndex("by_status", (q: any) => q.eq("status", "failed"))
@@ -111,7 +186,334 @@ async function gatherActionSignals(ctx: any) {
   return { replies, pendingApprovals, pendingCadences, intelRuns };
 }
 
-// ── Pipeline overview — one card per stage for the summary page ──────────────
+// ── Per-prospect activity rollup for a stage ─────────────────────────────────
+// Collects every timestamped event stream the KPIs draw on, once, so the
+// window math is pure array work afterwards.
+
+async function gatherStageActivity(ctx: any, prospects: any[]) {
+  const reachOutTs: number[] = []; // first outbound email per prospect
+  const followUpTs: number[] = []; // subsequent outbound emails
+  const replyTs: number[] = [];
+  const meetingHeldTs: number[] = []; // meetingDate in the past
+  const meetingBookedTs: number[] = []; // createdAt (when it was scheduled)
+  const callTs: number[] = []; // meetingType === call, by meetingDate
+  const f2fTs: number[] = []; // other meeting types, by meetingDate
+  const schemeTs: number[] = []; // prospectSchemes createdAt
+  const liveSchemeTs: number[] = []; // createdAt of status === live schemes
+  // qual sub-stage transition timestamps, keyed by destination step
+  const subStageEnteredTs: Record<string, number[]> = {};
+
+  let contacted = 0;
+  let replied = 0;
+  let meetingsBookedProspects = 0;
+  let arranging = 0; // replied but no meeting yet
+  let liveSchemes = 0;
+  let pipelineValueGBP = 0;
+  const now = Date.now();
+
+  for (const p of prospects) {
+    const touchpoints = await ctx.db
+      .query("touchpoints")
+      .withIndex("by_related_client", (q: any) => q.eq("relatedClientId", p._id))
+      .collect();
+    const outbound = touchpoints
+      .filter((t: any) => t.direction === "outbound" && t.kind === "email")
+      .map((t: any) => Date.parse(t.occurredAt))
+      .filter((n: number) => isFinite(n))
+      .sort((a: number, b: number) => a - b);
+    if (outbound.length > 0) {
+      contacted += 1;
+      reachOutTs.push(outbound[0]);
+      for (let i = 1; i < outbound.length; i++) followUpTs.push(outbound[i]);
+    }
+
+    const replies = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_linked_client", (q: any) => q.eq("linkedClientId", p._id))
+      .collect();
+    let hasReply = false;
+    for (const r of replies) {
+      const t = Date.parse(r.receivedAt);
+      if (isFinite(t)) {
+        replyTs.push(t);
+        hasReply = true;
+      }
+    }
+    if (hasReply) replied += 1;
+
+    const meetings = await ctx.db
+      .query("meetings")
+      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
+      .collect();
+    const realMeetings = meetings.filter((m: any) => m.reviewState !== "confirmed_remove");
+    if (realMeetings.length > 0) meetingsBookedProspects += 1;
+    if (hasReply && realMeetings.length === 0) arranging += 1;
+    for (const m of realMeetings) {
+      const md = Date.parse(m.meetingDate);
+      if (isFinite(md) && md <= now) meetingHeldTs.push(md);
+      const created = Date.parse(m.createdAt ?? m.meetingDate);
+      if (isFinite(created)) meetingBookedTs.push(created);
+      if (isFinite(md)) (m.meetingType === "call" ? callTs : f2fTs).push(md);
+    }
+
+    const schemes = await ctx.db
+      .query("prospectSchemes")
+      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
+      .collect();
+    for (const s of schemes) {
+      const t = Date.parse(s.createdAt);
+      if (isFinite(t)) {
+        schemeTs.push(t);
+        if (s.status === "live") {
+          liveSchemeTs.push(t);
+          liveSchemes += 1;
+        }
+      }
+    }
+
+    const events = await ctx.db
+      .query("prospectStageEvents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
+      .collect();
+    for (const e of events) {
+      if (e.kind !== "qual_substage") continue;
+      const t = Date.parse(e.at);
+      if (!isFinite(t)) continue;
+      (subStageEnteredTs[e.toValue] ??= []).push(t);
+    }
+
+    const val = parseDealValueGBP(p.dealSizeRange);
+    if (val) pipelineValueGBP += val;
+  }
+
+  // current sub-stage tallies (where prospects sit right now)
+  const subStageNow: Record<string, number> = {};
+  for (const p of prospects) {
+    if (p.qualSubStage) subStageNow[p.qualSubStage] = (subStageNow[p.qualSubStage] ?? 0) + 1;
+  }
+
+  return {
+    now,
+    reachOutTs, followUpTs, replyTs,
+    meetingHeldTs, meetingBookedTs, callTs, f2fTs,
+    schemeTs, liveSchemeTs,
+    subStageEnteredTs, subStageNow,
+    contacted, replied, meetingsBookedProspects, arranging, liveSchemes,
+    pipelineValueGBP,
+  };
+}
+
+type Activity = Awaited<ReturnType<typeof gatherStageActivity>>;
+type MetricGroup = { title: string; kpis: Kpi[] };
+
+// ── Per-stage KPI builders ───────────────────────────────────────────────────
+// Each returns { headline (top KpiRow), groups (panels of tiles) }. Bespoke per
+// the client's KPI spec.
+
+function coldKpis(a: Activity, count: number) {
+  const { now } = a;
+  const w0 = startOfWeekUTC(now);
+  const m0 = startOfMonthUTC(now);
+  const reachThisWeek = since(a.reachOutTs, w0, now);
+  const followThisWeek = since(a.followUpTs, w0, now);
+  const repliesThisMonth = since(a.replyTs, m0, now);
+
+  const headline: Kpi[] = [
+    { label: "Prospects", value: String(count), accentKey: "blue" },
+    { label: "Reach-outs · wk", value: String(reachThisWeek), target: TARGETS.weeklyReachOut, accentKey: "blue" },
+    { label: "Follow-ups · wk", value: String(followThisWeek), target: TARGETS.weeklyFollowUp },
+    { label: "Replies · mo", value: String(repliesThisMonth), accentKey: "green" },
+  ];
+  const groups: MetricGroup[] = [
+    {
+      title: "Reach-outs",
+      kpis: [
+        { label: "This week", value: String(reachThisWeek), target: TARGETS.weeklyReachOut },
+        { label: "Rolling avg / wk", value: f1(perWeek(a.reachOutTs, now)), meta: "8-wk trailing" },
+        { label: "Rolling avg / mo", value: f1(perMonth(a.reachOutTs, now)), meta: "6-mo trailing" },
+      ],
+    },
+    {
+      title: "Follow-ups",
+      kpis: [
+        { label: "This week", value: String(followThisWeek), target: TARGETS.weeklyFollowUp },
+        { label: "Rolling avg / wk", value: f1(perWeek(a.followUpTs, now)), meta: "8-wk trailing" },
+        { label: "Rolling avg / mo", value: f1(perMonth(a.followUpTs, now)), meta: "6-mo trailing" },
+      ],
+    },
+    {
+      title: "Replies",
+      kpis: [
+        { label: "This month", value: String(repliesThisMonth), accentKey: "green" },
+        { label: "Rolling avg / mo", value: f1(perMonth(a.replyTs, now)), meta: "6-mo trailing" },
+        { label: "Response rate", value: pct(a.replied, a.contacted), meta: `${a.replied}/${a.contacted} contacted`, accentKey: "green" },
+        { label: "Per template", value: "—", meta: "needs template attribution" },
+      ],
+    },
+  ];
+  return { headline, groups, ladder: null };
+}
+
+function warmPreKpis(a: Activity, count: number) {
+  const { now } = a;
+  const m0 = startOfMonthUTC(now);
+  const meetingsThisMonth = since(a.meetingHeldTs, m0, now);
+  const bookedThisMonth = since(a.meetingBookedTs, m0, now);
+  const callsThisMonth = since(a.callTs, m0, now);
+  const f2fThisMonth = since(a.f2fTs, m0, now);
+
+  const headline: Kpi[] = [
+    { label: "Prospects", value: String(count), accentKey: "purple" },
+    { label: "Meetings · mo", value: String(meetingsThisMonth), target: TARGETS.monthlyMeetings, accentKey: "cyan" },
+    { label: "Arranging", value: String(a.arranging), accentKey: a.arranging > 0 ? "orange" : undefined, meta: "replied, no meeting" },
+    { label: "Booked · mo", value: String(bookedThisMonth) },
+  ];
+  const groups: MetricGroup[] = [
+    {
+      title: "Meetings",
+      kpis: [
+        { label: "Held this month", value: String(meetingsThisMonth), target: TARGETS.monthlyMeetings },
+        { label: "Rolling held / mo", value: f1(perMonth(a.meetingHeldTs, now)), meta: "6-mo trailing" },
+        { label: "Booked this month", value: String(bookedThisMonth) },
+        { label: "Rolling booked / mo", value: f1(perMonth(a.meetingBookedTs, now)), meta: "6-mo trailing" },
+      ],
+    },
+    {
+      title: "Format (this month)",
+      kpis: [
+        { label: "Calls", value: String(callsThisMonth), accentKey: "blue" },
+        { label: "Face-to-face", value: String(f2fThisMonth), accentKey: "purple" },
+        { label: "→ deals", value: "—", meta: "outcome link pending" },
+      ],
+    },
+    {
+      title: "Pipeline",
+      kpis: [
+        { label: "Arranging now", value: String(a.arranging), accentKey: a.arranging > 0 ? "orange" : undefined },
+        { label: "Pipeline value", value: a.pipelineValueGBP > 0 ? fmtGBP(a.pipelineValueGBP) : "—", accentKey: "green" },
+      ],
+    },
+  ];
+  return { headline, groups, ladder: null };
+}
+
+function warmPostKpis(a: Activity, count: number) {
+  const { now } = a;
+  const m0 = startOfMonthUTC(now);
+  const schemesThisMonth = since(a.schemeTs, m0, now);
+  const followThisMonth = since(a.followUpTs, m0, now);
+  const bookedThisMonth = since(a.meetingBookedTs, m0, now);
+
+  const headline: Kpi[] = [
+    { label: "Prospects", value: String(count), accentKey: "cyan" },
+    { label: "Schemes · mo", value: String(schemesThisMonth), accentKey: "cyan" },
+    { label: "Follow-ups · mo", value: String(followThisMonth) },
+    { label: "Live schemes", value: String(a.liveSchemes), accentKey: "green" },
+  ];
+  const groups: MetricGroup[] = [
+    {
+      title: "Schemes",
+      kpis: [
+        { label: "Received this month", value: String(schemesThisMonth) },
+        { label: "Rolling received / mo", value: f1(perMonth(a.schemeTs, now)), meta: "6-mo trailing" },
+        { label: "Live discussed", value: String(a.liveSchemes), accentKey: "green" },
+        { label: "Rolling live / mo", value: f1(perMonth(a.liveSchemeTs, now)), meta: "6-mo trailing" },
+      ],
+    },
+    {
+      title: "Follow-up",
+      kpis: [
+        { label: "Emails this month", value: String(followThisMonth) },
+        { label: "Rolling emails / mo", value: f1(perMonth(a.followUpTs, now)), meta: "6-mo trailing" },
+        { label: "Meetings booked / mo", value: String(bookedThisMonth) },
+        { label: "Rolling booked / mo", value: f1(perMonth(a.meetingBookedTs, now)), meta: "6-mo trailing" },
+      ],
+    },
+  ];
+  return { headline, groups, ladder: null };
+}
+
+function ladderData(a: Activity, keys: readonly string[]) {
+  return keys.map((k) => ({
+    key: k,
+    label: SUBSTAGE_LABELS[k] ?? k,
+    count: a.subStageNow[k] ?? 0,
+  }));
+}
+
+function preQualKpis(a: Activity, count: number) {
+  const { now } = a;
+  const m0 = startOfMonthUTC(now);
+  const given = a.subStageEnteredTs["feedback_given"] ?? [];
+  const discussed = a.subStageEnteredTs["feedback_discussed"] ?? [];
+  const awaiting =
+    (a.subStageNow["modelling_required"] ?? 0) +
+    (a.subStageNow["modelling_review_required"] ?? 0) +
+    (a.subStageNow["qualitative_feedback_required"] ?? 0);
+
+  const headline: Kpi[] = [
+    { label: "Prospects", value: String(count), accentKey: "orange" },
+    { label: "Feedback given · mo", value: String(since(given, m0, now)), accentKey: "green" },
+    { label: "Discussed · mo", value: String(since(discussed, m0, now)) },
+    { label: "Awaiting feedback", value: String(awaiting), accentKey: awaiting > 0 ? "orange" : undefined },
+  ];
+  const groups: MetricGroup[] = [
+    {
+      title: "Throughput",
+      kpis: [
+        { label: "Feedback given · mo", value: String(since(given, m0, now)), accentKey: "green" },
+        { label: "Rolling given / mo", value: f1(perMonth(given, now)), meta: "6-mo trailing" },
+        { label: "Feedback discussed · mo", value: String(since(discussed, m0, now)) },
+        { label: "Rolling discussed / mo", value: f1(perMonth(discussed, now)), meta: "6-mo trailing" },
+      ],
+    },
+  ];
+  return { headline, groups, ladder: { title: "Pre-qualification ladder", steps: ladderData(a, PRE_QUAL_KEYS) } };
+}
+
+function qualifiedKpis(a: Activity, count: number) {
+  const { now } = a;
+  const m0 = startOfMonthUTC(now);
+  const requested = a.subStageEnteredTs["terms_requested"] ?? [];
+  const requestedThisMonth = since(requested, m0, now);
+
+  const headline: Kpi[] = [
+    { label: "Prospects", value: String(count), accentKey: "green" },
+    { label: "Terms req. · mo", value: String(requestedThisMonth), target: TARGETS.monthlyTermsRequested, accentKey: "green" },
+    { label: "To credit", value: String(a.subStageNow["progression_to_credit"] ?? 0), accentKey: "cyan" },
+    { label: "Credit approved", value: String(a.subStageNow["credit_approved"] ?? 0), accentKey: "green" },
+  ];
+  const groups: MetricGroup[] = [
+    {
+      title: "Terms",
+      kpis: [
+        { label: "Requested this month", value: String(requestedThisMonth), target: TARGETS.monthlyTermsRequested },
+        { label: "Rolling requested / mo", value: f1(perMonth(requested, now)), meta: "6-mo trailing" },
+        { label: "Presented (now)", value: String(a.subStageNow["terms_presented"] ?? 0) },
+        { label: "Monthly target", value: String(TARGETS.monthlyTermsRequested), meta: "terms requested" },
+      ],
+    },
+    {
+      title: "Credit",
+      kpis: [
+        { label: "Progression to credit", value: String(a.subStageNow["progression_to_credit"] ?? 0), accentKey: "cyan" },
+        { label: "Formal DD", value: String(a.subStageNow["formal_dd"] ?? 0), accentKey: "orange" },
+        { label: "Credit approved", value: String(a.subStageNow["credit_approved"] ?? 0), accentKey: "green" },
+      ],
+    },
+  ];
+  return { headline, groups, ladder: { title: "Qualified ladder", steps: ladderData(a, QUALIFIED_KEYS) } };
+}
+
+const STAGE_BUILDERS: Record<Stage, (a: Activity, count: number) => { headline: Kpi[]; groups: MetricGroup[]; ladder: { title: string; steps: { key: string; label: string; count: number }[] } | null }> = {
+  cold_outreach: coldKpis,
+  warm_pre_meeting: warmPreKpis,
+  warm_post_meeting: warmPostKpis,
+  pre_qualification: preQualKpis,
+  qualified: qualifiedKpis,
+};
+
+// ── Pipeline overview — summary page ─────────────────────────────────────────
 
 export const pipelineOverview = query({
   args: {},
@@ -124,7 +526,6 @@ export const pipelineOverview = query({
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
 
-    // action-item count per clientId
     const actionByClient = new Map<string, number>();
     const bump = (id: any) => {
       if (!id) return;
@@ -163,6 +564,23 @@ export const pipelineOverview = query({
         stages[k].pipelineValueGBP > 0 ? fmtGBP(stages[k].pipelineValueGBP) : "—";
     }
 
+    // Curated cross-pipeline KPI strip (the client's "Summary" spec). These are
+    // whole-pipeline rollups, so we gather activity across every prospect once.
+    const now = Date.now();
+    const w0 = startOfWeekUTC(now);
+    const m0 = startOfMonthUTC(now);
+    const act = await gatherStageActivity(ctx, prospects);
+    const summaryKpis: Kpi[] = [
+      { label: "Reach-outs · wk", value: String(since(act.reachOutTs, w0, now)), target: TARGETS.weeklyReachOut, accentKey: "blue" },
+      { label: "Follow-ups · wk", value: String(since(act.followUpTs, w0, now)), target: TARGETS.weeklyFollowUp },
+      { label: "Replies · mo", value: String(since(act.replyTs, m0, now)), accentKey: "purple" },
+      { label: "Meetings · mo", value: String(since(act.meetingHeldTs, m0, now)), target: TARGETS.monthlyMeetings, accentKey: "cyan" },
+      { label: "Schemes · mo", value: String(since(act.schemeTs, m0, now)), accentKey: "cyan" },
+      { label: "Terms req. · mo", value: String(since(act.subStageEnteredTs["terms_requested"] ?? [], m0, now)), target: TARGETS.monthlyTermsRequested, accentKey: "green" },
+      { label: "To credit", value: String(act.subStageNow["progression_to_credit"] ?? 0), accentKey: "cyan" },
+      { label: "Formal DD", value: String(act.subStageNow["formal_dd"] ?? 0), accentKey: "orange" },
+    ];
+
     const totalActionItems =
       replies.length + pendingApprovals.length + pendingCadences.length + intelRuns.length;
 
@@ -171,11 +589,12 @@ export const pipelineOverview = query({
       totalProspects: prospects.length,
       holding,
       totalActionItems,
+      summaryKpis,
     };
   },
 });
 
-// ── Stage dashboard — KPIs + action items for one stage ──────────────────────
+// ── Stage dashboard — bespoke KPIs + ladder + action items for one stage ─────
 
 export const stageDashboard = query({
   args: { stage: v.string() },
@@ -193,108 +612,18 @@ export const stageDashboard = query({
     const nameById = new Map<string, string>(
       prospects.map((p) => [String(p._id), p.name ?? p.companyName ?? "Unknown"]),
     );
+    const count = prospects.length;
+
+    const activity = await gatherStageActivity(ctx, prospects);
+    const built = STAGE_BUILDERS[stage](activity, count);
 
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
-
-    // Per-prospect outreach + meeting rollups (scoped to this stage's prospects).
-    let emailsSent = 0;
-    let contacted = 0;
-    let replied = 0;
-    let meetingsHeld = 0;
-    let meetingsBooked = 0;
-    let pipelineValueGBP = 0;
-    const daysSinceReply: number[] = [];
-    const now = Date.now();
-
-    for (const p of prospects) {
-      const touchpoints = await ctx.db
-        .query("touchpoints")
-        .withIndex("by_related_client", (q: any) => q.eq("relatedClientId", p._id))
-        .collect();
-      const outbound = touchpoints.filter(
-        (t: any) => t.direction === "outbound" && t.kind === "email",
-      );
-      emailsSent += outbound.length;
-      if (outbound.length > 0) contacted += 1;
-
-      const lastReply = await ctx.db
-        .query("replyEvents")
-        .withIndex("by_linked_client", (q: any) => q.eq("linkedClientId", p._id))
-        .order("desc")
-        .first();
-      if (lastReply) {
-        replied += 1;
-        const t = Date.parse((lastReply as any).receivedAt);
-        if (isFinite(t)) daysSinceReply.push(Math.max(0, (now - t) / 86_400_000));
-      }
-
-      const meetings = await ctx.db
-        .query("meetings")
-        .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
-        .collect();
-      if (meetings.length > 0) meetingsBooked += 1;
-      meetingsHeld += meetings.filter((m: any) => m.reviewState !== "confirmed_remove").length;
-
-      const val = parseDealValueGBP(p.dealSizeRange);
-      if (val) pipelineValueGBP += val;
-    }
-
-    const awaitingFirstSend = prospects.length - contacted;
-    const avgDaysReply =
-      daysSinceReply.length > 0
-        ? daysSinceReply.reduce((a, b) => a + b, 0) / daysSinceReply.length
-        : null;
-
-    // Per-stage action counts (scoped to this stage's prospects).
     const stageReplies = replies.filter((r: any) => prospectIds.has(String(r.linkedClientId)));
-    const stageApprovals = pendingApprovals.filter((a: any) =>
-      prospectIds.has(String(a.relatedClientId)),
-    );
-    const stageCadences = pendingCadences.filter((c: any) =>
-      prospectIds.has(String(c.relatedClientId)),
-    );
+    const stageApprovals = pendingApprovals.filter((a: any) => prospectIds.has(String(a.relatedClientId)));
+    const stageCadences = pendingCadences.filter((c: any) => prospectIds.has(String(c.relatedClientId)));
     const stageIntel = intelRuns.filter((r: any) => prospectIds.has(String(r.linkedClientId)));
 
-    // ── KPI sets ──
-    // headline → top metrics bar (volume / pipeline position)
-    // performance → right-hand KPI cards (how the stage is performing)
-    const count = prospects.length;
-    type Kpi = { label: string; value: string; meta?: string; accentKey?: string };
-    const totalActions =
-      stageReplies.length + stageApprovals.length + stageCadences.length + stageIntel.length;
-    const valueLabel = pipelineValueGBP > 0 ? fmtGBP(pipelineValueGBP) : "—";
-
-    const STAGE_ACCENT: Record<Stage, string> = {
-      cold_outreach: "blue",
-      warm_pre_meeting: "purple",
-      warm_post_meeting: "cyan",
-      pre_qualification: "orange",
-      qualified: "green",
-    };
-    const extra: Record<Stage, Kpi> = {
-      cold_outreach: { label: "Awaiting first send", value: String(awaitingFirstSend), accentKey: awaitingFirstSend > 0 ? "orange" : undefined },
-      warm_pre_meeting: { label: "Replies to action", value: String(stageReplies.length), accentKey: stageReplies.length > 0 ? "orange" : undefined },
-      warm_post_meeting: { label: "Meetings held", value: String(meetingsHeld), accentKey: "green" },
-      pre_qualification: { label: "Approvals pending", value: String(stageApprovals.length), accentKey: stageApprovals.length > 0 ? "orange" : undefined },
-      qualified: { label: "Ready to promote", value: String(count), accentKey: count > 0 ? "green" : undefined },
-    };
-
-    const headline: Kpi[] = [
-      { label: "Prospects", value: String(count), accentKey: STAGE_ACCENT[stage] },
-      { label: "Action items", value: String(totalActions), accentKey: totalActions > 0 ? "orange" : undefined },
-      { label: "Pipeline value", value: valueLabel, accentKey: "green" },
-      extra[stage],
-    ];
-
-    const performance: Kpi[] = [
-      { label: "Emails sent", value: String(emailsSent), meta: `${contacted} contacted` },
-      { label: "Response rate", value: pct(replied, contacted), meta: `${replied} replied`, accentKey: "green" },
-      { label: "Meetings booked", value: String(meetingsBooked), accentKey: "cyan" },
-      { label: "Avg days since reply", value: avgDaysReply == null ? "—" : avgDaysReply.toFixed(1), meta: "lower is better" },
-    ];
-
-    // ── Normalized action-items list ──
     type Item = {
       id: string;
       type: "reply" | "approval" | "cadence" | "intel";
@@ -360,8 +689,9 @@ export const stageDashboard = query({
     return {
       stage,
       count,
-      headline,
-      performance,
+      headline: built.headline,
+      metricGroups: built.groups,
+      ladder: built.ladder,
       actionItems: items.slice(0, 50),
       actionCounts: {
         replies: stageReplies.length,
@@ -373,11 +703,21 @@ export const stageDashboard = query({
   },
 });
 
+// ── Resolve the acting user from Clerk identity ──────────────────────────────
+
+async function resolveUserId(ctx: any): Promise<Id<"users"> | undefined> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return undefined;
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .first();
+  return user?._id;
+}
+
 // ── Manual stage promotion ───────────────────────────────────────────────────
-// Moves a prospect between the 5 manual pipeline stages. Does NOT touch
-// prospectState (the outreach engine owns that) or clients.status. Turning a
-// prospect into a client is a separate, deliberate action (clients.activate),
-// surfaced from the "qualified" stage.
+// Moves a prospect between the 5 manual pipeline stages and logs the transition.
+// Does NOT touch prospectState (the outreach engine owns that) or clients.status.
 
 export const promoteStage = mutation({
   args: {
@@ -391,24 +731,73 @@ export const promoteStage = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    let userId: Id<"users"> | undefined;
-    if (identity) {
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
-        .first();
-      userId = user?._id;
-    }
+    const userId = await resolveUserId(ctx);
     const client = await ctx.db.get(args.clientId);
     if (!client) throw new Error("Prospect not found");
 
     const now = new Date().toISOString();
+    const fromValue = effectiveStage(client) ?? undefined;
     await ctx.db.patch(args.clientId, {
       pipelineStage: args.toStage,
       pipelineStageChangedAt: now,
       pipelineStageChangedBy: userId,
     });
+    if (fromValue !== args.toStage) {
+      await ctx.db.insert("prospectStageEvents", {
+        clientId: args.clientId,
+        kind: "pipeline_stage",
+        fromValue,
+        toValue: args.toStage,
+        at: now,
+        byUserId: userId,
+      });
+    }
     return { ok: true, stage: args.toStage, changedAt: now };
+  },
+});
+
+// ── Sub-stage advance (pre-qualification / qualified ladders) ─────────────────
+// Sets the prospect's current ladder step and logs the transition so rolling
+// "entered-this-month" KPIs stay exact.
+
+export const setQualSubStage = mutation({
+  args: {
+    clientId: v.id("clients"),
+    subStage: v.union(
+      v.literal("modelling_required"),
+      v.literal("modelling_review_required"),
+      v.literal("qualitative_feedback_required"),
+      v.literal("feedback_given"),
+      v.literal("feedback_discussed"),
+      v.literal("terms_requested"),
+      v.literal("terms_presented"),
+      v.literal("progression_to_credit"),
+      v.literal("formal_dd"),
+      v.literal("credit_approved"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const userId = await resolveUserId(ctx);
+    const client = (await ctx.db.get(args.clientId)) as any;
+    if (!client) throw new Error("Prospect not found");
+
+    const now = new Date().toISOString();
+    const fromValue = client.qualSubStage as string | undefined;
+    await ctx.db.patch(args.clientId, {
+      qualSubStage: args.subStage,
+      qualSubStageChangedAt: now,
+      qualSubStageChangedBy: userId,
+    });
+    if (fromValue !== args.subStage) {
+      await ctx.db.insert("prospectStageEvents", {
+        clientId: args.clientId,
+        kind: "qual_substage",
+        fromValue,
+        toValue: args.subStage,
+        at: now,
+        byUserId: userId,
+      });
+    }
+    return { ok: true, subStage: args.subStage, changedAt: now };
   },
 });

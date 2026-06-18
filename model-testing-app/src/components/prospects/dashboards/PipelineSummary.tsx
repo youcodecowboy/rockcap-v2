@@ -16,11 +16,13 @@ type StageOverview = {
   pipelineValueLabel: string;
   actionItems: number;
 };
+type ServerKpi = { label: string; value: string; meta?: string; accentKey?: string; target?: number };
 type Overview = {
   stages: StageOverview[];
   totalProspects: number;
   holding: number;
   totalActionItems: number;
+  summaryKpis: ServerKpi[];
 };
 
 function fmtGBP(n: number): string {
@@ -50,11 +52,39 @@ export function PipelineSummary() {
     { label: "Holding", value: overview ? String(overview.holding) : "—", meta: "parked / lost / promoted" },
   ];
 
+  // Curated cross-pipeline KPIs (the client's "Summary" spec) — the key metric
+  // from each stage, period-to-date. Targets render dimmed inline ("7 / 10").
+  const periodKpis: Kpi[] = (overview?.summaryKpis ?? []).map((k) => ({
+    label: k.label,
+    value:
+      k.target != null ? (
+        <span>
+          {k.value}
+          <span style={{ color: colors.text.dim }}> / {k.target}</span>
+        </span>
+      ) : (
+        k.value
+      ),
+    meta: k.meta,
+    accent: k.accentKey ? accentFor(k.accentKey) : undefined,
+  }));
+
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
         <KpiRow items={kpis} />
       </div>
+
+      {periodKpis.length > 0 && (
+        <>
+          <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.text.muted, marginBottom: 10 }}>
+            This period · week &amp; month to date
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <KpiRow items={periodKpis} />
+          </div>
+        </>
+      )}
 
       <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.text.muted, marginBottom: 10 }}>
         Pipeline stages

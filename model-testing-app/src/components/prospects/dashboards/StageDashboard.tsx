@@ -11,7 +11,9 @@ import { stageFor, type PipelineStage } from "@/lib/prospects/stages";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-type ServerKpi = { label: string; value: string; meta?: string; accentKey?: string };
+type ServerKpi = { label: string; value: string; meta?: string; accentKey?: string; target?: number };
+type MetricGroup = { title: string; kpis: ServerKpi[] };
+type LadderStep = { key: string; label: string; count: number };
 type ActionItem = {
   id: string;
   type: "reply" | "approval" | "cadence" | "intel";
@@ -26,7 +28,8 @@ type StageData = {
   stage: PipelineStage;
   count: number;
   headline: ServerKpi[];
-  performance: ServerKpi[];
+  metricGroups: MetricGroup[];
+  ladder: { title: string; steps: LadderStep[] } | null;
   actionItems: ActionItem[];
   actionCounts: { replies: number; approvals: number; cadences: number; intel: number };
 };
@@ -50,9 +53,20 @@ export function StageDashboard({ stage }: { stage: PipelineStage }) {
     key ? (colors.accent as Record<string, string>)[key] ?? undefined : undefined;
   const stageAccent = accentFor(def?.accentKey) ?? colors.entityTypes.prospect;
 
+  // Fold an optional house target into the value ("7 / 10") with the target dimmed.
+  const kpiValue = (k: ServerKpi) =>
+    k.target != null ? (
+      <span>
+        {k.value}
+        <span style={{ color: colors.text.dim }}> / {k.target}</span>
+      </span>
+    ) : (
+      k.value
+    );
+
   const headlineKpis: Kpi[] = (data?.headline ?? []).map((k) => ({
     label: k.label,
-    value: k.value,
+    value: kpiValue(k),
     meta: k.meta,
     accent: accentFor(k.accentKey),
   }));
@@ -128,18 +142,60 @@ export function StageDashboard({ stage }: { stage: PipelineStage }) {
             />
           </Panel>
 
-          {/* Right — performance KPIs */}
-          <Panel title="Performance">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {(data?.performance ?? []).map((k) => (
-                <StatTile key={k.label} label={k.label} value={k.value} meta={k.meta} accent={accentFor(k.accentKey)} />
-              ))}
-            </div>
-          </Panel>
+          {/* Right — bespoke metric groups (+ sub-stage ladder for pre-qual/qualified) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {data?.ladder && (
+              <Panel title={data.ladder.title} accent={stageAccent}>
+                <LadderStrip steps={data.ladder.steps} accent={stageAccent} colors={colors} />
+              </Panel>
+            )}
+            {(data?.metricGroups ?? []).map((group) => (
+              <Panel key={group.title} title={group.title}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {group.kpis.map((k) => (
+                    <StatTile key={k.label} label={k.label} value={kpiValue(k)} meta={k.meta} accent={accentFor(k.accentKey)} />
+                  ))}
+                </div>
+              </Panel>
+            ))}
+          </div>
         </div>
       ) : (
         <ProspectsTab pipelineStage={stage} />
       )}
+    </div>
+  );
+}
+
+// Horizontal ladder of discrete workflow steps, each showing how many prospects
+// sit there right now. Steps are connected left→right to read as a progression.
+function LadderStrip({ steps, accent, colors }: { steps: LadderStep[]; accent: string; colors: any }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {steps.map((s, i) => (
+        <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              minWidth: 92,
+              padding: "8px 10px",
+              borderRadius: 4,
+              background: s.count > 0 ? `${accent}10` : colors.bg.card,
+              border: `1px solid ${s.count > 0 ? `${accent}40` : colors.border.default}`,
+            }}
+          >
+            <span style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, color: s.count > 0 ? colors.text.primary : colors.text.dim }}>
+              {s.count}
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.04em", textTransform: "uppercase", color: colors.text.muted }}>
+              {s.label}
+            </span>
+          </div>
+          {i < steps.length - 1 && <span style={{ color: colors.text.dim, fontSize: 12 }}>→</span>}
+        </div>
+      ))}
     </div>
   );
 }

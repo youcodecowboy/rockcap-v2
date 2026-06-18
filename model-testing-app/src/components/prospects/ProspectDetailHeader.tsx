@@ -7,7 +7,7 @@ import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
 import { FlagChip } from "./FlagChip";
-import { PIPELINE_STAGES, derivePipelineStage } from "@/lib/prospects/stages";
+import { PIPELINE_STAGES, derivePipelineStage, ladderForStage } from "@/lib/prospects/stages";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
@@ -31,12 +31,17 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
   const activate = useMutation(api.clients.activate as any);
   const transition = useMutation(api.prospects.transitionState as any);
   const promoteStage = useMutation(api.prospectStages.promoteStage as any);
+  const setQualSubStage = useMutation(api.prospectStages.setQualSubStage as any);
   const [promoting, setPromoting] = useState(false);
   const [changingStage, setChangingStage] = useState(false);
   const [changingPipeline, setChangingPipeline] = useState(false);
+  const [changingSubStage, setChangingSubStage] = useState(false);
 
   // Effective pipeline stage (stored value wins; else derived from prospectState).
   const pipelineStage = derivePipelineStage(prospect ?? {});
+  // The sub-stage ladder only applies to pre-qualification / qualified.
+  const ladder = pipelineStage ? ladderForStage(pipelineStage) : null;
+  const qualSubStage = (prospect as any)?.qualSubStage as string | undefined;
 
   const handlePipelineChange = async (toStage: string) => {
     if (!prospect?._id || changingPipeline || toStage === pipelineStage) return;
@@ -47,6 +52,18 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
       console.error("Failed to change pipeline stage", err);
     } finally {
       setChangingPipeline(false);
+    }
+  };
+
+  const handleSubStageChange = async (subStage: string) => {
+    if (!prospect?._id || changingSubStage || !subStage || subStage === qualSubStage) return;
+    setChangingSubStage(true);
+    try {
+      await setQualSubStage({ clientId: prospect._id as string, subStage });
+    } catch (err) {
+      console.error("Failed to change sub-stage", err);
+    } finally {
+      setChangingSubStage(false);
     }
   };
 
@@ -186,6 +203,33 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                 ))}
               </select>
             </label>
+            {/* Sub-stage ladder — only for pre-qualification / qualified, where the
+                operator advances a discrete workflow step (modelling → feedback,
+                terms requested → credit approved). */}
+            {ladder && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
+                Step
+                <select
+                  value={qualSubStage ?? ""}
+                  disabled={changingSubStage}
+                  onChange={(e) => handleSubStageChange(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: `1px solid ${colors.border.default}`,
+                    background: colors.bg.card,
+                    color: colors.text.primary,
+                    cursor: changingSubStage ? "default" : "pointer",
+                  }}
+                >
+                  <option value="">— not set —</option>
+                  {ladder.map((s) => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             {/* Manual stage control — operator can advance prospectState to any stage. */}
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
               Stage

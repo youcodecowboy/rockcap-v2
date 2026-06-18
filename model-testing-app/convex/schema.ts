@@ -134,6 +134,29 @@ export default defineSchema({
     )),
     pipelineStageChangedAt: v.optional(v.string()),
     pipelineStageChangedBy: v.optional(v.id("users")),
+    // Sub-stage ladder WITHIN pre-qualification / qualified. A prospect sits at
+    // exactly one step and advances forward. The pre-qual ladder (modelling →
+    // feedback discussed) and the qualified ladder (terms requested → credit
+    // approved) share this field; which ladder applies is gated by pipelineStage.
+    // KEEP IN SYNC with PRE_QUAL_STEPS + QUALIFIED_STEPS in
+    // src/lib/prospects/stages.ts. Rolling "entered-this-month" counts come from
+    // the prospectStageEvents log, not this single current-value field.
+    qualSubStage: v.optional(v.union(
+      // pre-qualification ladder
+      v.literal("modelling_required"),
+      v.literal("modelling_review_required"),
+      v.literal("qualitative_feedback_required"),
+      v.literal("feedback_given"),
+      v.literal("feedback_discussed"),
+      // qualified ladder
+      v.literal("terms_requested"),
+      v.literal("terms_presented"),
+      v.literal("progression_to_credit"),
+      v.literal("formal_dd"),
+      v.literal("credit_approved"),
+    )),
+    qualSubStageChangedAt: v.optional(v.string()),
+    qualSubStageChangedBy: v.optional(v.id("users")),
   })
     .index("by_status", ["status"])
     .index("by_type", ["type"])
@@ -4256,6 +4279,26 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_occurred_at", ["occurredAt"])
     .index("by_thread", ["threadId"]),
+
+  // ProspectStageEvents — append-only transition log for the operator pipeline.
+  // One row per pipeline-stage promotion OR qual sub-stage advance. The clients
+  // row only stores the CURRENT stage/sub-stage; this log is what makes rolling
+  // "entered terms_requested this month" / "feedback given this month" counts
+  // faithful (current-value alone loses the history once they move on).
+  prospectStageEvents: defineTable({
+    clientId: v.id("clients"),
+    kind: v.union(
+      v.literal("pipeline_stage"),   // toValue is a PipelineStage key
+      v.literal("qual_substage"),    // toValue is a qualSubStage key
+    ),
+    fromValue: v.optional(v.string()),
+    toValue: v.string(),
+    at: v.string(),                  // ISO timestamp of the transition
+    byUserId: v.optional(v.id("users")),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_kind", ["kind"])
+    .index("by_kind_at", ["kind", "at"]),
 
   // mcpTokens (BL-5.9) - per-user MCP tokens for Claude Code authentication.
   // Tokens are minted via a settings UI; the plaintext is shown to the user

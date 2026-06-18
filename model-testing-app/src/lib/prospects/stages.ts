@@ -142,3 +142,87 @@ export const HOLDING_STATES: ProspectStateValue[] = ["parked", "lost", "promoted
 export function isHoldingState(state: string | undefined | null): boolean {
   return !!state && (HOLDING_STATES as string[]).includes(state);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-stage ladders (pre-qualification + qualified)
+//
+// The first three pipeline stages (cold / warm-pre / warm-post) are measured by
+// activity KPIs. The last two have an internal ladder of discrete workflow steps
+// the operator advances manually. A prospect sits at exactly ONE step and moves
+// forward; every advance is logged to prospectStageEvents so rolling/this-month
+// counts ("terms requested this month") are exact. KEEP IN SYNC with the
+// qualSubStage union in convex/schema.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SubStageDef {
+  key: string;
+  label: string;
+  /** Display order within the ladder. */
+  order: number;
+}
+
+export const PRE_QUAL_STEPS: SubStageDef[] = [
+  { key: "modelling_required", label: "Modelling required", order: 1 },
+  { key: "modelling_review_required", label: "Modelling review required", order: 2 },
+  { key: "qualitative_feedback_required", label: "Qualitative feedback required", order: 3 },
+  { key: "feedback_given", label: "Feedback given", order: 4 },
+  { key: "feedback_discussed", label: "Feedback discussed", order: 5 },
+];
+
+export const QUALIFIED_STEPS: SubStageDef[] = [
+  { key: "terms_requested", label: "Terms requested", order: 1 },
+  { key: "terms_presented", label: "Terms presented", order: 2 },
+  { key: "progression_to_credit", label: "Progression to credit", order: 3 },
+  { key: "formal_dd", label: "Formal due diligence", order: 4 },
+  { key: "credit_approved", label: "Credit approved", order: 5 },
+];
+
+export type QualSubStage =
+  | "modelling_required" | "modelling_review_required" | "qualitative_feedback_required"
+  | "feedback_given" | "feedback_discussed"
+  | "terms_requested" | "terms_presented" | "progression_to_credit"
+  | "formal_dd" | "credit_approved";
+
+const ALL_SUBSTAGE_DEFS: SubStageDef[] = [...PRE_QUAL_STEPS, ...QUALIFIED_STEPS];
+
+/** The ladder for a stage, or null for the activity-measured stages. */
+export function ladderForStage(stage: PipelineStage): SubStageDef[] | null {
+  if (stage === "pre_qualification") return PRE_QUAL_STEPS;
+  if (stage === "qualified") return QUALIFIED_STEPS;
+  return null;
+}
+
+export function subStageLabel(key: string | undefined | null): string {
+  if (!key) return "—";
+  return ALL_SUBSTAGE_DEFS.find((s) => s.key === key)?.label ?? key;
+}
+
+export function isQualSubStage(key: unknown): key is QualSubStage {
+  return typeof key === "string" && ALL_SUBSTAGE_DEFS.some((s) => s.key === key);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly / monthly targets for the "out of N" KPIs.
+//
+// These are house targets, not per-prospect data. Defaults below; change them
+// here (single source of truth, read by the server aggregation). A future
+// settings UI can override per team without touching the dashboards.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PipelineTargets {
+  /** New cold reach-outs to start per week. */
+  weeklyReachOut: number;
+  /** Follow-up touches to send per week. */
+  weeklyFollowUp: number;
+  /** Meetings to hold per month. */
+  monthlyMeetings: number;
+  /** Terms to request per month (qualified stage). */
+  monthlyTermsRequested: number;
+}
+
+export const PIPELINE_TARGETS: PipelineTargets = {
+  weeklyReachOut: 10,
+  weeklyFollowUp: 10,
+  monthlyMeetings: 8,
+  monthlyTermsRequested: 5,
+};
