@@ -7,6 +7,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { Panel, KpiRow, StatTile, DataTable, EmptyState, type Column, type Kpi } from "@/components/layouts";
 import { ProspectsTab } from "@/components/prospects/tabs2/ProspectsTab";
+import { EditTargetsButton } from "./TargetsModal";
 import { stageFor, type PipelineStage } from "@/lib/prospects/stages";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -115,9 +116,12 @@ export function StageDashboard({ stage }: { stage: PipelineStage }) {
       )}
 
       {/* View toggle — Overview (action items + performance) vs the per-stage table */}
-      <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${colors.border.default}`, marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${colors.border.default}`, marginBottom: 16 }}>
         <ViewTab label="Overview" active={view === "overview"} accent={stageAccent} onClick={() => setView("overview")} colors={colors} />
         <ViewTab label="All prospects" count={data?.count} active={view === "table"} accent={stageAccent} onClick={() => setView("table")} colors={colors} />
+        <div style={{ marginLeft: "auto", paddingBottom: 6 }}>
+          <EditTargetsButton />
+        </div>
       </div>
 
       {view === "overview" ? (

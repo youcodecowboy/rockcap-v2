@@ -204,9 +204,11 @@ export function isQualSubStage(key: unknown): key is QualSubStage {
 // ─────────────────────────────────────────────────────────────────────────────
 // Weekly / monthly targets for the "out of N" KPIs.
 //
-// These are house targets, not per-prospect data. Defaults below; change them
-// here (single source of truth, read by the server aggregation). A future
-// settings UI can override per team without touching the dashboards.
+// These are house targets, not per-prospect data. The live values are the
+// editable pipelineTargets singleton in Convex (set via the dashboard targets
+// modal); the constants below are only the DEFAULTS used to seed that row when
+// it doesn't exist yet. KEEP IN SYNC with DEFAULT_TARGETS in
+// convex/prospectStages.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PipelineTargets {

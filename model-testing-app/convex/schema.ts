@@ -4300,6 +4300,18 @@ export default defineSchema({
     .index("by_kind", ["kind"])
     .index("by_kind_at", ["kind", "at"]),
 
+  // PipelineTargets — singleton (one row) holding the house weekly/monthly
+  // targets for the "out of N" prospecting KPIs. Editable from the dashboard
+  // targets modal; the aggregation falls back to defaults when no row exists.
+  pipelineTargets: defineTable({
+    weeklyReachOut: v.number(),
+    weeklyFollowUp: v.number(),
+    monthlyMeetings: v.number(),
+    monthlyTermsRequested: v.number(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  }),
+
   // mcpTokens (BL-5.9) - per-user MCP tokens for Claude Code authentication.
   // Tokens are minted via a settings UI; the plaintext is shown to the user
   // once and never persisted. The server stores only a SHA-256 hash plus a

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { Panel, KpiRow, type Kpi } from "@/components/layouts";
+import { EditTargetsButton } from "./TargetsModal";
 import { PIPELINE_STAGES, stageFor, type PipelineStage } from "@/lib/prospects/stages";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -77,8 +78,11 @@ export function PipelineSummary() {
 
       {periodKpis.length > 0 && (
         <>
-          <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.text.muted, marginBottom: 10 }}>
-            This period · week &amp; month to date
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: colors.text.muted }}>
+              This period · week &amp; month to date
+            </div>
+            <EditTargetsButton />
           </div>
           <div style={{ marginBottom: 20 }}>
             <KpiRow items={periodKpis} />

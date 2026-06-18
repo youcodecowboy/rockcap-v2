@@ -63,13 +63,32 @@ const SUBSTAGE_LABELS: Record<string, string> = {
   credit_approved: "Credit approved",
 };
 
-// House targets — KEEP IN SYNC with PIPELINE_TARGETS in src/lib/prospects/stages.ts.
-const TARGETS = {
+// Default house targets — KEEP IN SYNC with PIPELINE_TARGETS in
+// src/lib/prospects/stages.ts. These seed the editable pipelineTargets
+// singleton; loadTargets() returns the stored row when one exists.
+type Targets = {
+  weeklyReachOut: number;
+  weeklyFollowUp: number;
+  monthlyMeetings: number;
+  monthlyTermsRequested: number;
+};
+const DEFAULT_TARGETS: Targets = {
   weeklyReachOut: 10,
   weeklyFollowUp: 10,
   monthlyMeetings: 8,
   monthlyTermsRequested: 5,
 };
+
+async function loadTargets(ctx: any): Promise<Targets> {
+  const row = await ctx.db.query("pipelineTargets").first();
+  if (!row) return DEFAULT_TARGETS;
+  return {
+    weeklyReachOut: row.weeklyReachOut,
+    weeklyFollowUp: row.weeklyFollowUp,
+    monthlyMeetings: row.monthlyMeetings,
+    monthlyTermsRequested: row.monthlyTermsRequested,
+  };
+}
 
 function effectiveStage(c: any): Stage | null {
   if (c.pipelineStage && (STAGE_KEYS as readonly string[]).includes(c.pipelineStage)) {
@@ -123,16 +142,6 @@ function startOfMonthUTC(now: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
 }
 
-/** Parse ISO strings → epoch ms, dropping anything unparseable. */
-function epochs(values: (string | undefined | null)[]): number[] {
-  const out: number[] = [];
-  for (const s of values) {
-    if (!s) continue;
-    const t = Date.parse(s);
-    if (isFinite(t)) out.push(t);
-  }
-  return out;
-}
 const since = (ts: number[], from: number, to: number) =>
   ts.filter((t) => t >= from && t <= to).length;
 const perWeek = (ts: number[], now: number, weeks = 8) =>
@@ -310,7 +319,7 @@ type MetricGroup = { title: string; kpis: Kpi[] };
 // Each returns { headline (top KpiRow), groups (panels of tiles) }. Bespoke per
 // the client's KPI spec.
 
-function coldKpis(a: Activity, count: number) {
+function coldKpis(a: Activity, count: number, t: Targets) {
   const { now } = a;
   const w0 = startOfWeekUTC(now);
   const m0 = startOfMonthUTC(now);
@@ -320,15 +329,15 @@ function coldKpis(a: Activity, count: number) {
 
   const headline: Kpi[] = [
     { label: "Prospects", value: String(count), accentKey: "blue" },
-    { label: "Reach-outs · wk", value: String(reachThisWeek), target: TARGETS.weeklyReachOut, accentKey: "blue" },
-    { label: "Follow-ups · wk", value: String(followThisWeek), target: TARGETS.weeklyFollowUp },
+    { label: "Reach-outs · wk", value: String(reachThisWeek), target: t.weeklyReachOut, accentKey: "blue" },
+    { label: "Follow-ups · wk", value: String(followThisWeek), target: t.weeklyFollowUp },
     { label: "Replies · mo", value: String(repliesThisMonth), accentKey: "green" },
   ];
   const groups: MetricGroup[] = [
     {
       title: "Reach-outs",
       kpis: [
-        { label: "This week", value: String(reachThisWeek), target: TARGETS.weeklyReachOut },
+        { label: "This week", value: String(reachThisWeek), target: t.weeklyReachOut },
         { label: "Rolling avg / wk", value: f1(perWeek(a.reachOutTs, now)), meta: "8-wk trailing" },
         { label: "Rolling avg / mo", value: f1(perMonth(a.reachOutTs, now)), meta: "6-mo trailing" },
       ],
@@ -336,7 +345,7 @@ function coldKpis(a: Activity, count: number) {
     {
       title: "Follow-ups",
       kpis: [
-        { label: "This week", value: String(followThisWeek), target: TARGETS.weeklyFollowUp },
+        { label: "This week", value: String(followThisWeek), target: t.weeklyFollowUp },
         { label: "Rolling avg / wk", value: f1(perWeek(a.followUpTs, now)), meta: "8-wk trailing" },
         { label: "Rolling avg / mo", value: f1(perMonth(a.followUpTs, now)), meta: "6-mo trailing" },
       ],
@@ -354,7 +363,7 @@ function coldKpis(a: Activity, count: number) {
   return { headline, groups, ladder: null };
 }
 
-function warmPreKpis(a: Activity, count: number) {
+function warmPreKpis(a: Activity, count: number, t: Targets) {
   const { now } = a;
   const m0 = startOfMonthUTC(now);
   const meetingsThisMonth = since(a.meetingHeldTs, m0, now);
@@ -364,7 +373,7 @@ function warmPreKpis(a: Activity, count: number) {
 
   const headline: Kpi[] = [
     { label: "Prospects", value: String(count), accentKey: "purple" },
-    { label: "Meetings · mo", value: String(meetingsThisMonth), target: TARGETS.monthlyMeetings, accentKey: "cyan" },
+    { label: "Meetings · mo", value: String(meetingsThisMonth), target: t.monthlyMeetings, accentKey: "cyan" },
     { label: "Arranging", value: String(a.arranging), accentKey: a.arranging > 0 ? "orange" : undefined, meta: "replied, no meeting" },
     { label: "Booked · mo", value: String(bookedThisMonth) },
   ];
@@ -372,7 +381,7 @@ function warmPreKpis(a: Activity, count: number) {
     {
       title: "Meetings",
       kpis: [
-        { label: "Held this month", value: String(meetingsThisMonth), target: TARGETS.monthlyMeetings },
+        { label: "Held this month", value: String(meetingsThisMonth), target: t.monthlyMeetings },
         { label: "Rolling held / mo", value: f1(perMonth(a.meetingHeldTs, now)), meta: "6-mo trailing" },
         { label: "Booked this month", value: String(bookedThisMonth) },
         { label: "Rolling booked / mo", value: f1(perMonth(a.meetingBookedTs, now)), meta: "6-mo trailing" },
@@ -397,7 +406,7 @@ function warmPreKpis(a: Activity, count: number) {
   return { headline, groups, ladder: null };
 }
 
-function warmPostKpis(a: Activity, count: number) {
+function warmPostKpis(a: Activity, count: number, t: Targets) {
   const { now } = a;
   const m0 = startOfMonthUTC(now);
   const schemesThisMonth = since(a.schemeTs, m0, now);
@@ -441,7 +450,7 @@ function ladderData(a: Activity, keys: readonly string[]) {
   }));
 }
 
-function preQualKpis(a: Activity, count: number) {
+function preQualKpis(a: Activity, count: number, t: Targets) {
   const { now } = a;
   const m0 = startOfMonthUTC(now);
   const given = a.subStageEnteredTs["feedback_given"] ?? [];
@@ -471,7 +480,7 @@ function preQualKpis(a: Activity, count: number) {
   return { headline, groups, ladder: { title: "Pre-qualification ladder", steps: ladderData(a, PRE_QUAL_KEYS) } };
 }
 
-function qualifiedKpis(a: Activity, count: number) {
+function qualifiedKpis(a: Activity, count: number, t: Targets) {
   const { now } = a;
   const m0 = startOfMonthUTC(now);
   const requested = a.subStageEnteredTs["terms_requested"] ?? [];
@@ -479,7 +488,7 @@ function qualifiedKpis(a: Activity, count: number) {
 
   const headline: Kpi[] = [
     { label: "Prospects", value: String(count), accentKey: "green" },
-    { label: "Terms req. · mo", value: String(requestedThisMonth), target: TARGETS.monthlyTermsRequested, accentKey: "green" },
+    { label: "Terms req. · mo", value: String(requestedThisMonth), target: t.monthlyTermsRequested, accentKey: "green" },
     { label: "To credit", value: String(a.subStageNow["progression_to_credit"] ?? 0), accentKey: "cyan" },
     { label: "Credit approved", value: String(a.subStageNow["credit_approved"] ?? 0), accentKey: "green" },
   ];
@@ -487,10 +496,10 @@ function qualifiedKpis(a: Activity, count: number) {
     {
       title: "Terms",
       kpis: [
-        { label: "Requested this month", value: String(requestedThisMonth), target: TARGETS.monthlyTermsRequested },
+        { label: "Requested this month", value: String(requestedThisMonth), target: t.monthlyTermsRequested },
         { label: "Rolling requested / mo", value: f1(perMonth(requested, now)), meta: "6-mo trailing" },
         { label: "Presented (now)", value: String(a.subStageNow["terms_presented"] ?? 0) },
-        { label: "Monthly target", value: String(TARGETS.monthlyTermsRequested), meta: "terms requested" },
+        { label: "Monthly target", value: String(t.monthlyTermsRequested), meta: "terms requested" },
       ],
     },
     {
@@ -505,7 +514,7 @@ function qualifiedKpis(a: Activity, count: number) {
   return { headline, groups, ladder: { title: "Qualified ladder", steps: ladderData(a, QUALIFIED_KEYS) } };
 }
 
-const STAGE_BUILDERS: Record<Stage, (a: Activity, count: number) => { headline: Kpi[]; groups: MetricGroup[]; ladder: { title: string; steps: { key: string; label: string; count: number }[] } | null }> = {
+const STAGE_BUILDERS: Record<Stage, (a: Activity, count: number, t: Targets) => { headline: Kpi[]; groups: MetricGroup[]; ladder: { title: string; steps: { key: string; label: string; count: number }[] } | null }> = {
   cold_outreach: coldKpis,
   warm_pre_meeting: warmPreKpis,
   warm_post_meeting: warmPostKpis,
@@ -570,13 +579,14 @@ export const pipelineOverview = query({
     const w0 = startOfWeekUTC(now);
     const m0 = startOfMonthUTC(now);
     const act = await gatherStageActivity(ctx, prospects);
+    const t = await loadTargets(ctx);
     const summaryKpis: Kpi[] = [
-      { label: "Reach-outs · wk", value: String(since(act.reachOutTs, w0, now)), target: TARGETS.weeklyReachOut, accentKey: "blue" },
-      { label: "Follow-ups · wk", value: String(since(act.followUpTs, w0, now)), target: TARGETS.weeklyFollowUp },
+      { label: "Reach-outs · wk", value: String(since(act.reachOutTs, w0, now)), target: t.weeklyReachOut, accentKey: "blue" },
+      { label: "Follow-ups · wk", value: String(since(act.followUpTs, w0, now)), target: t.weeklyFollowUp },
       { label: "Replies · mo", value: String(since(act.replyTs, m0, now)), accentKey: "purple" },
-      { label: "Meetings · mo", value: String(since(act.meetingHeldTs, m0, now)), target: TARGETS.monthlyMeetings, accentKey: "cyan" },
+      { label: "Meetings · mo", value: String(since(act.meetingHeldTs, m0, now)), target: t.monthlyMeetings, accentKey: "cyan" },
       { label: "Schemes · mo", value: String(since(act.schemeTs, m0, now)), accentKey: "cyan" },
-      { label: "Terms req. · mo", value: String(since(act.subStageEnteredTs["terms_requested"] ?? [], m0, now)), target: TARGETS.monthlyTermsRequested, accentKey: "green" },
+      { label: "Terms req. · mo", value: String(since(act.subStageEnteredTs["terms_requested"] ?? [], m0, now)), target: t.monthlyTermsRequested, accentKey: "green" },
       { label: "To credit", value: String(act.subStageNow["progression_to_credit"] ?? 0), accentKey: "cyan" },
       { label: "Formal DD", value: String(act.subStageNow["formal_dd"] ?? 0), accentKey: "orange" },
     ];
@@ -615,7 +625,8 @@ export const stageDashboard = query({
     const count = prospects.length;
 
     const activity = await gatherStageActivity(ctx, prospects);
-    const built = STAGE_BUILDERS[stage](activity, count);
+    const t = await loadTargets(ctx);
+    const built = STAGE_BUILDERS[stage](activity, count, t);
 
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
@@ -799,5 +810,50 @@ export const setQualSubStage = mutation({
       });
     }
     return { ok: true, subStage: args.subStage, changedAt: now };
+  },
+});
+
+// ── Targets (editable house weekly/monthly KPI targets) ──────────────────────
+
+export const getTargets = query({
+  args: {},
+  handler: async (ctx) => {
+    const row = await ctx.db.query("pipelineTargets").first();
+    if (!row) return { ...DEFAULT_TARGETS, isDefault: true, updatedAt: null as string | null };
+    return {
+      weeklyReachOut: row.weeklyReachOut,
+      weeklyFollowUp: row.weeklyFollowUp,
+      monthlyMeetings: row.monthlyMeetings,
+      monthlyTermsRequested: row.monthlyTermsRequested,
+      isDefault: false,
+      updatedAt: row.updatedAt,
+    };
+  },
+});
+
+export const updateTargets = mutation({
+  args: {
+    weeklyReachOut: v.number(),
+    weeklyFollowUp: v.number(),
+    monthlyMeetings: v.number(),
+    monthlyTermsRequested: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Clamp to non-negative integers — a target is a count, never below zero.
+    const clean = {
+      weeklyReachOut: Math.max(0, Math.round(args.weeklyReachOut)),
+      weeklyFollowUp: Math.max(0, Math.round(args.weeklyFollowUp)),
+      monthlyMeetings: Math.max(0, Math.round(args.monthlyMeetings)),
+      monthlyTermsRequested: Math.max(0, Math.round(args.monthlyTermsRequested)),
+    };
+    const userId = await resolveUserId(ctx);
+    const now = new Date().toISOString();
+    const existing = await ctx.db.query("pipelineTargets").first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { ...clean, updatedAt: now, updatedBy: userId });
+    } else {
+      await ctx.db.insert("pipelineTargets", { ...clean, updatedAt: now, updatedBy: userId });
+    }
+    return { ok: true, ...clean, updatedAt: now };
   },
 });
