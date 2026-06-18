@@ -258,7 +258,14 @@ export const promote = mutation({
 
     // Link the CH number and kick off the full CH sync (charges/officers/PSC).
     // Apollo / deep intel is a further, operator-driven step.
-    await ctx.db.patch(clientId, { companiesHouseNumber: row.companyNumber });
+    // pipelineStage: file the promoted candidate straight into Cold outreach —
+    // "promote" from the Sourcing tab IS the escalation into the pipeline. The
+    // stage boards key off pipelineStage even before prospectState is set by a
+    // later intel run (see prospectStages effectiveStage + the overview filter).
+    await ctx.db.patch(clientId, {
+      companiesHouseNumber: row.companyNumber,
+      pipelineStage: "cold_outreach",
+    });
     await ctx.scheduler.runAfter(0, internal.companiesHouse.syncOneCompanyFromCHInternal, {
       companyNumber: row.companyNumber,
     });

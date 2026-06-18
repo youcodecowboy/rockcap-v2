@@ -544,7 +544,12 @@ export const pipelineOverview = query({
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .collect();
-    const prospects = (clients as any[]).filter((c) => c.prospectState);
+    // Include prospects filed into a stage by pipelineStage even if no
+    // prospectState is set yet — a sourcing-promoted candidate sits in Cold
+    // before its first intel run writes a prospectState.
+    const prospects = (clients as any[]).filter(
+      (c) => c.prospectState || c.pipelineStage,
+    );
 
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
@@ -688,8 +693,11 @@ export const stageDashboard = query({
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .collect();
+    // effectiveStage already encodes "has a stage" (stored pipelineStage or a
+    // derivable prospectState), so it alone is the membership test — this also
+    // picks up sourcing-promoted prospects filed by pipelineStage pre-intel.
     const prospects = (clients as any[]).filter(
-      (c) => c.prospectState && effectiveStage(c) === stage,
+      (c) => effectiveStage(c) === stage,
     );
     const prospectIds = new Set(prospects.map((p) => String(p._id)));
     const nameById = new Map<string, string>(
