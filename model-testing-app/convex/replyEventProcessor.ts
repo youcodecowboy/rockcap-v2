@@ -27,7 +27,8 @@ type DispatchDestination =
   | "opt_out_marker"
   | "operator_review"
   | "restored_cadences"
-  | "no_contact_match";
+  | "no_contact_match"
+  | "unlinked_no_review";
 
 type ClassifiedIntent =
   | "book_meeting"
@@ -45,6 +46,10 @@ async function createOperatorReviewApproval(
     intent: string;
     replyEventId: Id<"replyEvents">;
     contactId: Id<"contacts">;
+    // Resolved client/prospect for this reply. Stamped onto the approval so it
+    // surfaces on the prospect/client page (approvals.listPendingByClient
+    // filters by relatedClientId) instead of sitting invisibly in /approvals.
+    clientId?: Id<"clients">;
     userId: Id<"users">;
     replyBody?: string;
     replySubject?: string;
@@ -65,6 +70,8 @@ async function createOperatorReviewApproval(
     requestSource: "background_job",
     requestSourceName: "cadence-fire/reply-router",
     relatedContactId: args.contactId,
+    relatedClientId: args.clientId,
+    relatedReplyEventId: args.replyEventId,
   });
   // Ping the operator's bell — the approval row alone sits invisibly in the
   // /approvals queue; a reply that stopped a cadence needs an active nudge.
@@ -380,6 +387,21 @@ async function processReplyEvent(
     });
   }
 
+  // Gate (v1.4): only classify + review replies from a contact tied to a
+  // client or prospect. A matched-but-unlinked contact (internal @rockcap
+  // addresses, lenders, generic HubSpot contacts) previously fell through to
+  // the classifier and an operator-review approval that never attached to any
+  // prospect — pure noise. We keep the replyEvent (audit + inbox) and the
+  // cadence cancellation above (defensive), but stop here. Genuinely-unknown
+  // senders are handled by the no_contact_match branch above.
+  if (!linkedClientId) {
+    await ctx.runMutation(internal.replyEvents.markProcessedInternal, {
+      replyEventId,
+      dispatchedTo: "unlinked_no_review" as const,
+    });
+    return { status: "unlinked_no_review" as const, replyEventId };
+  }
+
   // Step 5: Call classifier (Next.js API)
   let intent: ClassifiedIntent = "unknown";
   let confidence = 0.0;
@@ -451,6 +473,7 @@ async function processReplyEvent(
     intent,
     replyEventId,
     contactId,
+    clientId: linkedClientId,
     cancelledCadences: activeCadences,
     userId: args.userId,
     replyBody: args.replyBody,
@@ -473,6 +496,9 @@ async function dispatchByIntent(
     intent: ClassifiedIntent;
     replyEventId: Id<"replyEvents">;
     contactId: Id<"contacts">;
+    // Always set: the ingest path gates dispatch on a resolved client/prospect
+    // link, so every review/draft approval below can attach to its client.
+    clientId: Id<"clients">;
     cancelledCadences: Doc<"cadences">[];
     userId: Id<"users">;
     replyBody?: string;
@@ -621,6 +647,8 @@ async function dispatchByIntent(
         requestSource: "background_job",
         requestSourceName: "cadence-fire/meeting-prep-respond",
         relatedContactId: args.contactId,
+        relatedClientId: args.clientId,
+        relatedReplyEventId: args.replyEventId,
       });
       await notifyOperator(ctx, {
         userId: args.userId,

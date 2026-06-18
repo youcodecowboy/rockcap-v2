@@ -210,12 +210,13 @@ export default function ProspectDetailPage() {
         onApprove={async () => {
           if (!packageId) { alert("No package to approve"); return; }
           await approvePackage({ packageId });
-          // Approving the package is gate 3 of 4: it activates the cadence.
-          // The dispatcher stages each touch as a gmail_send approval at its
-          // send date — the email only leaves after that final approve in
-          // /approvals. Without this note operators read "approved" as "sent".
+          // Single-gate (2026-06-06): approving the package IS the send
+          // authorisation. The dispatcher fires the first due touch now and
+          // auto-sends later touches on their scheduled dates — no second
+          // approval in /approvals. (Kill switches at /settings/gmail still
+          // gate execution; failed sends can be retried from /approvals.)
           alert(
-            "Cadence approved. Each email will appear in Approvals at its send date for final send sign-off — it is not sent yet.",
+            "Cadence approved. The first email sends now and the rest send automatically on their scheduled dates — no further approval needed. Track them in Approvals.",
           );
           router.push("/prospects");
         }}

@@ -445,6 +445,38 @@ export const cancel = mutation({
   },
 });
 
+// Retry a send that failed at execution time (a kill switch was off, the
+// Gmail token needed reconnect, a transient network error, …). The operator
+// already approved this exact action, so re-queue it rather than forcing a
+// re-draft. Only acts on execution_failed rows: clears the prior error, flips
+// back to approved, and re-schedules the same executor the approve path uses.
+export const retry = mutation({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args): Promise<{ ok: boolean }> => {
+    const user = await getAuthenticatedUser(ctx);
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    if (approval.status !== "execution_failed") {
+      throw new Error(
+        `Can only retry a failed approval (this one is ${approval.status})`,
+      );
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      approvedBy: user._id,
+      approvedAt: new Date().toISOString(),
+      // Clear the stale failure record so the row reads cleanly if it fails
+      // again. Setting an optional field to undefined removes it in Convex.
+      executionError: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
 // ── Internal: executor dispatch ──────────────────────────────
 
 export const getApprovalForExecution = internalQuery({
