@@ -23,6 +23,7 @@ type Overview = {
   totalProspects: number;
   holding: number;
   totalActionItems: number;
+  pricedTotal: number;
   summaryKpis: ServerKpi[];
 };
 
@@ -48,7 +49,7 @@ export function PipelineSummary() {
 
   const kpis: Kpi[] = [
     { label: "Prospects in pipeline", value: overview ? String(overview.totalProspects) : "—", accent: colors.entityTypes.prospect },
-    { label: "Pipeline value", value: totalValue > 0 ? fmtGBP(totalValue) : "—", accent: colors.accent.green },
+    { label: "Pipeline value", value: totalValue > 0 ? fmtGBP(totalValue) : "—", meta: overview ? `${overview.pricedTotal ?? 0}/${overview.totalProspects} priced` : "operator-entered", accent: colors.accent.green },
     { label: "Requires action", value: overview ? String(overview.totalActionItems) : "—", accent: overview && overview.totalActionItems > 0 ? colors.accent.orange : undefined },
     { label: "Holding", value: overview ? String(overview.holding) : "—", meta: "parked / lost / promoted" },
   ];

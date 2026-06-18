@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { StatePill } from "./StatePill";
 import { FlagChip } from "./FlagChip";
 import { PIPELINE_STAGES, derivePipelineStage, ladderForStage } from "@/lib/prospects/stages";
+import { DealValueControl } from "./DealValueControl";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
@@ -179,6 +180,16 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Operator-entered deal value — the only source of the pipeline-value
+                metric (never the AI dealSizeRange estimate). */}
+            {prospect?._id && (
+              <DealValueControl
+                clientId={prospect._id as string}
+                valueGBP={(prospect as any)?.dealValueGBP}
+                note={(prospect as any)?.dealValueNote}
+                aiEstimate={(prospect as any)?.dealSizeRange}
+              />
+            )}
             {/* Manual pipeline-stage promotion — moves the prospect between the
                 5 dashboards. Separate axis from prospectState (the Stage control). */}
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
