@@ -4027,6 +4027,10 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_package", ["packageId"])
     .index("by_package_approval_status", ["packageId", "packageApprovalStatus"])
+    // Global lookup of every package in a given approval state (across all
+    // packages) — powers the prospecting action queue. The compound index
+    // above leads with packageId so it can't serve a bare-status query.
+    .index("by_approval_status", ["packageApprovalStatus"])
     .index("by_contact_active", ["contactId", "isActive"])
     .index("by_created_by", ["createdBy"]),
 
@@ -4490,6 +4494,11 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
     .index("by_status", ["status"])
-    .index("by_skill_and_user", ["skillName", "userId"]),
+    .index("by_skill_and_user", ["skillName", "userId"])
+    // Scope failed / gappy runs to a single skill so the prospecting action
+    // queue reads only prospect-intel runs (not every skill's history) —
+    // skillRun docs carry heavy brief / intelMarkdown / structureGraph fields,
+    // so reading them all blows the per-query byte limit.
+    .index("by_skill_and_status", ["skillName", "status"]),
 });
 

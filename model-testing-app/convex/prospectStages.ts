@@ -163,34 +163,56 @@ type Kpi = {
 
 // ── Gather the "requires action" signals once, keyed by clientId ─────────────
 
+// Caps keep the per-query byte budget bounded (Convex limits one execution to
+// 16MB read). These are triage surfaces — the queue shows the most recent items
+// and the per-stage counts; capping the tail is acceptable. skillRuns are read
+// scoped to prospect-intel via a compound index AND ordered desc + capped tight,
+// because their brief / intelMarkdown / structureGraph fields are heavy.
+// Per-source caps. cadences (preDraftedTouch.bodyHtml) and approvals (draft
+// payloads) carry the heaviest bodies, so they get tighter caps. skillRuns are
+// tightest — brief / intelMarkdown / structureGraph are the heaviest of all.
+const REPLY_CAP = 100;
+const APPROVAL_CAP = 75;
+const CADENCE_CAP = 75;
+const INTEL_RUN_CAP = 6;
+
 async function gatherActionSignals(ctx: any) {
   const unrouted = await ctx.db
     .query("replyEvents")
     .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", "operator_review"))
-    .collect();
+    .order("desc")
+    .take(REPLY_CAP);
   const replies = unrouted.filter((r: any) => !r.processed && r.linkedClientId);
 
   const pendingApprovals = (await ctx.db
     .query("approvals")
     .withIndex("by_status", (q: any) => q.eq("status", "pending"))
-    .collect()) as any[];
+    .order("desc")
+    .take(APPROVAL_CAP)) as any[];
 
   const pendingCadences = (await ctx.db
     .query("cadences")
-    .withIndex("by_package_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
-    .collect()) as any[];
+    .withIndex("by_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
+    .order("desc")
+    .take(CADENCE_CAP)) as any[];
 
   const failedRuns = (await ctx.db
     .query("skillRuns")
-    .withIndex("by_status", (q: any) => q.eq("status", "failed"))
-    .collect()) as any[];
+    .withIndex("by_skill_and_status", (q: any) =>
+      q.eq("skillName", "prospect-intel").eq("status", "failed"),
+    )
+    .order("desc")
+    .take(INTEL_RUN_CAP)) as any[];
   const gappyRuns = (await ctx.db
     .query("skillRuns")
-    .withIndex("by_status", (q: any) => q.eq("status", "complete_with_gaps"))
-    .collect()) as any[];
-  const intelRuns = [...failedRuns, ...gappyRuns].filter(
-    (r: any) => r.skillName === "prospect-intel" && r.linkedClientId,
-  );
+    .withIndex("by_skill_and_status", (q: any) =>
+      q.eq("skillName", "prospect-intel").eq("status", "complete_with_gaps"),
+    )
+    .order("desc")
+    .take(INTEL_RUN_CAP)) as any[];
+  // Note: counts above are capped (triage surface). The summary badge can read
+  // "N+" when a source hits its cap; exhaustive ledgers live on their own pages.
+  const intelRuns = [...failedRuns, ...gappyRuns].filter((r: any) => r.linkedClientId);
 
   return { replies, pendingApprovals, pendingCadences, intelRuns };
 }
@@ -220,11 +242,23 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
   let pipelineValueGBP = 0;
   const now = Date.now();
 
-  for (const p of prospects) {
-    const touchpoints = await ctx.db
-      .query("touchpoints")
-      .withIndex("by_related_client", (q: any) => q.eq("relatedClientId", p._id))
-      .collect();
+  // Read every prospect's event streams in parallel (5 queries per prospect, all
+  // prospects concurrent) — the sequential version was the dashboard's main
+  // latency sink (84 prospects × 5 round-trips in series).
+  const perProspect = await Promise.all(
+    prospects.map(async (p) => {
+      const [touchpoints, replies, meetings, schemes, events] = await Promise.all([
+        ctx.db.query("touchpoints").withIndex("by_related_client", (q: any) => q.eq("relatedClientId", p._id)).collect(),
+        ctx.db.query("replyEvents").withIndex("by_linked_client", (q: any) => q.eq("linkedClientId", p._id)).collect(),
+        ctx.db.query("meetings").withIndex("by_client", (q: any) => q.eq("clientId", p._id)).collect(),
+        ctx.db.query("prospectSchemes").withIndex("by_client", (q: any) => q.eq("clientId", p._id)).collect(),
+        ctx.db.query("prospectStageEvents").withIndex("by_client", (q: any) => q.eq("clientId", p._id)).collect(),
+      ]);
+      return { p, touchpoints, replies, meetings, schemes, events };
+    }),
+  );
+
+  for (const { p, touchpoints, replies, meetings, schemes, events } of perProspect) {
     const outbound = touchpoints
       .filter((t: any) => t.direction === "outbound" && t.kind === "email")
       .map((t: any) => Date.parse(t.occurredAt))
@@ -236,10 +270,6 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
       for (let i = 1; i < outbound.length; i++) followUpTs.push(outbound[i]);
     }
 
-    const replies = await ctx.db
-      .query("replyEvents")
-      .withIndex("by_linked_client", (q: any) => q.eq("linkedClientId", p._id))
-      .collect();
     let hasReply = false;
     for (const r of replies) {
       const t = Date.parse(r.receivedAt);
@@ -250,10 +280,6 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
     }
     if (hasReply) replied += 1;
 
-    const meetings = await ctx.db
-      .query("meetings")
-      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
-      .collect();
     const realMeetings = meetings.filter((m: any) => m.reviewState !== "confirmed_remove");
     if (realMeetings.length > 0) meetingsBookedProspects += 1;
     if (hasReply && realMeetings.length === 0) arranging += 1;
@@ -265,10 +291,6 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
       if (isFinite(md)) (m.meetingType === "call" ? callTs : f2fTs).push(md);
     }
 
-    const schemes = await ctx.db
-      .query("prospectSchemes")
-      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
-      .collect();
     for (const s of schemes) {
       const t = Date.parse(s.createdAt);
       if (isFinite(t)) {
@@ -280,10 +302,6 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
       }
     }
 
-    const events = await ctx.db
-      .query("prospectStageEvents")
-      .withIndex("by_client", (q: any) => q.eq("clientId", p._id))
-      .collect();
     for (const e of events) {
       if (e.kind !== "qual_substage") continue;
       const t = Date.parse(e.at);
@@ -527,10 +545,14 @@ const STAGE_BUILDERS: Record<Stage, (a: Activity, count: number, t: Targets) => 
 export const pipelineOverview = query({
   args: {},
   handler: async (ctx) => {
-    const clients = await ctx.db.query("clients").collect();
-    const prospects = (clients as any[]).filter(
-      (c) => c.status === "prospect" && c.prospectState,
-    );
+    // Read only prospect rows (not every active/archived client) — the full
+    // clients table carries heavy metadata blobs and dwarfs the per-query byte
+    // budget once the book grows.
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .collect();
+    const prospects = (clients as any[]).filter((c) => c.prospectState);
 
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
@@ -614,9 +636,12 @@ export const stageDashboard = query({
     }
     const stage = args.stage as Stage;
 
-    const clients = await ctx.db.query("clients").collect();
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .collect();
     const prospects = (clients as any[]).filter(
-      (c) => c.status === "prospect" && c.prospectState && effectiveStage(c) === stage,
+      (c) => c.prospectState && effectiveStage(c) === stage,
     );
     const prospectIds = new Set(prospects.map((p) => String(p._id)));
     const nameById = new Map<string, string>(
@@ -635,67 +660,161 @@ export const stageDashboard = query({
     const stageCadences = pendingCadences.filter((c: any) => prospectIds.has(String(c.relatedClientId)));
     const stageIntel = intelRuns.filter((r: any) => prospectIds.has(String(r.linkedClientId)));
 
-    type Item = {
+    // ── Build action items, then group by prospect ──────────────────────────
+    // approve: one-click metadata the UI wires to the matching mutation.
+    // blocked: the action can't usefully fire yet (e.g. a send with no contact).
+    type Action = {
       id: string;
       type: "reply" | "approval" | "cadence" | "intel";
       title: string;
       subtitle: string;
-      clientId: string | null;
-      clientName: string;
-      occurredAt: string;
+      when: string;
       severity: "warn" | "info" | "ok";
+      blocked: boolean;
+      approve:
+        | { kind: "cadence"; packageId: string }
+        | { kind: "approval"; approvalId: string }
+        | null;
     };
-    const items: Item[] = [];
+
+    const byClient = new Map<string, Action[]>();
+    const pushAction = (clientId: any, a: Action) => {
+      const key = clientId ? String(clientId) : "_unlinked";
+      const arr = byClient.get(key) ?? [];
+      arr.push(a);
+      byClient.set(key, arr);
+    };
+
     for (const r of stageReplies) {
-      items.push({
+      pushAction(r.linkedClientId, {
         id: String(r._id),
         type: "reply",
-        title: nameById.get(String(r.linkedClientId)) ?? "Reply",
-        subtitle: r.replySubject || (r.replyBodyText ? String(r.replyBodyText).slice(0, 80) : "Inbound reply awaiting triage"),
-        clientId: r.linkedClientId ? String(r.linkedClientId) : null,
-        clientName: nameById.get(String(r.linkedClientId)) ?? "Unknown",
-        occurredAt: r.receivedAt ?? "",
+        title: "Reply awaiting triage",
+        subtitle: r.replySubject || (r.replyBodyText ? String(r.replyBodyText).slice(0, 90) : "Inbound reply — open to route"),
+        when: r.receivedAt ?? "",
         severity: "warn",
+        blocked: false,
+        approve: null,
       });
     }
     for (const a of stageApprovals) {
-      items.push({
+      pushAction(a.relatedClientId, {
         id: String(a._id),
         type: "approval",
         title: a.summary || "Approval pending",
         subtitle: `${String(a.entityType).replace(/_/g, " ")}${a.requestSourceName ? ` · ${a.requestSourceName}` : ""}`,
-        clientId: a.relatedClientId ? String(a.relatedClientId) : null,
-        clientName: nameById.get(String(a.relatedClientId)) ?? "Unknown",
-        occurredAt: a.requestedAt ?? "",
+        when: a.requestedAt ?? "",
         severity: "info",
+        blocked: false,
+        approve: { kind: "approval", approvalId: String(a._id) },
       });
     }
+    // Cadence rows are per-touch; collapse to one action per package so the
+    // queue shows "approve this package" once, not once per touch.
+    const seenPackages = new Set<string>();
     for (const c of stageCadences) {
-      items.push({
-        id: String(c._id),
+      const pkg = c.packageId ? String(c.packageId) : `cadence:${String(c._id)}`;
+      if (seenPackages.has(pkg)) continue;
+      seenPackages.add(pkg);
+      pushAction(c.relatedClientId, {
+        id: pkg,
         type: "cadence",
         title: "Cadence package awaiting approval",
-        subtitle: nameById.get(String(c.relatedClientId)) ?? c.cadenceType ?? "Outreach cadence",
-        clientId: c.relatedClientId ? String(c.relatedClientId) : null,
-        clientName: nameById.get(String(c.relatedClientId)) ?? "Unknown",
-        occurredAt: c.createdAt ?? (c._creationTime ? new Date(c._creationTime).toISOString() : ""),
+        subtitle: c.cadenceType ? String(c.cadenceType).replace(/_/g, " ") : "Outreach cadence",
+        when: c.createdAt ?? (c._creationTime ? new Date(c._creationTime).toISOString() : ""),
         severity: "info",
+        blocked: false,
+        approve: c.packageId ? { kind: "cadence", packageId: String(c.packageId) } : null,
       });
     }
     for (const r of stageIntel) {
       const gap = r.gaps?.[0]?.description;
-      items.push({
+      pushAction(r.linkedClientId, {
         id: String(r._id),
         type: "intel",
         title: "Intelligence needs rerun",
-        subtitle: `${nameById.get(String(r.linkedClientId)) ?? "Prospect"}${gap ? ` · ${gap}` : r.status === "failed" ? " · run failed" : ""}`,
-        clientId: r.linkedClientId ? String(r.linkedClientId) : null,
-        clientName: nameById.get(String(r.linkedClientId)) ?? "Unknown",
-        occurredAt: r.completedAt ?? "",
+        subtitle: gap ? String(gap).slice(0, 90) : r.status === "failed" ? "Run failed" : "Completed with gaps",
+        when: r.completedAt ?? "",
         severity: "warn",
+        blocked: false,
+        approve: null,
       });
     }
-    items.sort((a, b) => (b.occurredAt || "").localeCompare(a.occurredAt || ""));
+
+    // ── Detect the blocking signal per prospect: no sendable contact ─────────
+    // A contact is sendable if it has an email that isn't flagged bad. With no
+    // sendable contact, every outbound action (cadence / send approval) is
+    // useless, so we surface it as the group's blocker and mark those blocked.
+    const groupClientIds = [...byClient.keys()].filter((k) => k !== "_unlinked");
+    const sendableByClient = new Map<string, boolean>();
+    await Promise.all(
+      groupClientIds.map(async (cid) => {
+        const contacts = await ctx.db
+          .query("contacts")
+          .withIndex("by_client", (q: any) => q.eq("clientId", cid as any))
+          .collect();
+        const sendable = contacts.some(
+          (ct: any) => ct.email && (ct.emailStatus == null || ct.emailStatus === "verified"),
+        );
+        sendableByClient.set(cid, sendable);
+      }),
+    );
+
+    type Group = {
+      clientId: string | null;
+      clientName: string;
+      blocking: { kind: "no_contact"; label: string } | null;
+      actions: Action[];
+      latestAt: string;
+    };
+    const groups: Group[] = [];
+    for (const [key, actions] of byClient.entries()) {
+      const clientId = key === "_unlinked" ? null : key;
+      const sendable = clientId ? sendableByClient.get(clientId) ?? true : true;
+      const hasOutbound = actions.some((a) => a.type === "cadence" || a.type === "approval");
+      const blocking =
+        clientId && !sendable && hasOutbound
+          ? { kind: "no_contact" as const, label: "No verified contact — add an email to unblock sends" }
+          : null;
+      if (blocking) {
+        for (const a of actions) if (a.type === "cadence" || a.type === "approval") a.blocked = true;
+      }
+      // Within a group: blocked/blocker context first, then most recent.
+      actions.sort((a, b) => (b.when || "").localeCompare(a.when || ""));
+      const latestAt = actions.reduce((m, a) => (a.when > m ? a.when : m), "");
+      groups.push({
+        clientId,
+        clientName: clientId ? nameById.get(clientId) ?? "Unknown" : "Unlinked",
+        blocking,
+        actions,
+        latestAt,
+      });
+    }
+    // Blocked prospects float to the top (they need a decision before anything
+    // else can move), then by most recent activity.
+    groups.sort((a, b) => {
+      if (!!a.blocking !== !!b.blocking) return a.blocking ? -1 : 1;
+      return (b.latestAt || "").localeCompare(a.latestAt || "");
+    });
+
+    // Backward-compat: keep the old flat `actionItems` shape so a frontend
+    // bundle deployed BEFORE the grouped queue (Vercel lags the Convex deploy,
+    // which is live immediately) doesn't crash on `actionItems.length`. Safe to
+    // drop once the matching frontend is fully rolled out.
+    const actionItems = groups
+      .flatMap((g) =>
+        g.actions.map((a) => ({
+          id: a.id,
+          type: a.type,
+          title: a.title,
+          subtitle: a.subtitle,
+          clientId: g.clientId,
+          clientName: g.clientName,
+          occurredAt: a.when,
+          severity: a.severity,
+        })),
+      )
+      .slice(0, 50);
 
     return {
       stage,
@@ -703,11 +822,13 @@ export const stageDashboard = query({
       headline: built.headline,
       metricGroups: built.groups,
       ladder: built.ladder,
-      actionItems: items.slice(0, 50),
+      actionItems,
+      actionGroups: groups.slice(0, 40),
+      actionGroupTotal: groups.length,
       actionCounts: {
         replies: stageReplies.length,
         approvals: stageApprovals.length,
-        cadences: stageCadences.length,
+        cadences: seenPackages.size,
         intel: stageIntel.length,
       },
     };
