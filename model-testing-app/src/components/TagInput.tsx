@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useColors } from '@/lib/useColors';
 
 interface TagInputProps {
   tags: string[];
@@ -11,6 +12,7 @@ interface TagInputProps {
 }
 
 export default function TagInput({ tags, onChange, suggestions = [], placeholder = 'Add tags...' }: TagInputProps) {
+  const colors = useColors();
   const [inputValue, setInputValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,17 +71,21 @@ export default function TagInput({ tags, onChange, suggestions = [], placeholder
 
   return (
     <div className="relative" ref={containerRef}>
-      <div className="flex flex-wrap gap-2 p-2 border border-gray-300 rounded-md min-h-[42px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+      <div
+        className="flex flex-wrap gap-2"
+        style={{ padding: 8, border: `1px solid ${colors.border.default}`, borderRadius: 4, minHeight: 42, background: colors.bg.card }}
+      >
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm"
+            className="inline-flex items-center gap-1"
+            style={{ padding: '2px 8px', borderRadius: 4, fontSize: 13, background: `${colors.accent.blue}1f`, color: colors.accent.blue }}
           >
             {tag}
             <button
               onClick={() => removeTag(tag)}
-              className="hover:text-blue-900"
               type="button"
+              style={{ lineHeight: 0, color: 'inherit', cursor: 'pointer' }}
             >
               <X className="w-3 h-3" />
             </button>
@@ -93,16 +99,21 @@ export default function TagInput({ tags, onChange, suggestions = [], placeholder
           onKeyDown={handleInputKeyDown}
           onFocus={() => setShowSuggestions(inputValue.length > 0 || filteredSuggestions.length > 0)}
           placeholder={tags.length === 0 ? placeholder : ''}
-          className="flex-1 min-w-[120px] border-none outline-none bg-transparent text-sm"
+          className="flex-1 border-none outline-none bg-transparent"
+          style={{ minWidth: 120, fontSize: 13, color: colors.text.primary }}
         />
       </div>
       {showSuggestions && filteredSuggestions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto">
+        <div
+          className="absolute top-full left-0 right-0 z-50 overflow-y-auto"
+          style={{ marginTop: 4, background: colors.bg.card, border: `1px solid ${colors.border.default}`, borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.12)', maxHeight: 192 }}
+        >
           {filteredSuggestions.map((suggestion) => (
             <button
               key={suggestion}
               onClick={() => handleSuggestionClick(suggestion)}
-              className="w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors text-sm"
+              className="w-full text-left"
+              style={{ padding: '8px 12px', fontSize: 13, color: colors.text.primary, cursor: 'pointer' }}
             >
               {suggestion}
             </button>
