@@ -797,12 +797,32 @@ export const stageDashboard = query({
       return (b.latestAt || "").localeCompare(a.latestAt || "");
     });
 
+    // Backward-compat: keep the old flat `actionItems` shape so a frontend
+    // bundle deployed BEFORE the grouped queue (Vercel lags the Convex deploy,
+    // which is live immediately) doesn't crash on `actionItems.length`. Safe to
+    // drop once the matching frontend is fully rolled out.
+    const actionItems = groups
+      .flatMap((g) =>
+        g.actions.map((a) => ({
+          id: a.id,
+          type: a.type,
+          title: a.title,
+          subtitle: a.subtitle,
+          clientId: g.clientId,
+          clientName: g.clientName,
+          occurredAt: a.when,
+          severity: a.severity,
+        })),
+      )
+      .slice(0, 50);
+
     return {
       stage,
       count,
       headline: built.headline,
       metricGroups: built.groups,
       ladder: built.ladder,
+      actionItems,
       actionGroups: groups.slice(0, 40),
       actionGroupTotal: groups.length,
       actionCounts: {

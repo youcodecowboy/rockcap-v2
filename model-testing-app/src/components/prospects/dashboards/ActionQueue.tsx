@@ -47,6 +47,11 @@ export function ActionQueue({ groups, total, accent }: { groups: QueueGroup[]; t
   const colors = useColors();
   const [shown, setShown] = useState(PAGE);
 
+  // Defensive: never assume the server shape is present (frontend can briefly
+  // lead/lag a Convex deploy). Treat a missing list as empty, not a crash.
+  groups = Array.isArray(groups) ? groups : [];
+  total = typeof total === "number" ? total : groups.length;
+
   if (groups.length === 0) {
     return <EmptyState title="Nothing needs attention" body="No replies, approvals, cadences or intel reruns waiting in this stage." />;
   }
