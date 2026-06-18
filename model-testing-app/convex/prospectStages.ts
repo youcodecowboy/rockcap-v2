@@ -163,34 +163,56 @@ type Kpi = {
 
 // ── Gather the "requires action" signals once, keyed by clientId ─────────────
 
+// Caps keep the per-query byte budget bounded (Convex limits one execution to
+// 16MB read). These are triage surfaces — the queue shows the most recent items
+// and the per-stage counts; capping the tail is acceptable. skillRuns are read
+// scoped to prospect-intel via a compound index AND ordered desc + capped tight,
+// because their brief / intelMarkdown / structureGraph fields are heavy.
+// Per-source caps. cadences (preDraftedTouch.bodyHtml) and approvals (draft
+// payloads) carry the heaviest bodies, so they get tighter caps. skillRuns are
+// tightest — brief / intelMarkdown / structureGraph are the heaviest of all.
+const REPLY_CAP = 100;
+const APPROVAL_CAP = 75;
+const CADENCE_CAP = 75;
+const INTEL_RUN_CAP = 6;
+
 async function gatherActionSignals(ctx: any) {
   const unrouted = await ctx.db
     .query("replyEvents")
     .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", "operator_review"))
-    .collect();
+    .order("desc")
+    .take(REPLY_CAP);
   const replies = unrouted.filter((r: any) => !r.processed && r.linkedClientId);
 
   const pendingApprovals = (await ctx.db
     .query("approvals")
     .withIndex("by_status", (q: any) => q.eq("status", "pending"))
-    .collect()) as any[];
+    .order("desc")
+    .take(APPROVAL_CAP)) as any[];
 
   const pendingCadences = (await ctx.db
     .query("cadences")
     .withIndex("by_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
-    .collect()) as any[];
+    .order("desc")
+    .take(CADENCE_CAP)) as any[];
 
   const failedRuns = (await ctx.db
     .query("skillRuns")
-    .withIndex("by_status", (q: any) => q.eq("status", "failed"))
-    .collect()) as any[];
+    .withIndex("by_skill_and_status", (q: any) =>
+      q.eq("skillName", "prospect-intel").eq("status", "failed"),
+    )
+    .order("desc")
+    .take(INTEL_RUN_CAP)) as any[];
   const gappyRuns = (await ctx.db
     .query("skillRuns")
-    .withIndex("by_status", (q: any) => q.eq("status", "complete_with_gaps"))
-    .collect()) as any[];
-  const intelRuns = [...failedRuns, ...gappyRuns].filter(
-    (r: any) => r.skillName === "prospect-intel" && r.linkedClientId,
-  );
+    .withIndex("by_skill_and_status", (q: any) =>
+      q.eq("skillName", "prospect-intel").eq("status", "complete_with_gaps"),
+    )
+    .order("desc")
+    .take(INTEL_RUN_CAP)) as any[];
+  // Note: counts above are capped (triage surface). The summary badge can read
+  // "N+" when a source hits its cap; exhaustive ledgers live on their own pages.
+  const intelRuns = [...failedRuns, ...gappyRuns].filter((r: any) => r.linkedClientId);
 
   return { replies, pendingApprovals, pendingCadences, intelRuns };
 }
@@ -527,10 +549,14 @@ const STAGE_BUILDERS: Record<Stage, (a: Activity, count: number, t: Targets) => 
 export const pipelineOverview = query({
   args: {},
   handler: async (ctx) => {
-    const clients = await ctx.db.query("clients").collect();
-    const prospects = (clients as any[]).filter(
-      (c) => c.status === "prospect" && c.prospectState,
-    );
+    // Read only prospect rows (not every active/archived client) — the full
+    // clients table carries heavy metadata blobs and dwarfs the per-query byte
+    // budget once the book grows.
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .collect();
+    const prospects = (clients as any[]).filter((c) => c.prospectState);
 
     const { replies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
@@ -614,9 +640,12 @@ export const stageDashboard = query({
     }
     const stage = args.stage as Stage;
 
-    const clients = await ctx.db.query("clients").collect();
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .collect();
     const prospects = (clients as any[]).filter(
-      (c) => c.status === "prospect" && c.prospectState && effectiveStage(c) === stage,
+      (c) => c.prospectState && effectiveStage(c) === stage,
     );
     const prospectIds = new Set(prospects.map((p) => String(p._id)));
     const nameById = new Map<string, string>(

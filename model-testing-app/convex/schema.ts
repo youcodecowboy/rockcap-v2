@@ -4494,6 +4494,11 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
     .index("by_status", ["status"])
-    .index("by_skill_and_user", ["skillName", "userId"]),
+    .index("by_skill_and_user", ["skillName", "userId"])
+    // Scope failed / gappy runs to a single skill so the prospecting action
+    // queue reads only prospect-intel runs (not every skill's history) —
+    // skillRun docs carry heavy brief / intelMarkdown / structureGraph fields,
+    // so reading them all blows the per-query byte limit.
+    .index("by_skill_and_status", ["skillName", "status"]),
 });
 
