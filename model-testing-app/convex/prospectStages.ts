@@ -177,7 +177,7 @@ async function gatherActionSignals(ctx: any) {
 
   const pendingCadences = (await ctx.db
     .query("cadences")
-    .withIndex("by_package_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
+    .withIndex("by_approval_status", (q: any) => q.eq("packageApprovalStatus", "pending"))
     .collect()) as any[];
 
   const failedRuns = (await ctx.db

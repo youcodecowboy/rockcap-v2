@@ -4027,6 +4027,10 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_package", ["packageId"])
     .index("by_package_approval_status", ["packageId", "packageApprovalStatus"])
+    // Global lookup of every package in a given approval state (across all
+    // packages) — powers the prospecting action queue. The compound index
+    // above leads with packageId so it can't serve a bare-status query.
+    .index("by_approval_status", ["packageApprovalStatus"])
     .index("by_contact_active", ["contactId", "isActive"])
     .index("by_created_by", ["createdBy"]),
 
