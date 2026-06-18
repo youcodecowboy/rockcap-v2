@@ -15,6 +15,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { resolveProspectDealSizeGBP, median } from "./lib/dealSizeParse";
 
 const STAGE_KEYS = [
   "cold_outreach",
@@ -560,16 +561,42 @@ export const pipelineOverview = query({
 
     const stages: Record<
       Stage,
-      { key: Stage; count: number; pipelineValueGBP: number; pipelineValueLabel: string; pricedCount: number; actionItems: number }
+      {
+        key: Stage;
+        count: number;
+        pipelineValueGBP: number;
+        pipelineValueLabel: string;
+        pricedCount: number;
+        actionItems: number;
+        // Estimated value: operator dealValueGBP where set, else the AI
+        // dealSizeRange midpoint. estCount = prospects in this stage with any
+        // estimate (the basis for the value label).
+        estValueGBP: number;
+        estValueLabel: string;
+        estCount: number;
+      }
     > = Object.fromEntries(
       STAGE_KEYS.map((k) => [
         k,
-        { key: k, count: 0, pipelineValueGBP: 0, pipelineValueLabel: "—", pricedCount: 0, actionItems: 0 },
+        {
+          key: k,
+          count: 0,
+          pipelineValueGBP: 0,
+          pipelineValueLabel: "—",
+          pricedCount: 0,
+          actionItems: 0,
+          estValueGBP: 0,
+          estValueLabel: "—",
+          estCount: 0,
+        },
       ]),
     ) as any;
 
     let holding = 0;
     let pricedTotal = 0;
+    // Per-prospect estimated deal sizes across the live pipeline (in-stage only;
+    // holding/lost/promoted are excluded). Feeds the mean/median/total headline.
+    const estDealSizes: number[] = [];
     for (const p of prospects) {
       const stage = effectiveStage(p);
       if (!stage) {
@@ -578,18 +605,37 @@ export const pipelineOverview = query({
       }
       const bucket = stages[stage];
       bucket.count += 1;
-      // Operator-entered deal value only — the AI dealSizeRange is never summed.
+      // Operator-entered deal value only — kept as the authoritative figure.
       if (typeof p.dealValueGBP === "number" && p.dealValueGBP > 0) {
         bucket.pipelineValueGBP += p.dealValueGBP;
         bucket.pricedCount += 1;
         pricedTotal += 1;
+      }
+      // Estimated value — operator figure if present, else AI midpoint. This is
+      // what surfaces while operators have not yet priced deals by hand.
+      const est = resolveProspectDealSizeGBP(p);
+      if (est != null && est > 0) {
+        bucket.estValueGBP += est;
+        bucket.estCount += 1;
+        estDealSizes.push(est);
       }
       bucket.actionItems += actionByClient.get(String(p._id)) ?? 0;
     }
     for (const k of STAGE_KEYS) {
       stages[k].pipelineValueLabel =
         stages[k].pipelineValueGBP > 0 ? fmtGBP(stages[k].pipelineValueGBP) : "—";
+      stages[k].estValueLabel =
+        stages[k].estValueGBP > 0 ? fmtGBP(stages[k].estValueGBP) : "—";
     }
+
+    // Whole-pipeline estimate rollup. Total is mean-based (Σ midpoints) so the
+    // big schemes count toward expected value; median is the robust "typical
+    // deal" that the outliers don't distort. Both are returned so the UI can
+    // show them side by side.
+    const estTotalGBP = estDealSizes.reduce((s, v) => s + v, 0);
+    const estCount = estDealSizes.length;
+    const estMeanGBP = estCount > 0 ? estTotalGBP / estCount : 0;
+    const estMedianGBP = median(estDealSizes);
 
     // Curated cross-pipeline KPI strip (the client's "Summary" spec). These are
     // whole-pipeline rollups, so we gather activity across every prospect once.
@@ -618,6 +664,11 @@ export const pipelineOverview = query({
       holding,
       totalActionItems,
       pricedTotal,
+      // Estimated pipeline value (AI dealSizeRange + operator overrides).
+      estTotalGBP,
+      estMeanGBP,
+      estMedianGBP,
+      estCount,
       summaryKpis,
     };
   },

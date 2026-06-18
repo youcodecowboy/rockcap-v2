@@ -15,6 +15,9 @@ type StageOverview = {
   count: number;
   pipelineValueGBP: number;
   pipelineValueLabel: string;
+  estValueGBP: number;
+  estValueLabel: string;
+  estCount: number;
   actionItems: number;
 };
 type ServerKpi = { label: string; value: string; meta?: string; accentKey?: string; target?: number };
@@ -24,6 +27,10 @@ type Overview = {
   holding: number;
   totalActionItems: number;
   pricedTotal: number;
+  estTotalGBP: number;
+  estMeanGBP: number;
+  estMedianGBP: number;
+  estCount: number;
   summaryKpis: ServerKpi[];
 };
 
@@ -45,11 +52,14 @@ export function PipelineSummary() {
   const accentFor = (key: string | undefined) =>
     key ? (colors.accent as Record<string, string>)[key] ?? colors.entityTypes.prospect : colors.entityTypes.prospect;
 
-  const totalValue = (overview?.stages ?? []).reduce((s, st) => s + st.pipelineValueGBP, 0);
+  // Estimated pipeline value: AI dealSizeRange midpoints + operator overrides.
+  // Total is mean-based (counts the big schemes); median is the typical deal.
+  const estTotal = overview?.estTotalGBP ?? 0;
 
   const kpis: Kpi[] = [
     { label: "Prospects in pipeline", value: overview ? String(overview.totalProspects) : "—", accent: colors.entityTypes.prospect },
-    { label: "Pipeline value", value: totalValue > 0 ? fmtGBP(totalValue) : "—", meta: overview ? `${overview.pricedTotal ?? 0}/${overview.totalProspects} priced` : "operator-entered", accent: colors.accent.green },
+    { label: "Est. pipeline value", value: estTotal > 0 ? fmtGBP(estTotal) : "—", meta: overview ? `${overview.estCount ?? 0}/${overview.totalProspects} estimated` : "AI estimate", accent: colors.accent.green },
+    { label: "Typical deal", value: overview && overview.estMedianGBP > 0 ? fmtGBP(overview.estMedianGBP) : "—", meta: overview && overview.estMeanGBP > 0 ? `median · mean ${fmtGBP(overview.estMeanGBP)}` : "median" },
     { label: "Requires action", value: overview ? String(overview.totalActionItems) : "—", accent: overview && overview.totalActionItems > 0 ? colors.accent.orange : undefined },
     { label: "Holding", value: overview ? String(overview.holding) : "—", meta: "parked / lost / promoted" },
   ];
@@ -110,7 +120,7 @@ export function PipelineSummary() {
               label={def.label}
               description={def.description}
               count={s?.count ?? 0}
-              valueLabel={s?.pipelineValueLabel ?? "—"}
+              valueLabel={s?.estValueLabel ?? "—"}
               actionItems={s?.actionItems ?? 0}
               accent={accent}
               loading={!overview}
@@ -197,7 +207,7 @@ function StageCard({
       </div>
 
       <div style={{ fontSize: 11, color: colors.text.muted }}>
-        <span style={{ fontFamily: MONO, color: colors.text.secondary }}>{valueLabel}</span> pipeline value
+        <span style={{ fontFamily: MONO, color: colors.text.secondary }}>{valueLabel}</span> est. value
       </div>
 
       <div style={{ fontSize: 10, color: colors.text.dim, marginTop: "auto" }}>{description}</div>
