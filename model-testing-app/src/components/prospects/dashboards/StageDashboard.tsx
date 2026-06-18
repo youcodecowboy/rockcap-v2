@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useQuery } from "convex/react";
-import { useRouter } from "next/navigation";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { Panel, KpiRow, StatTile, DataTable, EmptyState, type Column, type Kpi } from "@/components/layouts";
+import { Panel, KpiRow, StatTile, type Kpi } from "@/components/layouts";
 import { ProspectsTab } from "@/components/prospects/tabs2/ProspectsTab";
 import { EditTargetsButton } from "./TargetsModal";
+import { ActionQueue, type QueueGroup } from "./ActionQueue";
 import { stageFor, type PipelineStage } from "@/lib/prospects/stages";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -15,36 +15,19 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 type ServerKpi = { label: string; value: string; meta?: string; accentKey?: string; target?: number };
 type MetricGroup = { title: string; kpis: ServerKpi[] };
 type LadderStep = { key: string; label: string; count: number };
-type ActionItem = {
-  id: string;
-  type: "reply" | "approval" | "cadence" | "intel";
-  title: string;
-  subtitle: string;
-  clientId: string | null;
-  clientName: string;
-  occurredAt: string;
-  severity: "warn" | "info" | "ok";
-};
 type StageData = {
   stage: PipelineStage;
   count: number;
   headline: ServerKpi[];
   metricGroups: MetricGroup[];
   ladder: { title: string; steps: LadderStep[] } | null;
-  actionItems: ActionItem[];
+  actionGroups: QueueGroup[];
+  actionGroupTotal: number;
   actionCounts: { replies: number; approvals: number; cadences: number; intel: number };
-};
-
-const ACTION_LABELS: Record<ActionItem["type"], string> = {
-  reply: "Reply",
-  approval: "Review",
-  cadence: "Cadence",
-  intel: "Intel",
 };
 
 export function StageDashboard({ stage }: { stage: PipelineStage }) {
   const colors = useColors();
-  const router = useRouter();
   const [view, setView] = useState<"overview" | "table">("overview");
 
   const data = useQuery(api.prospectStages.stageDashboard, { stage }) as StageData | null | undefined;
@@ -72,35 +55,6 @@ export function StageDashboard({ stage }: { stage: PipelineStage }) {
     accent: accentFor(k.accentKey),
   }));
 
-  const actionColumns: Column<ActionItem>[] = [
-    {
-      key: "type",
-      header: "Type",
-      width: 96,
-      render: (r) => <TypeChip type={r.type} colors={colors} />,
-    },
-    {
-      key: "item",
-      header: "Item",
-      render: (r) => (
-        <div>
-          <div style={{ color: colors.text.primary, fontWeight: 500 }}>{r.title}</div>
-          <div style={{ fontSize: 10, color: colors.text.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {r.subtitle}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "when",
-      header: "When",
-      width: 96,
-      align: "right",
-      mono: true,
-      render: (r) => (r.occurredAt ? String(r.occurredAt).slice(0, 10) : "—"),
-    },
-  ];
-
   return (
     <div>
       {/* Top metrics bar — volume / pipeline position for this stage */}
@@ -126,24 +80,21 @@ export function StageDashboard({ stage }: { stage: PipelineStage }) {
 
       {view === "overview" ? (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.7fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
-          {/* Left — requires action */}
+          {/* Left — requires action, grouped by prospect */}
           <Panel
             title="Requires action"
             accent={colors.accent.orange}
-            padded={false}
             actions={
-              data && data.actionItems.length > 0 ? (
-                <span style={{ fontFamily: MONO, fontSize: 10, color: colors.text.muted }}>{data.actionItems.length}</span>
+              data && data.actionGroupTotal > 0 ? (
+                <span style={{ fontFamily: MONO, fontSize: 10, color: colors.text.muted }}>{data.actionGroupTotal}</span>
               ) : undefined
             }
           >
-            <DataTable
-              columns={actionColumns}
-              rows={data?.actionItems ?? []}
-              getRowKey={(r) => r.id}
-              onRowClick={(r) => r.clientId && router.push(`/prospects/${r.clientId}`)}
-              empty={<EmptyState title="Nothing needs attention" body="No replies, approvals or intel reruns waiting in this stage." />}
-            />
+            {data ? (
+              <ActionQueue groups={data.actionGroups} total={data.actionGroupTotal} accent={stageAccent} />
+            ) : (
+              <div style={{ height: 120, background: colors.bg.cardAlt, borderRadius: 4 }} />
+            )}
           </Panel>
 
           {/* Right — bespoke metric groups (+ sub-stage ladder for pre-qual/qualified) */}
@@ -201,33 +152,6 @@ function LadderStrip({ steps, accent, colors }: { steps: LadderStep[]; accent: s
         </div>
       ))}
     </div>
-  );
-}
-
-function TypeChip({ type, colors }: { type: ActionItem["type"]; colors: any }) {
-  const tone =
-    type === "reply" ? colors.accent.purple
-    : type === "intel" ? colors.accent.orange
-    : type === "cadence" ? colors.accent.cyan
-    : colors.accent.blue;
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        fontFamily: MONO,
-        fontSize: 9,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
-        fontWeight: 600,
-        padding: "2px 7px",
-        borderRadius: 3,
-        color: tone,
-        background: `${tone}14`,
-        border: `1px solid ${tone}40`,
-      }}
-    >
-      {ACTION_LABELS[type]}
-    </span>
   );
 }
 
