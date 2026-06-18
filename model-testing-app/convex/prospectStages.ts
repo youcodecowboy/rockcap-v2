@@ -100,19 +100,6 @@ function effectiveStage(c: any): Stage | null {
 
 // ── Value parsing ────────────────────────────────────────────────────────────
 
-function parseDealValueGBP(s?: string | null): number | null {
-  if (!s) return null;
-  const m = s.match(/£\s*([\d.]+)\s*(?:[-–—]|to)?\s*([\d.]+)?\s*(m|k|bn)?/i);
-  if (!m) return null;
-  const lo = parseFloat(m[1]);
-  if (!isFinite(lo)) return null;
-  const hi = m[2] ? parseFloat(m[2]) : lo;
-  const unit = (m[3] ?? "m").toLowerCase();
-  const mult = unit === "bn" ? 1_000_000_000 : unit === "k" ? 1_000 : 1_000_000;
-  const mid = ((lo + (isFinite(hi) ? hi : lo)) / 2) * mult;
-  return isFinite(mid) ? mid : null;
-}
-
 function fmtGBP(n: number): string {
   if (n >= 1_000_000_000) return `£${(n / 1_000_000_000).toFixed(1)}bn`;
   if (n >= 1_000_000) return `£${(n / 1_000_000).toFixed(1)}m`;
@@ -240,6 +227,7 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
   let arranging = 0; // replied but no meeting yet
   let liveSchemes = 0;
   let pipelineValueGBP = 0;
+  let pricedCount = 0; // prospects with an operator-entered deal value
   const now = Date.now();
 
   // Read every prospect's event streams in parallel (5 queries per prospect, all
@@ -309,8 +297,11 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
       (subStageEnteredTs[e.toValue] ??= []).push(t);
     }
 
-    const val = parseDealValueGBP(p.dealSizeRange);
-    if (val) pipelineValueGBP += val;
+    // Operator-entered deal value only — never the AI dealSizeRange estimate.
+    if (typeof p.dealValueGBP === "number" && p.dealValueGBP > 0) {
+      pipelineValueGBP += p.dealValueGBP;
+      pricedCount += 1;
+    }
   }
 
   // current sub-stage tallies (where prospects sit right now)
@@ -326,7 +317,7 @@ async function gatherStageActivity(ctx: any, prospects: any[]) {
     schemeTs, liveSchemeTs,
     subStageEnteredTs, subStageNow,
     contacted, replied, meetingsBookedProspects, arranging, liveSchemes,
-    pipelineValueGBP,
+    pipelineValueGBP, pricedCount,
   };
 }
 
@@ -417,7 +408,7 @@ function warmPreKpis(a: Activity, count: number, t: Targets) {
       title: "Pipeline",
       kpis: [
         { label: "Arranging now", value: String(a.arranging), accentKey: a.arranging > 0 ? "orange" : undefined },
-        { label: "Pipeline value", value: a.pipelineValueGBP > 0 ? fmtGBP(a.pipelineValueGBP) : "—", accentKey: "green" },
+        { label: "Pipeline value", value: a.pipelineValueGBP > 0 ? fmtGBP(a.pipelineValueGBP) : "—", meta: `${a.pricedCount}/${count} priced`, accentKey: "green" },
       ],
     },
   ];
@@ -569,15 +560,16 @@ export const pipelineOverview = query({
 
     const stages: Record<
       Stage,
-      { key: Stage; count: number; pipelineValueGBP: number; pipelineValueLabel: string; actionItems: number }
+      { key: Stage; count: number; pipelineValueGBP: number; pipelineValueLabel: string; pricedCount: number; actionItems: number }
     > = Object.fromEntries(
       STAGE_KEYS.map((k) => [
         k,
-        { key: k, count: 0, pipelineValueGBP: 0, pipelineValueLabel: "—", actionItems: 0 },
+        { key: k, count: 0, pipelineValueGBP: 0, pipelineValueLabel: "—", pricedCount: 0, actionItems: 0 },
       ]),
     ) as any;
 
     let holding = 0;
+    let pricedTotal = 0;
     for (const p of prospects) {
       const stage = effectiveStage(p);
       if (!stage) {
@@ -586,8 +578,12 @@ export const pipelineOverview = query({
       }
       const bucket = stages[stage];
       bucket.count += 1;
-      const val = parseDealValueGBP(p.dealSizeRange);
-      if (val) bucket.pipelineValueGBP += val;
+      // Operator-entered deal value only — the AI dealSizeRange is never summed.
+      if (typeof p.dealValueGBP === "number" && p.dealValueGBP > 0) {
+        bucket.pipelineValueGBP += p.dealValueGBP;
+        bucket.pricedCount += 1;
+        pricedTotal += 1;
+      }
       bucket.actionItems += actionByClient.get(String(p._id)) ?? 0;
     }
     for (const k of STAGE_KEYS) {
@@ -621,6 +617,7 @@ export const pipelineOverview = query({
       totalProspects: prospects.length,
       holding,
       totalActionItems,
+      pricedTotal,
       summaryKpis,
     };
   },
@@ -931,6 +928,42 @@ export const setQualSubStage = mutation({
       });
     }
     return { ok: true, subStage: args.subStage, changedAt: now };
+  },
+});
+
+// ── Operator-entered deal value ──────────────────────────────────────────────
+// The single source of truth for the pipeline-value metric. Pass valueGBP: null
+// to clear it (back to "not priced"). Never derived — the operator owns it.
+
+export const setDealValue = mutation({
+  args: {
+    clientId: v.id("clients"),
+    valueGBP: v.union(v.number(), v.null()),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await resolveUserId(ctx);
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("Prospect not found");
+
+    const now = new Date().toISOString();
+    if (args.valueGBP == null) {
+      await ctx.db.patch(args.clientId, {
+        dealValueGBP: undefined,
+        dealValueNote: undefined,
+        dealValueSetAt: now,
+        dealValueSetBy: userId,
+      });
+      return { ok: true, valueGBP: null, changedAt: now };
+    }
+    const clean = Math.max(0, Math.round(args.valueGBP));
+    await ctx.db.patch(args.clientId, {
+      dealValueGBP: clean,
+      dealValueNote: args.note?.trim() || undefined,
+      dealValueSetAt: now,
+      dealValueSetBy: userId,
+    });
+    return { ok: true, valueGBP: clean, changedAt: now };
   },
 });
 

@@ -107,6 +107,16 @@ export default defineSchema({
     )),
     dealSizeRange: v.optional(v.string()),
 
+    // ── Operator-entered deal value (2026-06-18) ──
+    // The pipeline-value metric sums ONLY this field. It is set by the operator
+    // (after a conversation / later in the deal flow), never derived or guessed
+    // from dealSizeRange — that AI estimate is an indicative hint, not a number
+    // we put a £ total behind. Stored in GBP. Unset = not counted in pipeline value.
+    dealValueGBP: v.optional(v.number()),
+    dealValueNote: v.optional(v.string()),     // operator's basis ("£7.5m senior, confirmed on call")
+    dealValueSetAt: v.optional(v.string()),
+    dealValueSetBy: v.optional(v.id("users")),
+
     // ── Outreach-ready gate (2026-05-30) ──
     // Lightweight internal "operator has accepted the intel; this prospect may
     // now be drafted for outreach" flag. NOT a prospectState (the state machine
