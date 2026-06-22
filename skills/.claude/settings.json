@@ -1,5 +1,6 @@
 {
-  "$comment": "Project settings for the RockCap skills repo. These hooks make GitHub the central brain: pull latest on start, validate before every commit, never leave edits sitting only on one laptop. They activate only when this folder is opened as the Claude Code project root.",
+  "$comment": "Project settings for the RockCap skills repo. These hooks make GitHub the central brain: pull latest on start, validate before every commit, never leave edits sitting only on one laptop. They activate only when this folder is opened as the Claude Code project root. enabledMcpjsonServers pre-approves the repo's .mcp.json server so non-interactive sessions (cloud environments) connect on boot instead of stalling at 'pending approval'.",
+  "enabledMcpjsonServers": ["rockcap-mcp"],
   "hooks": {
     "SessionStart": [
       {

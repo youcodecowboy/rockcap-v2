@@ -1,0 +1,5 @@
+# macOS
+.DS_Store
+
+# Logs from validator / hooks
+/tmp/rc-*.log

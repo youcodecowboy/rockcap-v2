@@ -56,7 +56,7 @@ Verbatim: "looks like you have some really exciting schemes on at the moment"; "
 ### 9. Sub-sector match / RockCap recent deal (~5%, high specificity when available)
 References a RockCap deal that matches the prospect's sector. Name the deal RockCap led on, never the prospect-side counterparty.
 Verbatim: "we did some work on a co-living pipeline a client is building across the [REGION]"; "we've arranged funding on a couple of rental schemes in the [REGION]"; "we've done a couple of similar [TYPE] schemes".
-- **Our data:** needs a sector-tagged recent-deal index (regions/sectors, no client names). We do not yet have this as structured data; treat as a future reference to build. Until then, surface for manual use. Hard rule: never name the prospect-side client.
+- **Our data:** the **Deal Book / case-study index** — query `caseStudy.matchForProspect({sector, region})`. Returns only operator-confirmed, `referenceable` deals, projected to an anonymised `{sector, region, sizeBand, dealType, headline}` (regions/sectors, never names). Sectors are the canonical set in `deal-sectors.md`. Hard rule: never name the prospect-side client; the RockCap-led deal may be named only if the operator has cleared it.
 
 ### 10. Generic market (last resort, ~5%)
 Verbatim: "how are you finding the market at the moment?"
@@ -79,7 +79,7 @@ Verbatim: "how are you finding the market at the moment?"
 | 6 LinkedIn / digital | No | Yes (scrape) | No | scheme-from-charges | Surface findings |
 | 7 Track record / scale | Yes | No | No | getGroupCharges + schemes | Default fallback |
 | 8 Active / busy | Yes (5+ charges) | No | No | getGroupCharges density | Strong default |
-| 9 Sub-sector match | No (need deal index) | No | No | (future deal index) | Manual until built |
+| 9 Sub-sector match | Yes (on match) | No | No | caseStudy.matchForProspect | Auto when a confirmed match exists |
 | 10 Generic market | Yes | No | No | n/a | Last resort / Tier 2 soften |
 
 ## Hook combinations
