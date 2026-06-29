@@ -1,9 +1,11 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { Calendar, Users, CheckSquare, FileText, MapPin, Clock } from "lucide-react";
+import { Calendar, Users, CheckSquare, FileText, Clock, Check, X } from "lucide-react";
+import { effectiveMeetingStatus, COMPLETION_SOURCE_LABELS } from "@/lib/prospects/meetingStatus";
 
 interface MeetingsTabProps {
   prospect: any;
@@ -92,11 +94,49 @@ export function MeetingsTab({ prospect }: MeetingsTabProps) {
   );
 }
 
+function statusPillColor(status: string, colors: any): { bg: string; fg: string; border: string } {
+  switch (status) {
+    case "completed":
+      return { bg: `${colors.accent.green}15`, fg: colors.accent.green, border: `${colors.accent.green}40` };
+    case "cancelled":
+      return { bg: colors.bg.cardAlt, fg: colors.text.muted, border: colors.border.default };
+    default: // scheduled
+      return { bg: `${colors.accent.blue}15`, fg: colors.accent.blue, border: `${colors.accent.blue}40` };
+  }
+}
+
 function MeetingCard({ meeting, colors, isUpcoming }: { meeting: any; colors: any; isUpcoming: boolean }) {
   const typeMeta = TYPE_LABELS[meeting.meetingType ?? "other"] ?? TYPE_LABELS.other;
   const typeColor = typePillColor(typeMeta.color, colors);
   const pendingActions = (meeting.actionItems ?? []).filter((a: any) => a.status === "pending");
   const hasContent = !!meeting.summary || (meeting.keyPoints ?? []).length > 0 || (meeting.decisions ?? []).length > 0;
+
+  // v3 lifecycle. Fireflies-derived rows (source === "fireflies") are synthetic
+  // and carry no real meeting _id, so completion actions only apply to native
+  // meeting rows.
+  const isNative = meeting.source !== "fireflies";
+  const status = effectiveMeetingStatus(meeting);
+  const statusColor = statusPillColor(status, colors);
+  const markCompleted = useMutation(api.meetings.markCompleted);
+  const markCancelled = useMutation(api.meetings.markCancelled);
+  const [busy, setBusy] = useState(false);
+
+  const onComplete = async () => {
+    setBusy(true);
+    try {
+      await markCompleted({ meetingId: meeting._id });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onCancel = async () => {
+    setBusy(true);
+    try {
+      await markCancelled({ meetingId: meeting._id });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -129,6 +169,9 @@ function MeetingCard({ meeting, colors, isUpcoming }: { meeting: any; colors: an
             </span>
             <Pill bg={typeColor.bg} fg={typeColor.fg} border={typeColor.border}>
               {typeMeta.label}
+            </Pill>
+            <Pill bg={statusColor.bg} fg={statusColor.fg} border={statusColor.border}>
+              {status}
             </Pill>
             {meeting.verified && (
               <Pill bg={`${colors.accent.green}15`} fg={colors.accent.green} border={`${colors.accent.green}40`}>
@@ -262,7 +305,105 @@ function MeetingCard({ meeting, colors, isUpcoming }: { meeting: any; colors: an
           )}
         </div>
       )}
+
+      {/* Pre-meeting notes (drafted at booking) */}
+      {meeting.preMeetingNotesDraftedAt && meeting.notes && (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderTop: `1px solid ${colors.border.default}`,
+            fontSize: 11,
+            color: colors.text.secondary,
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap" as const,
+          }}
+        >
+          <FieldLabel colors={colors}>Pre-meeting notes</FieldLabel>
+          {meeting.notes}
+        </div>
+      )}
+
+      {/* v3 lifecycle footer — completion source OR operator actions */}
+      {isNative && (
+        <div
+          style={{
+            padding: "8px 14px",
+            borderTop: `1px solid ${colors.border.default}`,
+            background: colors.bg.light,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {status === "completed" ? (
+            <span style={{ fontSize: 10, color: colors.text.muted, display: "flex", alignItems: "center", gap: 5 }}>
+              <Check size={11} color={colors.accent.green} />
+              {COMPLETION_SOURCE_LABELS[meeting.completionSource ?? ""] ?? "Completed"}
+              {meeting.completedAt && (
+                <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                  · {meeting.completedAt.slice(0, 10)}
+                </span>
+              )}
+            </span>
+          ) : status === "cancelled" ? (
+            <span style={{ fontSize: 10, color: colors.text.muted }}>Cancelled</span>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <ActionButton colors={colors} onClick={onComplete} disabled={busy} accent={colors.accent.green}>
+                <Check size={11} /> Mark complete
+              </ActionButton>
+              <ActionButton colors={colors} onClick={onCancel} disabled={busy} accent={colors.text.muted}>
+                <X size={11} /> Mark cancelled
+              </ActionButton>
+            </div>
+          )}
+          {meeting.transcriptFetchedAt && (
+            <span style={{ fontSize: 9, color: colors.text.dim, fontFamily: "ui-monospace, monospace" }}>
+              transcript synced
+            </span>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ActionButton({
+  children,
+  colors,
+  onClick,
+  disabled,
+  accent,
+}: {
+  children: React.ReactNode;
+  colors: any;
+  onClick: () => void;
+  disabled?: boolean;
+  accent: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "4px 10px",
+        borderRadius: 3,
+        border: `1px solid ${colors.border.default}`,
+        background: colors.bg.card,
+        color: accent,
+        fontSize: 10,
+        fontWeight: 500,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -60,7 +60,25 @@ export function PipelineSummary() {
     { label: "Prospects in pipeline", value: overview ? String(overview.totalProspects) : "—", accent: colors.entityTypes.prospect },
     { label: "Est. pipeline value", value: estTotal > 0 ? fmtGBP(estTotal) : "—", meta: overview ? `${overview.estCount ?? 0}/${overview.totalProspects} estimated` : "AI estimate", accent: colors.accent.green },
     { label: "Typical deal", value: overview && overview.estMedianGBP > 0 ? fmtGBP(overview.estMedianGBP) : "—", meta: overview && overview.estMeanGBP > 0 ? `median · mean ${fmtGBP(overview.estMeanGBP)}` : "median" },
-    { label: "Requires action", value: overview ? String(overview.totalActionItems) : "—", accent: overview && overview.totalActionItems > 0 ? colors.accent.orange : undefined },
+    {
+      label: "Requires action",
+      // Click-to-scroll anchor down to the unified RequiresAttentionTable so the
+      // count and the actionable list connect.
+      value: (
+        <span
+          onClick={() => {
+            if (typeof document !== "undefined") {
+              document.getElementById("requires-attention")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }}
+          style={{ cursor: overview && overview.totalActionItems > 0 ? "pointer" : "default" }}
+          title={overview && overview.totalActionItems > 0 ? "Jump to what needs action" : undefined}
+        >
+          {overview ? String(overview.totalActionItems) : "—"}
+        </span>
+      ),
+      accent: overview && overview.totalActionItems > 0 ? colors.accent.orange : undefined,
+    },
     { label: "Holding", value: overview ? String(overview.holding) : "—", meta: "parked / lost / promoted" },
   ];
 

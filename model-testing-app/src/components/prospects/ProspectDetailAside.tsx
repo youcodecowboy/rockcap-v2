@@ -1,6 +1,8 @@
 "use client";
 
 import { useColors } from "@/lib/useColors";
+import { StageChip } from "./StageChip";
+import { derivePipelineStage } from "@/lib/prospects/stages";
 
 interface ProspectDetailAsideProps {
   prospect: any;
@@ -69,6 +71,15 @@ function extractWebsite(intelMarkdown?: string): string | undefined {
   // Detect explicit "Not found" verdict (template uses bold)
   if (/\*\*Website:\*\*\s+\*?\*?Not found/i.test(sec2[1])) return "—";
   return undefined;
+}
+
+// Relative-age label for the intel-freshness row (prospecting v3).
+function relAge(iso?: string): string {
+  if (!iso) return "—";
+  const d = Date.parse(iso);
+  if (!isFinite(d)) return "—";
+  const days = Math.floor((Date.now() - d) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
 }
 
 export function ProspectDetailAside({ prospect, intelRun, cadences, chProfile }: ProspectDetailAsideProps) {
@@ -199,8 +210,30 @@ export function ProspectDetailAside({ prospect, intelRun, cadences, chProfile }:
       </Section>
 
       <Section title="Pipeline" colors={colors}>
-        <Row label="State" value={prospect?.prospectState ?? "—"} colors={colors} />
-        <Row label="Changed" value={prospect?.prospectStateChangedAt?.slice(0, 16) ?? "—"} colors={colors} mono />
+        {/* v3: single stage axis via StageChip (pipelineStage), replacing the
+            old prospectState "State" row. */}
+        <Row label="Stage" value={<StageChip stage={derivePipelineStage(prospect ?? {})} />} colors={colors} />
+        {/* v3: status chips slot */}
+        {prospect?.needsActionAt && (
+          <Row
+            label="Action"
+            colors={colors}
+            value={
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, fontSize: 10, fontWeight: 500, background: `${colors.accent.orange}20`, color: colors.accent.orange, border: `1px solid ${colors.accent.orange}55` }}>
+                Waiting on you{(prospect.needsActionFlags?.length ?? 0) > 1 ? ` · ${prospect.needsActionFlags.length}` : ""}
+              </span>
+            }
+          />
+        )}
+        {/* v3: intel freshness slot */}
+        {prospect?.lastFullIntelAt && (
+          <Row
+            label="Intel"
+            colors={colors}
+            value={`${relAge(prospect.lastFullIntelAt)}${prospect.lastIntelResult ? ` · re-check ${prospect.lastIntelResult === "materially_changed" ? "changed" : "valid"}` : ""}${prospect.intelAttentionAt && !prospect.intelAttentionClearedAt ? " · ⚠ refresh due" : ""}`}
+          />
+        )}
+        <Row label="Changed" value={prospect?.pipelineStageChangedAt?.slice(0, 16) ?? "—"} colors={colors} mono />
         <Row label="Status" value={prospect?.status ?? "—"} colors={colors} />
         <Row label="Type" value={prospect?.type ?? "—"} colors={colors} />
         {prospect?.industry && <Row label="Industry" value={prospect.industry} colors={colors} />}

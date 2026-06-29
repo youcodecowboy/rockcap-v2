@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -122,8 +122,18 @@ export default function ProspectDetailPage() {
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
   const upsertScheme = useMutation(api.companies.upsertProspectScheme);
-  const markOutreachReady = useMutation(api.clients.markOutreachReady);
-  const clearOutreachReady = useMutation(api.clients.clearOutreachReady);
+
+  // Single-gate outreach: the cadence package is the approval surface. When a
+  // pending package exists, land the operator on the Outreach tab (the approval
+  // screen) automatically — but only once, so manual tab changes stick.
+  const autoSwitchedRef = useRef(false);
+  const pendingPackage = cadences[0]?.packageApprovalStatus === "pending";
+  useEffect(() => {
+    if (pendingPackage && !autoSwitchedRef.current) {
+      autoSwitchedRef.current = true;
+      setActiveTab("outreach");
+    }
+  }, [pendingPackage]);
 
   if (prospect === undefined) {
     return <div style={{ padding: 24, color: colors.text.muted }}>Loading…</div>;
@@ -133,13 +143,18 @@ export default function ProspectDetailPage() {
   }
 
   const packageId = cadences[0]?.packageId;
+  const packageApprovalStatus = cadences[0]?.packageApprovalStatus as string | undefined;
 
-  // Accept gate: you can mark ready only once a completed intel run exists.
-  // Mirrors the clients.markOutreachReady guard so the button never offers an
-  // action the mutation would reject.
-  const intelStatus = (intelRun as any)?.status;
-  const canMarkReady =
-    intelStatus === "complete" || intelStatus === "complete_with_gaps";
+  // No-contact guard surface (mirrors the backend applyPackageApproval guard +
+  // the dispatcher's fire-time check): Touch 1 is the lowest-order unfired
+  // touch (falling back to Touch 1), and it must resolve to a contact with an
+  // email for the package to be sendable. Drives the footer's disabled state.
+  const sortedCadences = [...cadences].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+  const touchOneContactId =
+    sortedCadences.find((c) => !c.lastFiredAt)?.contactId ?? sortedCadences[0]?.contactId;
+  const touchOneContact = ((contacts as any[]) ?? []).find((ct) => ct._id === touchOneContactId);
+  const hasSendableContact = !!touchOneContact?.email;
+  const touchCount = cadences.length;
 
   return (
     <>
@@ -186,7 +201,7 @@ export default function ProspectDetailPage() {
               }
             />
           )}
-          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} />}
+          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} clientId={prospectId} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
           {activeTab === "files" && <FilesTab prospect={prospect} />}
@@ -209,14 +224,25 @@ export default function ProspectDetailPage() {
         stateLabel={(prospect as any)?.prospectState ?? "drafted"}
         onApprove={async () => {
           if (!packageId) { alert("No package to approve"); return; }
-          await approvePackage({ packageId });
-          // Single-gate (2026-06-06): approving the package IS the send
-          // authorisation. The dispatcher fires the first due touch now and
-          // auto-sends later touches on their scheduled dates — no second
-          // approval in /approvals. (Kill switches at /settings/gmail still
-          // gate execution; failed sends can be retried from /approvals.)
+          try {
+            // Single gate (2026-06): approvePackage now ALSO writes Cold and
+            // fires Touch 1 server-side (the old "mark outreach ready" accept
+            // is backfilled). The dispatcher sends the first touch within
+            // seconds and auto-sends later touches on their scheduled dates —
+            // no second approval in /approvals. (Kill switches at
+            // /settings/gmail still gate execution; failed sends retry there.)
+            await approvePackage({ packageId });
+          } catch (e: any) {
+            const msg = String(e?.message ?? e);
+            alert(
+              msg.includes("no_sendable_contact")
+                ? "Can't begin outreach: Touch 1 has no sendable email. Pick a recipient with an email on the Outreach tab, then approve again."
+                : `Could not begin outreach: ${msg}`,
+            );
+            return;
+          }
           alert(
-            "Cadence approved. The first email sends now and the rest send automatically on their scheduled dates — no further approval needed. Track them in Approvals.",
+            "Outreach begun. The first email sends now and the rest send automatically on their scheduled dates — no further approval needed. Track them in Approvals.",
           );
           router.push("/prospects");
         }}
@@ -229,17 +255,10 @@ export default function ProspectDetailPage() {
         onSkip={() => router.push("/prospects")}
         onPrev={() => { /* arrow nav v1.2.1 */ }}
         onNext={() => { /* arrow nav v1.2.1 */ }}
-        canMarkReady={canMarkReady}
-        onMarkReady={async () => {
-          try {
-            await markOutreachReady({ clientId: prospectId });
-          } catch (e: any) {
-            alert(e?.message ?? "Could not mark ready");
-          }
-        }}
-        onUnmarkReady={async () => {
-          await clearOutreachReady({ clientId: prospectId });
-        }}
+        packageId={packageId}
+        packageApprovalStatus={packageApprovalStatus}
+        hasSendableContact={hasSendableContact}
+        touchCount={touchCount}
       />
 
       {showRevisionModal && (

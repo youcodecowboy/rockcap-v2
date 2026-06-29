@@ -167,8 +167,46 @@ export default defineSchema({
     )),
     qualSubStageChangedAt: v.optional(v.string()),
     qualSubStageChangedBy: v.optional(v.id("users")),
+
+    // ── Prospecting v3 — needs-action lane (2026-06-26) ──
+    // Canonical "this prospect is waiting on the operator" surface, written by
+    // raiseNeedsActionFlagInternal / clearNeedsActionFlagInternal. One entry per
+    // distinct `kind` (e.g. reply_received, intel_refresh, manual_move). The
+    // requires-attention table + the pipeline "Requires action" counts read
+    // needsActionAt (set to the earliest open flag's time, cleared when the last
+    // flag clears). Replaces the per-axis ad-hoc flags.
+    needsActionFlags: v.optional(v.array(v.object({
+      kind: v.string(),
+      reason: v.string(),
+      sourceReplyEventId: v.optional(v.id("replyEvents")),
+      sourceApprovalId: v.optional(v.id("approvals")),
+      raisedAt: v.string(),
+    }))),
+    needsActionAt: v.optional(v.string()),
+
+    // ── Prospecting v3 — intel freshness lane (2026-06-26) ──
+    // Two-mode intel tracking. lastFullIntelAt = last full prospect-intel run;
+    // lastIntelRevalidateAt / lastIntelResult = last cheap intel-revalidate pass.
+    // lastOutreachSendAt feeds Trigger B (30-day cadence gap). intelAttentionAt /
+    // intelAttentionReason raise the "refresh intel" flag (Trigger A meeting +
+    // >7d stale, or revalidate materially_changed); cleared via intelAttentionClearedAt.
+    lastFullIntelAt: v.optional(v.string()),
+    lastIntelRevalidateAt: v.optional(v.string()),
+    lastIntelResult: v.optional(v.union(
+      v.literal("still_valid"),
+      v.literal("materially_changed"),
+    )),
+    lastOutreachSendAt: v.optional(v.string()),
+    intelAttentionAt: v.optional(v.string()),
+    intelAttentionReason: v.optional(v.union(
+      v.literal("meeting_booked_stale"),
+      v.literal("revalidate_materially_changed"),
+    )),
+    intelAttentionClearedAt: v.optional(v.string()),
   })
     .index("by_status", ["status"])
+    .index("by_needs_action_at", ["needsActionAt"])
+    .index("by_intel_attention", ["intelAttentionAt"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
     .index("by_hubspot_id", ["hubspotCompanyId"])
@@ -3534,13 +3572,34 @@ export default defineSchema({
       v.literal("confirmed_keep"),
       v.literal("confirmed_remove")
     )),
+    // ── Prospecting v3 — meeting lifecycle (2026-06-26) ──
+    // Completion concept that drives the pre-meeting → post-meeting stage move.
+    // `status` undefined is treated as "scheduled" for legacy rows. A meeting is
+    // auto-marked completed when its Fireflies transcript arrives OR meetingDate
+    // has passed (hourly cron), with a manual override. On completion the meeting
+    // workstream writes pipelineStage=warm_post_meeting and appends the transcript
+    // to intel. preMeetingNotesDraftedAt stamps the pre-meeting note draft.
+    status: v.optional(v.union(
+      v.literal("scheduled"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+    )),
+    completedAt: v.optional(v.string()),
+    completionSource: v.optional(v.union(
+      v.literal("transcript"),
+      v.literal("date_passed"),
+      v.literal("manual"),
+    )),
+    preMeetingNotesDraftedAt: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_client_date", ["clientId", "meetingDate"])
     .index("by_source_document", ["sourceDocumentId"])
     .index("by_fireflies_id", ["firefliesId"])
-    .index("by_review_state", ["reviewState"]),
+    .index("by_review_state", ["reviewState"])
+    .index("by_status", ["status"])
+    .index("by_status_date", ["status", "meetingDate"]),
 
   // Meeting Extraction Jobs - async queue for extracting meetings from documents
   meetingExtractionJobs: defineTable({
@@ -4029,6 +4088,14 @@ export default defineSchema({
     revisionNote: v.optional(v.string()),
     revisionRequestedBy: v.optional(v.id("users")),
     revisionRequestedAt: v.optional(v.string()),
+
+    // ── Prospecting v3 — intel-revalidate hold (2026-06-26) ──
+    // Trigger B: before firing a touch whose gap since the last send exceeds
+    // 30 days, the dispatcher runs the intel-revalidate pass. On
+    // materially_changed the touch is parked (isActive=false) with these stamps
+    // instead of sending a stale email; nextDueAt is preserved so it can resume.
+    intelHoldAt: v.optional(v.string()),
+    intelHoldReason: v.optional(v.string()),
   })
     .index("by_contact", ["contactId"])
     .index("by_next_due", ["nextDueAt"])
@@ -4138,6 +4205,11 @@ export default defineSchema({
     // v1.3 — link to the skillRun that produced this approval (audit trail
     // + lets gaps/errors flow into the approvals UI).
     relatedSkillRunId: v.optional(v.id("skillRuns")),
+    // ── Prospecting v3 — inline draft edit audit (2026-06-26) ──
+    // Set by approvals.updateDraft when an operator edits a drafted email
+    // (cadence touch or reply draft) in place before approving.
+    draftEditedAt: v.optional(v.string()),
+    draftEditedBy: v.optional(v.id("users")),
   })
     .index("by_status", ["status"])
     .index("by_requested_by", ["requestedBy"])
@@ -4309,6 +4381,13 @@ export default defineSchema({
     toValue: v.string(),
     at: v.string(),                  // ISO timestamp of the transition
     byUserId: v.optional(v.id("users")),
+    // ── Prospecting v3 — transition provenance (2026-06-26) ──
+    // What drove a pipeline_stage move: manual | meeting_booked |
+    // meeting_completed | cadence_approved | reply | sourcing_promote |
+    // legacy_migration. Written by applyPipelineStage so the Activity tab and
+    // "why here" chip can explain stage moves and we can audit that events write
+    // the stage explicitly rather than relying on derivation.
+    reason: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_kind", ["kind"])
@@ -4358,6 +4437,9 @@ export default defineSchema({
       v.literal("defer_long_term"),
       v.literal("not_interested"),
       v.literal("info_question"),
+      // Prospecting v3: explicit positive intent (interested, wants to engage)
+      // that isn't yet a meeting request — still auto-drafts a reply.
+      v.literal("positive"),
       v.literal("out_of_office"),
       v.literal("unknown"),
     )),
@@ -4375,6 +4457,13 @@ export default defineSchema({
       // Contact matched but is not tied to a client/prospect — recorded but
       // not classified or reviewed (suppresses non-prospect review noise).
       v.literal("unlinked_no_review"),
+      // Prospecting v3: a reply draft was auto-composed for operator
+      // accept/edit (book_meeting/info_question/positive). Surfaced in the
+      // requires-attention table; not double-counted as a generic approval.
+      v.literal("reply_drafted"),
+      // Prospecting v3: flag-only intents (not_interested/out_of_office) — the
+      // prospect is flagged needs-action for review but no reply is drafted.
+      v.literal("flag_only"),
     )),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
     processed: v.boolean(),
@@ -4500,6 +4589,15 @@ export default defineSchema({
     revisionRequestedAt: v.optional(v.string()),
     revisionNote: v.optional(v.string()),
     revisionRequestedBy: v.optional(v.id("users")),
+
+    // ── Prospecting v3 — intel-revalidate result (2026-06-26) ──
+    // Set on `intel-revalidate` runs (skillName stays a free string, so no enum
+    // change). The cheap diff-focused pass records whether the prior intel still
+    // holds. completeInternal denormalises this onto clients.lastIntelResult.
+    revalidateResult: v.optional(v.union(
+      v.literal("still_valid"),
+      v.literal("materially_changed"),
+    )),
   })
     .index("by_user", ["userId"])
     .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])

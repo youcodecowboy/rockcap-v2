@@ -477,6 +477,82 @@ export const retry = mutation({
   },
 });
 
+// ── Inline draft editing ─────────────────────────────────────
+//
+// Generic partial patch of a pending approval's draftPayload. The operator
+// tweaks subject/body/recipient inline before approving (the InlineDraftEditor
+// surface). draftPayload is v.any() and may be EITHER a gmail_send shape
+// ({ subject, bodyText, bodyHtml, to, ... }) OR a client_communication /
+// email_reply shape ({ kind: "email_reply", subject, bodyText, bodyHtml, ... }).
+// We patch only the keys provided, in place, preserving every other key.
+
+// Shared core: applies the partial patch + stamps the editor. The actor is
+// already resolved by the caller (public path = Clerk session, internal path =
+// passed-in userId).
+async function applyDraftEdit(
+  ctx: any,
+  args: {
+    approvalId: Id<"approvals">;
+    subject?: string;
+    bodyText?: string;
+    bodyHtml?: string;
+    to?: string[];
+    editedBy: Id<"users">;
+  },
+): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> {
+  const approval = await ctx.db.get(args.approvalId);
+  if (!approval) throw new Error("Approval not found");
+  if (approval.status !== "pending") {
+    throw new Error(`Cannot edit the draft of an approval that is ${approval.status}`);
+  }
+  const current: any =
+    approval.draftPayload && typeof approval.draftPayload === "object" && !Array.isArray(approval.draftPayload)
+      ? approval.draftPayload
+      : {};
+  const next: any = { ...current };
+  if (args.subject !== undefined) next.subject = args.subject;
+  if (args.bodyText !== undefined) next.bodyText = args.bodyText;
+  if (args.bodyHtml !== undefined) next.bodyHtml = args.bodyHtml;
+  if (args.to !== undefined) next.to = args.to;
+  await ctx.db.patch(args.approvalId, {
+    draftPayload: next,
+    draftEditedAt: new Date().toISOString(),
+    draftEditedBy: args.editedBy,
+  });
+  return { ok: true, approvalId: args.approvalId };
+}
+
+export const updateDraft = mutation({
+  args: {
+    approvalId: v.id("approvals"),
+    subject: v.optional(v.string()),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    to: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> => {
+    const user = await getAuthenticatedUser(ctx);
+    return applyDraftEdit(ctx, { ...args, editedBy: user._id });
+  },
+});
+
+// Internal variant — MCP / system path. The actor is resolved by the caller
+// and passed in explicitly (mirrors approveInternal / internalCreate).
+export const updateDraftInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    subject: v.optional(v.string()),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    to: v.optional(v.array(v.string())),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> => {
+    const { actorUserId, ...rest } = args;
+    return applyDraftEdit(ctx, { ...rest, editedBy: actorUserId });
+  },
+});
+
 // ── Internal: executor dispatch ──────────────────────────────
 
 export const getApprovalForExecution = internalQuery({

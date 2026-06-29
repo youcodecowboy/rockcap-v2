@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalAction } from "./_generated/server";
+import { internalAction, internalQuery, action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -28,7 +28,9 @@ type DispatchDestination =
   | "operator_review"
   | "restored_cadences"
   | "no_contact_match"
-  | "unlinked_no_review";
+  | "unlinked_no_review"
+  | "reply_drafted"
+  | "flag_only";
 
 type ClassifiedIntent =
   | "book_meeting"
@@ -36,6 +38,7 @@ type ClassifiedIntent =
   | "not_interested"
   | "info_question"
   | "out_of_office"
+  | "positive"
   | "unknown";
 
 // ── Shared helpers ───────────────────────────────────────────────────
@@ -111,6 +114,32 @@ async function notifyOperator(
     });
   } catch (err) {
     console.error("[reply-router] notifyOperator failed:", err);
+  }
+}
+
+// Best-effort denormalised needs-action flag onto the prospect (clients row).
+// Mirrors notifyOperator's contract: a flag-write failure must never break
+// reply processing. Upsert-by-kind lives in clients.raiseNeedsActionFlagInternal.
+async function raiseNeedsActionFlag(
+  ctx: { runMutation: (ref: unknown, args: unknown) => Promise<unknown> },
+  args: {
+    clientId: Id<"clients">;
+    kind: string;
+    reason: string;
+    sourceReplyEventId?: Id<"replyEvents">;
+    sourceApprovalId?: Id<"approvals">;
+  },
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.clients.raiseNeedsActionFlagInternal, {
+      clientId: args.clientId,
+      kind: args.kind,
+      reason: args.reason,
+      sourceReplyEventId: args.sourceReplyEventId,
+      sourceApprovalId: args.sourceApprovalId,
+    });
+  } catch (err) {
+    console.error("[reply-router] raiseNeedsActionFlag failed:", err);
   }
 }
 
@@ -478,6 +507,8 @@ async function processReplyEvent(
     userId: args.userId,
     replyBody: args.replyBody,
     replySubject: args.replySubject,
+    gmailThreadId: args.gmailThreadId,
+    gmailMessageId: args.gmailMessageId,
   });
 
   await ctx.runMutation(internal.replyEvents.markProcessedInternal, {
@@ -486,6 +517,64 @@ async function processReplyEvent(
   });
 
   return { status: "processed" as const, replyEventId, intent, dispatch };
+}
+
+// Stage a client_communication/email_reply approval. This is the canonical
+// auto-draft shape (matches outreach.draftReply), so executeClientCommunication
+// resolves the recipient + threads the send, and the shared InlineDraftEditor +
+// listActionableDrafts render/act on it uniformly. Returns the approval id so
+// the caller can link the needs-action flag to it.
+async function stageReplyDraft(
+  ctx: { runMutation: (ref: unknown, args: unknown) => Promise<unknown> },
+  args: {
+    intent: ClassifiedIntent;
+    replyEventId: Id<"replyEvents">;
+    contactId: Id<"contacts">;
+    clientId: Id<"clients">;
+    userId: Id<"users">;
+    subject: string;
+    bodyText: string;
+    bodyHtml: string;
+    reasoning?: string;
+    threadId?: string;
+    inReplyTo?: string;
+    requestSourceName: string;
+  },
+): Promise<Id<"approvals">> {
+  const approvalId = (await ctx.runMutation(internal.approvals.internalCreate, {
+    entityType: "client_communication",
+    summary: `Drafted reply (${args.intent}): ${args.subject.slice(0, 150)}`,
+    draftPayload: {
+      kind: "email_reply",
+      subject: args.subject,
+      bodyText: args.bodyText,
+      bodyHtml: args.bodyHtml,
+      contactId: args.contactId,
+      threadId: args.threadId,
+      inReplyTo: args.inReplyTo,
+      replyEventId: args.replyEventId,
+      intent: args.intent,
+      reasoning: args.reasoning,
+    },
+    requestedBy: args.userId,
+    requestSource: "background_job",
+    requestSourceName: args.requestSourceName,
+    relatedContactId: args.contactId,
+    relatedClientId: args.clientId,
+    relatedReplyEventId: args.replyEventId,
+  })) as Id<"approvals">;
+  return approvalId;
+}
+
+// Resolve the configured app URL (normalising a scheme-less env value) + the
+// internal secret. Returns null when either is missing so callers fall back to
+// an operator-review approval instead of a hard failure.
+function getRouteCreds(): { appUrl: string; internalSecret: string } | null {
+  const raw = process.env.NEXT_APP_URL;
+  const appUrl = raw ? (raw.startsWith("http") ? raw : `https://${raw}`) : undefined;
+  const internalSecret = process.env.CONVEX_INTERNAL_SECRET;
+  if (!appUrl || !internalSecret) return null;
+  return { appUrl, internalSecret };
 }
 
 async function dispatchByIntent(
@@ -503,15 +592,27 @@ async function dispatchByIntent(
     userId: Id<"users">;
     replyBody?: string;
     replySubject?: string;
+    // Threading: stamped onto the email_reply draft so the approved send
+    // threads back onto the original Gmail conversation.
+    gmailThreadId?: string;
+    gmailMessageId?: string;
   },
 ): Promise<{ destination: DispatchDestination }> {
   switch (args.intent) {
     case "not_interested": {
+      // KEEP the opt-out marker as HubSpot/lifecycle plumbing, but no longer
+      // auto-finalise: flag for an operator lost/keep decision instead.
       await ctx.runMutation(internal.contacts.markOptedOutInternal, {
         contactId: args.contactId,
         replyEventId: args.replyEventId,
       });
-      return { destination: "opt_out_marker" };
+      await raiseNeedsActionFlag(ctx, {
+        clientId: args.clientId,
+        kind: "reply_flag_only",
+        reason: "Replied: not interested — keep or mark lost?",
+        sourceReplyEventId: args.replyEventId,
+      });
+      return { destination: "flag_only" };
     }
     case "defer_long_term": {
       // Queue 3-month and 6-month wakeup cadences
@@ -535,7 +636,8 @@ async function dispatchByIntent(
       return { destination: "long-term-monitor" };
     }
     case "out_of_office": {
-      // Restore the cancelled cadences with a 7-day pause
+      // KEEP the cadence restore (7-day pause) as plumbing, but flag for the
+      // operator so an OOO doesn't silently disappear from the queue.
       const pauseUntil = new Date(Date.now() + 7 * 86_400_000).toISOString();
       for (const cad of args.cancelledCadences) {
         await ctx.runMutation(internal.cadences.restoreInternal, {
@@ -543,128 +645,151 @@ async function dispatchByIntent(
           pauseUntil,
         });
       }
-      return { destination: "restored_cadences" };
+      await raiseNeedsActionFlag(ctx, {
+        clientId: args.clientId,
+        kind: "reply_flag_only",
+        reason: "Out of office auto-reply — cadence paused 7 days",
+        sourceReplyEventId: args.replyEventId,
+      });
+      return { destination: "flag_only" };
     }
     case "book_meeting": {
-      // v1.1: call meeting-prep-respond route to draft an availability reply.
-      const rawAppUrl = process.env.NEXT_APP_URL;
-      // v1.3: same URL normalisation as above — env may be missing scheme
-      const appUrl = rawAppUrl
-        ? (rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`)
-        : undefined;
-      const internalSecret = process.env.CONVEX_INTERNAL_SECRET;
-
-      if (!appUrl || !internalSecret) {
-        await createOperatorReviewApproval(
-          ctx,
-          args,
-          "no_app_url_or_secret_for_responder",
-        );
-        return { destination: "operator_review" };
-      }
-
-      let respondResult:
-        | {
-            draftReplySubject?: string;
-            draftReplyBody?: string;
-            draftReplyBodyHtml?: string;
-            suggestedSlots?: Array<{ iso: string; display: string }>;
-            escalate?: boolean;
-            reason?: string;
-            error?: string;
-          }
-        | null = null;
-      try {
-        const res = await fetch(`${appUrl}/api/meeting-prep-respond`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-convex-internal-secret": internalSecret,
-          },
-          body: JSON.stringify({ replyEventId: args.replyEventId }),
-        });
-        if (!res.ok) {
-          respondResult = { error: `responder returned ${res.status}` };
-        } else {
-          respondResult = await res.json();
-        }
-      } catch (err) {
-        respondResult = {
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-
-      if (respondResult?.error) {
-        await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
-          replyEventId: args.replyEventId,
-          message: `meeting-prep-respond call failed: ${respondResult.error}`,
-        });
-        await createOperatorReviewApproval(ctx, args, "responder_failure");
-        return { destination: "operator_review" };
-      }
-
-      if (respondResult?.escalate) {
-        await createOperatorReviewApproval(
-          ctx,
-          args,
-          respondResult.reason ?? "responder_escalated",
-        );
-        return { destination: "operator_review" };
-      }
-
-      if (
-        !respondResult?.draftReplySubject ||
-        !respondResult?.draftReplyBody
-      ) {
-        await ctx.runMutation(internal.replyEvents.appendErrorInternal, {
-          replyEventId: args.replyEventId,
-          message: "responder returned unexpected shape",
-        });
-        await createOperatorReviewApproval(
-          ctx,
-          args,
-          "responder_invalid_shape",
-        );
-        return { destination: "operator_review" };
-      }
-
-      // Stage an approval with the drafted reply.
-      await ctx.runMutation(internal.approvals.internalCreate, {
-        entityType: "gmail_send",
-        summary: `Drafted availability reply: ${respondResult.draftReplySubject.slice(0, 150)}`,
-        draftPayload: {
-          to: undefined,  // operator fills in the to-address on send
-          subject: respondResult.draftReplySubject,
-          bodyText: respondResult.draftReplyBody,
-          bodyHtml:
-            respondResult.draftReplyBodyHtml ??
-            `<p>${respondResult.draftReplyBody}</p>`,
-          suggestedSlots: respondResult.suggestedSlots ?? [],
-          replyEventId: args.replyEventId,
-          intent: args.intent,
-        },
-        requestedBy: args.userId,
-        requestSource: "background_job",
-        requestSourceName: "cadence-fire/meeting-prep-respond",
-        relatedContactId: args.contactId,
-        relatedClientId: args.clientId,
-        relatedReplyEventId: args.replyEventId,
+      // v3.1: drafting is operator-launched in Claude Code (the harness), NOT the
+      // app's API (cost + worse than Claude with full MCP context). Flag the
+      // prospect; the Action-required queue offers a "Book the meeting" launcher.
+      // Meeting-booked → warm_pre_meeting is owned by the meeting workstream
+      // (meeting.create), not here.
+      await raiseNeedsActionFlag(ctx, {
+        clientId: args.clientId,
+        kind: "reply_meeting_request",
+        reason: "Meeting request — book it / draft a reply",
+        sourceReplyEventId: args.replyEventId,
       });
       await notifyOperator(ctx, {
         userId: args.userId,
-        title: "Meeting request — drafted reply awaiting approval",
-        message: `${await contactLabel(ctx, args.contactId)} wants to meet. A drafted availability reply is waiting at /approvals.`,
+        title: "Meeting request — needs action",
+        message: `${await contactLabel(ctx, args.contactId)} wants to meet. Open the Action required queue to book it.`,
         relatedId: args.replyEventId,
       });
-      return { destination: "meeting-prep" };
+      return { destination: "operator_review" };
     }
 
     case "info_question":
+    case "positive": {
+      // v3.1: drafting is operator-launched in Claude Code, NOT the app's API.
+      // Flag the prospect; the Action-required queue offers a "Draft a reply"
+      // launcher that hands Claude a context-filled prompt.
+      await raiseNeedsActionFlag(ctx, {
+        clientId: args.clientId,
+        kind: "reply_received",
+        reason:
+          args.intent === "positive"
+            ? "Positive reply — draft a response"
+            : "Question to answer — draft a reply",
+        sourceReplyEventId: args.replyEventId,
+      });
+      await notifyOperator(ctx, {
+        userId: args.userId,
+        title: "Reply needs a response",
+        message: `${await contactLabel(ctx, args.contactId)} replied${
+          args.replySubject ? ` — "${args.replySubject}"` : ""
+        }. Open the Action required queue to draft a reply.`,
+        relatedId: args.replyEventId,
+      });
+      return { destination: "operator_review" };
+    }
+
     case "unknown":
     default: {
       // Operator-review approval (existing fallback for not-yet-hardened skills).
       await createOperatorReviewApproval(ctx, args, args.intent);
+      await raiseNeedsActionFlag(ctx, {
+        clientId: args.clientId,
+        kind: "reply_received",
+        reason: "Reply needs your review",
+        sourceReplyEventId: args.replyEventId,
+      });
       return { destination: "operator_review" };
     }
   }
 }
+
+// ── On-demand reply draft (prospecting v3) ───────────────────────────────────
+// The auto-draft path only fires for book_meeting / info_question / positive.
+// For any other reply (e.g. an UNKNOWN routed to operator review) the operator
+// can request an AI draft from the Replies tab. Reuses the same /api/reply-draft
+// route + stageReplyDraft staging, so the result lands as a pending email_reply
+// approval the operator edits / approves / sends inline.
+
+const replyDraftFields = internalQuery({
+  args: { replyEventId: v.id("replyEvents") },
+  handler: async (ctx, args) => {
+    const r = (await ctx.db.get(args.replyEventId)) as Doc<"replyEvents"> | null;
+    if (!r) return null;
+    return {
+      contactId: r.contactId ?? null,
+      linkedClientId: r.linkedClientId ?? null,
+      userId: r.userId,
+      gmailThreadId: r.gmailThreadId ?? null,
+      gmailMessageId: r.gmailMessageId ?? null,
+      replySubject: r.replySubject ?? null,
+      classifiedIntent: r.classifiedIntent ?? "unknown",
+    };
+  },
+});
+
+export const requestDraftForReply = action({
+  args: { replyEventId: v.id("replyEvents") },
+  handler: async (ctx, args): Promise<{ ok: boolean; approvalId?: Id<"approvals">; error?: string }> => {
+    const fields = (await ctx.runQuery(internal.replyEventProcessor.replyDraftFields, {
+      replyEventId: args.replyEventId,
+    })) as {
+      contactId: Id<"contacts"> | null;
+      linkedClientId: Id<"clients"> | null;
+      userId: Id<"users">;
+      gmailThreadId: string | null;
+      gmailMessageId: string | null;
+      replySubject: string | null;
+      classifiedIntent: ClassifiedIntent;
+    } | null;
+
+    if (!fields) return { ok: false, error: "Reply not found" };
+    if (!fields.contactId || !fields.linkedClientId) {
+      return { ok: false, error: "Reply is not linked to a contact + client — can't draft." };
+    }
+    const creds = getRouteCreds();
+    if (!creds) return { ok: false, error: "Drafting not configured (NEXT_APP_URL / CONVEX_INTERNAL_SECRET)." };
+
+    let draft: { draftReplySubject?: string; draftReplyBody?: string; draftReplyBodyHtml?: string; reasoning?: string; escalate?: boolean; reason?: string } = {};
+    try {
+      const res = await fetch(`${creds.appUrl}/api/reply-draft`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-convex-internal-secret": creds.internalSecret },
+        body: JSON.stringify({ replyEventId: args.replyEventId }),
+      });
+      if (!res.ok) return { ok: false, error: `reply-draft returned ${res.status}` };
+      draft = await res.json();
+    } catch (err) {
+      return { ok: false, error: `reply-draft call failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (draft.escalate || !draft.draftReplySubject || !draft.draftReplyBody) {
+      return { ok: false, error: draft.reason || "The drafter couldn't compose a confident reply — handle manually." };
+    }
+
+    const approvalId = await stageReplyDraft(ctx, {
+      intent: fields.classifiedIntent,
+      replyEventId: args.replyEventId,
+      contactId: fields.contactId,
+      clientId: fields.linkedClientId,
+      userId: fields.userId,
+      subject: draft.draftReplySubject,
+      bodyText: draft.draftReplyBody,
+      bodyHtml: draft.draftReplyBodyHtml ?? `<p>${draft.draftReplyBody}</p>`,
+      reasoning: draft.reasoning,
+      threadId: fields.gmailThreadId ?? undefined,
+      inReplyTo: fields.gmailMessageId ?? undefined,
+      requestSourceName: "reply-draft (on demand)",
+    });
+    return { ok: true, approvalId };
+  },
+});

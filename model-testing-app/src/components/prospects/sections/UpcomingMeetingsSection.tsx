@@ -5,7 +5,8 @@ import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
 import { StatusSection } from "../StatusSection";
-import { Calendar, Users, MapPin } from "lucide-react";
+import { Calendar, Users } from "lucide-react";
+import { effectiveMeetingStatus } from "@/lib/prospects/meetingStatus";
 
 // v1.3 Sprint C — "Upcoming meetings" section at the top of /prospects.
 // Operator's morning queue: what calls are coming up across all prospects
@@ -43,7 +44,11 @@ function friendlyDate(iso: string): string {
 export function UpcomingMeetingsSection() {
   const colors = useColors();
   const router = useRouter();
-  const rows = (useQuery(api.meetings.listUpcoming, { limit: 25 }) ?? []) as any[];
+  // listUpcoming already excludes cancelled/completed server-side; guard
+  // client-side too so a stale bundle never shows a cancelled meeting.
+  const rows = ((useQuery(api.meetings.listUpcoming, { limit: 25 }) ?? []) as any[]).filter(
+    (m) => effectiveMeetingStatus(m) === "scheduled",
+  );
 
   return (
     <StatusSection

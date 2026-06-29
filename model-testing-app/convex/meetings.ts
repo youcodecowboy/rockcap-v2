@@ -1,6 +1,9 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { applyPipelineStage } from "./prospectStages";
+import { effectiveMeetingStatus } from "./lib/meetingStatus";
 
 /**
  * Meetings - CRUD operations for meeting summaries
@@ -382,26 +385,38 @@ export const create = mutation({
       createdBy: args.createdBy,
       tags: args.tags,
       notes: args.notes,
+      // v3 lifecycle: a freshly-booked meeting starts scheduled.
+      status: "scheduled",
+      completionSource: undefined,
+      completedAt: undefined,
       createdAt: now,
       updatedAt: now,
     });
 
-    // Booking a meeting advances a prospect to "engaged" — the semi-client zone.
-    // Only moves forward from a pre-engagement active state; never downgrades a
-    // promoted / parked / lost prospect, no-ops for non-prospects and for a
-    // prospect already engaged. Promotion to client stays a separate operator call.
+    // v3: booking advances a prospect to warm_pre_meeting through the canonical
+    // stage spine. forward_only never drags a further-along prospect (e.g. one
+    // already qualified) back to pre-meeting, and applyPipelineStage no-ops the
+    // stage write for non-prospects (guarded here on status === "prospect").
     const client = await ctx.db.get(args.clientId);
-    const ps = (client as any)?.prospectState;
-    if (ps === "researched" || ps === "drafted" || ps === "active" || ps === "replied") {
-      const actor = args.createdBy ?? (await ctx.db.query("users").take(1))[0]?._id;
-      if (actor) {
-        await ctx.scheduler.runAfter(0, internal.prospects.transitionStateInternal, {
-          clientId: args.clientId,
-          newState: "engaged",
-          userId: actor,
-        });
-      }
+    if ((client as any)?.status === "prospect") {
+      await applyPipelineStage(ctx, {
+        clientId: args.clientId,
+        toStage: "warm_pre_meeting",
+        reason: "meeting_booked",
+        userId: args.createdBy,
+        mode: "forward_only",
+      });
+      // Intel revalidation (Intel leaf owns the freshness/flag decision): a
+      // newly-booked meeting may stale the prospect's last full intel run.
+      await ctx.scheduler.runAfter(0, internal.intelRevalidate.onMeetingBookedInternal, {
+        clientId: args.clientId,
+        meetingId,
+      });
     }
+
+    // Draft pre-meeting notes (idempotent, fire-and-forget — never blocks the
+    // booking mutation).
+    await ctx.scheduler.runAfter(0, internal.meetings.draftPreMeetingNotes, { meetingId });
 
     return meetingId;
   },
@@ -677,7 +692,9 @@ export const listUpcoming = query({
     const now = new Date().toISOString();
     const meetings = await ctx.db.query("meetings").collect();
     return meetings
-      .filter((m) => m.meetingDate >= now)
+      // Upcoming = future-dated AND not cancelled. Completed-but-future is rare
+      // but excluded too (effectiveMeetingStatus treats undefined as scheduled).
+      .filter((m) => m.meetingDate >= now && effectiveMeetingStatus(m as any) === "scheduled")
       .sort((a, b) =>
         new Date(a.meetingDate).getTime() - new Date(b.meetingDate).getTime(),
       )
@@ -691,6 +708,283 @@ export const countUpcoming = query({
   handler: async (ctx) => {
     const now = new Date().toISOString();
     const meetings = await ctx.db.query("meetings").collect();
-    return meetings.filter((m) => m.meetingDate >= now).length;
+    return meetings.filter(
+      (m) => m.meetingDate >= now && effectiveMeetingStatus(m as any) === "scheduled",
+    ).length;
+  },
+});
+
+// ============================================================================
+// v3 MEETING LIFECYCLE — completion concept, auto-complete, transcript→intel
+// ============================================================================
+
+// Resolve the acting Clerk user (same pattern as prospectStages.resolveUserId).
+async function resolveUserId(ctx: any): Promise<Id<"users"> | undefined> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return undefined;
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .first();
+  return user?._id;
+}
+
+// Shared, same-transaction completion logic. Idempotent: a no-op when the
+// meeting is already completed (avoids duplicate stage events + duplicate
+// transcript-into-intel appends) or cancelled. On the first real completion of
+// a prospect's meeting it advances the pipeline to warm_post_meeting (forward
+// only — never regresses a qualified prospect) and schedules the transcript
+// digest append.
+async function completeMeetingTx(
+  ctx: any,
+  args: {
+    meetingId: Id<"meetings">;
+    completionSource: "transcript" | "date_passed" | "manual";
+    byUserId?: Id<"users">;
+  },
+): Promise<{ ok: boolean; skipped: boolean; reason?: string }> {
+  const meeting = await ctx.db.get(args.meetingId);
+  if (!meeting) return { ok: false, skipped: true, reason: "not_found" };
+
+  const eff = effectiveMeetingStatus(meeting as any);
+  if (eff === "completed" || eff === "cancelled") {
+    return { ok: true, skipped: true, reason: eff };
+  }
+
+  const now = new Date().toISOString();
+  await ctx.db.patch(args.meetingId, {
+    status: "completed",
+    completedAt: now,
+    completionSource: args.completionSource,
+    updatedAt: now,
+  });
+
+  const client = await ctx.db.get(meeting.clientId);
+  if ((client as any)?.status === "prospect") {
+    await applyPipelineStage(ctx, {
+      clientId: meeting.clientId,
+      toStage: "warm_post_meeting",
+      reason: "meeting_completed",
+      userId: args.byUserId,
+      mode: "forward_only",
+    });
+  }
+
+  // Pull the transcript (if any) into the prospect's intel context. Deferred to
+  // its own transaction; independently idempotent via a content marker.
+  await ctx.scheduler.runAfter(0, internal.meetings.appendTranscriptToIntel, {
+    meetingId: args.meetingId,
+  });
+
+  return { ok: true, skipped: false };
+}
+
+// Internal entrypoint (cron / fireflies / scheduler callers). Idempotent.
+export const markCompletedInternal = internalMutation({
+  args: {
+    meetingId: v.id("meetings"),
+    completionSource: v.union(
+      v.literal("transcript"),
+      v.literal("date_passed"),
+      v.literal("manual"),
+    ),
+    byUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) =>
+    completeMeetingTx(ctx, {
+      meetingId: args.meetingId,
+      completionSource: args.completionSource,
+      byUserId: args.byUserId,
+    }),
+});
+
+// Operator manual override — marks a scheduled meeting complete.
+export const markCompleted = mutation({
+  args: { meetingId: v.id("meetings") },
+  handler: async (ctx, args) => {
+    const userId = await resolveUserId(ctx);
+    return completeMeetingTx(ctx, {
+      meetingId: args.meetingId,
+      completionSource: "manual",
+      byUserId: userId,
+    });
+  },
+});
+
+// Operator manual override — cancels a meeting. Does NOT advance pipelineStage.
+export const markCancelled = mutation({
+  args: { meetingId: v.id("meetings") },
+  handler: async (ctx, args) => {
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting) throw new Error("Meeting not found");
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.meetingId, { status: "cancelled", updatedAt: now });
+    return { ok: true };
+  },
+});
+
+// Hourly cron entrypoint: auto-complete scheduled meetings whose date has
+// passed. completionSource = 'date_passed'.
+//
+// GUARD: capped per run. There is a backlog of legacy meetings with no status
+// (treated as scheduled) and past dates; without a cap the first cron tick
+// would mass-complete them all in one transaction (mass stage moves + a flood
+// of transcript appends). The cap drains the backlog gradually over successive
+// ticks instead.
+const AUTO_COMPLETE_PER_RUN_CAP = 25;
+export const autoCompleteDueMeetings = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date().toISOString();
+    // by_status_date is [status, meetingDate]. Query the two "scheduled"
+    // representations separately: explicit 'scheduled' and legacy undefined.
+    const scheduled = await ctx.db
+      .query("meetings")
+      .withIndex("by_status_date", (q: any) =>
+        q.eq("status", "scheduled").lte("meetingDate", now),
+      )
+      .take(AUTO_COMPLETE_PER_RUN_CAP);
+    const legacy = await ctx.db
+      .query("meetings")
+      .withIndex("by_status_date", (q: any) =>
+        q.eq("status", undefined).lte("meetingDate", now),
+      )
+      .take(AUTO_COMPLETE_PER_RUN_CAP);
+
+    const due = [...scheduled, ...legacy].slice(0, AUTO_COMPLETE_PER_RUN_CAP);
+
+    let completed = 0;
+    for (const m of due) {
+      const r = await completeMeetingTx(ctx, {
+        meetingId: m._id,
+        completionSource: "date_passed",
+      });
+      if (r.ok && !r.skipped) completed += 1;
+    }
+    return { ok: true, scanned: due.length, completed };
+  },
+});
+
+// Append the meeting's transcript (or summary) into the prospect's intel as a
+// dated digest in clientIntelligence.contextMarkdown — the operator lane that
+// getDeepContext surfaces. Independently idempotent via an HTML-comment marker
+// keyed on the meetingId, so the transcript path and the completion path can
+// both schedule this without producing duplicate blocks.
+export const appendTranscriptToIntel = internalMutation({
+  args: { meetingId: v.id("meetings") },
+  handler: async (ctx, args) => {
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting) return { ok: false, reason: "not_found" };
+
+    const marker = `<!-- meeting-transcript:${String(args.meetingId)} -->`;
+
+    // Idempotency: bail if this meeting's digest is already in the context lane.
+    const intel = await ctx.db
+      .query("clientIntelligence")
+      .withIndex("by_client", (q: any) => q.eq("clientId", meeting.clientId))
+      .first();
+    if (intel?.contextMarkdown && String(intel.contextMarkdown).includes(marker)) {
+      return { ok: true, skipped: true };
+    }
+
+    const transcript = await ctx.db
+      .query("meetingTranscripts")
+      .withIndex("by_meeting", (q: any) => q.eq("meetingId", args.meetingId))
+      .first();
+
+    // Build the digest. Prefer the structured transcript summary; fall back to
+    // the meeting's own summary so a meeting with no transcript still records a
+    // dated note that it happened.
+    const dateLabel = (meeting.meetingDate ?? "").slice(0, 10) || "(undated)";
+    const attendees = (meeting.attendees ?? [])
+      .map((a: any) => a.name)
+      .filter(Boolean)
+      .join(", ");
+    const body =
+      transcript?.fullTextSummary?.trim() ||
+      meeting.summary?.trim() ||
+      "(No transcript or summary captured.)";
+
+    const lines: string[] = [];
+    lines.push(marker);
+    lines.push(`### Meeting — ${meeting.title || "Untitled"} (${dateLabel})`);
+    if (attendees) lines.push(`**Attendees:** ${attendees}`);
+    lines.push("");
+    lines.push(body);
+    if ((meeting.keyPoints ?? []).length > 0) {
+      lines.push("");
+      lines.push("**Key points:**");
+      for (const k of meeting.keyPoints) lines.push(`- ${k}`);
+    }
+    if ((meeting.decisions ?? []).length > 0) {
+      lines.push("");
+      lines.push("**Decisions:**");
+      for (const d of meeting.decisions) lines.push(`- ${d}`);
+    }
+    const markdownBlock = lines.join("\n");
+
+    // Defer the actual context write to its own transaction (mutations cannot
+    // call ctx.runMutation). appendContextInternal prepends the block.
+    await ctx.scheduler.runAfter(0, internal.intelligence.appendContextInternal, {
+      clientId: meeting.clientId,
+      markdownBlock,
+      addedBy: "meeting-lifecycle",
+    });
+
+    return { ok: true, skipped: false };
+  },
+});
+
+// Draft a lightweight pre-meeting brief at booking time and stamp
+// preMeetingNotesDraftedAt to make it idempotent. Internal-only output (no
+// external action), so no approval gate. Builds the brief from the prospect's
+// existing intel context rather than calling an LLM, keeping it cheap and
+// failure-free in the booking critical path.
+export const draftPreMeetingNotes = internalMutation({
+  args: { meetingId: v.id("meetings") },
+  handler: async (ctx, args) => {
+    const meeting = await ctx.db.get(args.meetingId);
+    if (!meeting) return { ok: false, reason: "not_found" };
+    // Idempotent: only draft once per meeting.
+    if ((meeting as any).preMeetingNotesDraftedAt) {
+      return { ok: true, skipped: true };
+    }
+
+    const now = new Date().toISOString();
+    const client = await ctx.db.get(meeting.clientId);
+    const intel = await ctx.db
+      .query("clientIntelligence")
+      .withIndex("by_client", (q: any) => q.eq("clientId", meeting.clientId))
+      .first();
+
+    // Take the most recent slice of the operator-context lane as the running
+    // reference (newest block is prepended), trimmed to keep the note compact.
+    const context = (intel?.contextMarkdown ?? "").trim();
+    const contextSnippet = context ? context.slice(0, 1200) : "";
+
+    const lines: string[] = [];
+    lines.push(`## Pre-meeting brief — ${(client as any)?.name ?? "Prospect"}`);
+    lines.push(`Meeting: ${meeting.title || "Untitled"} · ${(meeting.meetingDate ?? "").slice(0, 16).replace("T", " ")}`);
+    lines.push("");
+    if (contextSnippet) {
+      lines.push("### Latest intel context");
+      lines.push(contextSnippet);
+    } else {
+      lines.push("_No prospect intel context on file yet — run prospect-intel before the call._");
+    }
+    const brief = lines.join("\n");
+
+    // Preserve any operator-entered notes; append the brief beneath them.
+    const existingNotes = (meeting.notes ?? "").trim();
+    const nextNotes = existingNotes
+      ? `${existingNotes}\n\n---\n\n${brief}`
+      : brief;
+
+    await ctx.db.patch(args.meetingId, {
+      notes: nextNotes,
+      preMeetingNotesDraftedAt: now,
+      updatedAt: now,
+    });
+    return { ok: true, skipped: false };
   },
 });

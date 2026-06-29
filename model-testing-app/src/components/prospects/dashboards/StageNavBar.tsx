@@ -14,11 +14,11 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 // "sourcing" is the pre-pipeline intake lane (charge-sourced + HubSpot
 // candidates), not one of the 5 prospect stages, so it sits between Summary and
 // Cold rather than in PIPELINE_STAGES.
-export function StageNavBar({ active }: { active: PipelineStage | "summary" | "sourcing" }) {
+export function StageNavBar({ active }: { active: PipelineStage | "summary" | "sourcing" | "actions" }) {
   const colors = useColors();
   const router = useRouter();
   const overview = useQuery(api.prospectStages.pipelineOverview, {}) as
-    | { stages: { key: PipelineStage; count: number; actionItems: number }[]; totalProspects: number }
+    | { stages: { key: PipelineStage; count: number; actionItems: number }[]; totalProspects: number; totalActionItems?: number }
     | undefined;
 
   const countFor = (key: PipelineStage) =>
@@ -47,6 +47,14 @@ export function StageNavBar({ active }: { active: PipelineStage | "summary" | "s
         active={active === "summary"}
         accent={colors.entityTypes.prospect}
         onClick={() => router.push("/prospects")}
+        colors={colors}
+      />
+      <NavItem
+        label="Action required"
+        actions={overview?.totalActionItems}
+        active={active === "actions"}
+        accent={accentFor("orange")}
+        onClick={() => router.push("/prospects/actions")}
         colors={colors}
       />
       <NavItem

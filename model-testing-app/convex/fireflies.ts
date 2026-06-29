@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
+import { effectiveMeetingStatus } from "./lib/meetingStatus";
 
 // Fireflies integration: per-user API token paste model (no OAuth).
 // Per docs/INTEGRATIONS/fireflies-scoping.md confirmed decisions:
@@ -246,6 +249,50 @@ export const getSyncConfigInternal = internalQuery({
   },
 });
 
+// ── Attribution: participant emails → contact → client ───────
+// Resolve a Fireflies meeting's owning client from its participant/organizer
+// emails. Strategy (conservative — better unattributed than mis-attributed):
+//   1. each email → contacts.by_email → the contact's direct clientId
+//   2. fallback → the contact's linkedCompanyIds → companies.promotedToClientId
+// Internal-only operator emails (the host) usually have no prospect-side
+// contact row, so they naturally drop out; we return the FIRST client resolved
+// from an external participant. If nothing resolves we return null and the
+// caller leaves the meeting unattributed (current behaviour).
+export const resolveClientByParticipantEmails = internalQuery({
+  args: { emails: v.array(v.string()) },
+  handler: async (ctx, args): Promise<{ clientId: Id<"clients"> } | null> => {
+    const seen = new Set<string>();
+    for (const raw of args.emails) {
+      const email = (raw || "").trim().toLowerCase();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+
+      const contacts = await ctx.db
+        .query("contacts")
+        .withIndex("by_email", (q: any) => q.eq("email", email))
+        .collect();
+
+      // Direct client link wins.
+      for (const c of contacts) {
+        if ((c as any).clientId) {
+          return { clientId: (c as any).clientId as Id<"clients"> };
+        }
+      }
+      // Fallback: a linked company promoted to a client.
+      for (const c of contacts) {
+        const companyIds = (c as any).linkedCompanyIds ?? [];
+        for (const companyId of companyIds) {
+          const company: any = await ctx.db.get(companyId);
+          if (company?.promotedToClientId) {
+            return { clientId: company.promotedToClientId as Id<"clients"> };
+          }
+        }
+      }
+    }
+    return null;
+  },
+});
+
 // Upsert a meeting from a Fireflies record. Returns the meetingId
 // (whether newly inserted or already existing). Idempotent on firefliesId.
 export const upsertFirefliesMeeting = internalMutation({
@@ -329,6 +376,11 @@ export const upsertFirefliesMeeting = internalMutation({
       firefliesId: args.firefliesId,
       sourceIntegration: "fireflies_api",
       actionItemsSourceFidelity: "api_synced",
+      // v3 lifecycle: a freshly-ingested Fireflies meeting lands scheduled; the
+      // transcript-arrival path (recordTranscript) flips it to completed and
+      // pulls the transcript into intel, so the completion side-effects (stage
+      // move + intel append) run through the single centralised path.
+      status: "scheduled",
     });
   },
 });
@@ -379,6 +431,30 @@ export const recordTranscript = internalMutation({
     // Stamp the meetings row so UI can show "transcript synced" without
     // a second query.
     await ctx.db.patch(args.meetingId, { transcriptFetchedAt: now });
+
+    // v3 lifecycle: transcript arrival auto-completes the meeting (the call
+    // happened) and pulls the transcript into the prospect's intel.
+    //   · markCompletedInternal is idempotent — it no-ops if the meeting was
+    //     already completed (e.g. by the date_passed cron) but on first
+    //     completion it advances the prospect to warm_post_meeting.
+    //   · appendTranscriptToIntel is scheduled independently (and is itself
+    //     idempotent via a content marker) so the transcript still lands in
+    //     intel even when the meeting was already completed before the
+    //     transcript arrived (so markCompletedInternal short-circuits).
+    const meeting = await ctx.db.get(args.meetingId);
+    if (meeting) {
+      const eff = effectiveMeetingStatus(meeting as any);
+      if (eff === "scheduled") {
+        await ctx.scheduler.runAfter(0, internal.meetings.markCompletedInternal, {
+          meetingId: args.meetingId,
+          completionSource: "transcript",
+        });
+      }
+      await ctx.scheduler.runAfter(0, internal.meetings.appendTranscriptToIntel, {
+        meetingId: args.meetingId,
+      });
+    }
+
     return transcriptId;
   },
 });

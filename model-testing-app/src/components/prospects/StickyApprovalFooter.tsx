@@ -15,17 +15,38 @@ interface StickyApprovalFooterProps {
   onSkip: () => void;
   onPrev: () => void;
   onNext: () => void;
-  // Outreach-ready gate (2026-05-30). Shown in the `researched` state (before a
-  // cadence package exists). canMarkReady gates the accept button on a completed
-  // intel run existing; onMarkReady/onUnmarkReady drive the flag.
-  canMarkReady?: boolean;
-  onMarkReady?: () => void;
-  onUnmarkReady?: () => void;
+  // Single-gate outreach (2026-06): approving the cadence package IS the
+  // begin-outreach action — it writes Cold + fires Touch 1 server-side. The
+  // old "mark outreach ready" accept gate is backfilled by the backend, so it
+  // is no longer surfaced to the operator.
+  //  - packageId: undefined when no cadence package exists yet → button disabled.
+  //  - packageApprovalStatus: 'approved' → already begun → button disabled.
+  //  - hasSendableContact: Touch 1's contact must have an email (mirrors the
+  //    dispatcher + backend no-contact guard) → button disabled when false.
+  //  - touchCount: rendered in the left-hand sequence summary.
+  packageId?: string;
+  packageApprovalStatus?: string;
+  hasSendableContact?: boolean;
+  touchCount?: number;
 }
 
 export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
   const colors = useColors();
-  const { prospect, positionInList, totalInList, stateLabel, onApprove, onDeny, onRequestRevision, onSkip, onPrev, onNext, canMarkReady, onMarkReady, onUnmarkReady } = props;
+  const {
+    positionInList,
+    totalInList,
+    stateLabel,
+    onApprove,
+    onDeny,
+    onRequestRevision,
+    onSkip,
+    onPrev,
+    onNext,
+    packageId,
+    packageApprovalStatus,
+    hasSendableContact,
+    touchCount,
+  } = props;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -36,9 +57,20 @@ export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [onPrev, onNext]);
 
-  const state = prospect?.prospectState ?? "drafted";
-  const outreachReadyAt: string | undefined = prospect?.outreachReadyAt;
-  const readyDate = outreachReadyAt ? outreachReadyAt.slice(0, 10) : "";
+  const alreadyApproved = packageApprovalStatus === "approved";
+  const noPackage = !packageId;
+  const noContact = !hasSendableContact;
+
+  // First applicable reason wins. Each reason both disables the primary button
+  // and explains (via title tooltip) the fix path.
+  const disabledReason = noPackage
+    ? "No cadence package yet — run prospect-intel to draft outreach first."
+    : alreadyApproved
+      ? "Outreach has already begun for this package."
+      : noContact
+        ? "Touch 1 has no sendable email — pick a recipient with an email on the Outreach tab."
+        : null;
+  const canApprove = !disabledReason;
 
   return (
     <div style={{
@@ -53,53 +85,41 @@ export function StickyApprovalFooter(props: StickyApprovalFooterProps) {
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted, marginLeft: 8 }}>
           {positionInList} / {totalInList} {stateLabel}
         </span>
+        {!noPackage && (touchCount ?? 0) > 0 && (
+          <span style={{ fontSize: 10, color: colors.text.muted, marginLeft: 12 }}>
+            {touchCount} {touchCount === 1 ? "touch" : "touches"} · Touch 1 sends on approve
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        {state === "drafted" ? (
+        {alreadyApproved ? (
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
+            color: colors.accent.green,
+            background: `${colors.accent.green}14`,
+            border: `1px solid ${colors.accent.green}40`,
+          }}>
+            Outreach begun ✓
+          </span>
+        ) : (
           <>
             <button onClick={onSkip} style={btnStyle(colors, "secondary")}>Skip</button>
             <button onClick={onDeny} style={btnStyle(colors, "danger")}>Deny</button>
             <button onClick={onRequestRevision} style={btnStyle(colors, "warning")}>Request Revision</button>
-            <button onClick={onApprove} style={btnStyle(colors, "primary")}>Approve &amp; Schedule →</button>
-          </>
-        ) : state === "researched" ? (
-          // Accept gate — the operator blesses the intel before any outreach is
-          // composed. Pre-accept: primary button (disabled until an intel run
-          // exists). Post-accept: a green reviewed pill + an unmark link.
-          outreachReadyAt ? (
-            <>
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
-                color: colors.accent.green,
-                background: `${colors.accent.green}14`,
-                border: `1px solid ${colors.accent.green}40`,
-              }}>
-                Reviewed ✓ ready for outreach{readyDate ? ` · ${readyDate}` : ""}
-              </span>
-              <button
-                onClick={onUnmarkReady}
-                style={{ background: "none", border: "none", color: colors.text.muted, fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: "6px 4px" }}
-              >
-                Unmark
-              </button>
-            </>
-          ) : (
             <button
-              onClick={canMarkReady ? onMarkReady : undefined}
-              disabled={!canMarkReady}
-              title={canMarkReady ? "Accept the intel and open this prospect for outreach drafting" : "Run prospect-intel first — there is no intel to accept yet"}
+              onClick={canApprove ? onApprove : undefined}
+              disabled={!canApprove}
+              title={disabledReason ?? "Approve the package, write Cold, and send Touch 1 now"}
               style={{
                 ...btnStyle(colors, "primary"),
-                opacity: canMarkReady ? 1 : 0.5,
-                cursor: canMarkReady ? "pointer" : "not-allowed",
+                opacity: canApprove ? 1 : 0.5,
+                cursor: canApprove ? "pointer" : "not-allowed",
               }}
             >
-              Accept intel — ready for outreach →
+              Approve &amp; begin outreach →
             </button>
-          )
-        ) : (
-          <span style={{ color: colors.text.muted, fontSize: 11 }}>State: {state} — actions vary per state (v1.2.1)</span>
+          </>
         )}
       </div>
     </div>

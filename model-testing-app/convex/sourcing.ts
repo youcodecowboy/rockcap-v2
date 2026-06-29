@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { applyPipelineStage } from "./prospectStages";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Prospect SOURCING from the charges service.
@@ -258,13 +259,20 @@ export const promote = mutation({
 
     // Link the CH number and kick off the full CH sync (charges/officers/PSC).
     // Apollo / deep intel is a further, operator-driven step.
-    // pipelineStage: file the promoted candidate straight into Cold outreach —
-    // "promote" from the Sourcing tab IS the escalation into the pipeline. The
-    // stage boards key off pipelineStage even before prospectState is set by a
-    // later intel run (see prospectStages effectiveStage + the overview filter).
     await ctx.db.patch(clientId, {
       companiesHouseNumber: row.companyNumber,
-      pipelineStage: "cold_outreach",
+    });
+    // pipelineStage: file the promoted candidate straight into Cold outreach —
+    // "Add to pipeline" from the Sourcing tab IS the escalation into the
+    // pipeline. Route through the canonical write helper (reason:
+    // 'sourcing_promote', force) so the move is logged to prospectStageEvents
+    // rather than patched inline. The stage boards key off pipelineStage even
+    // before prospectState is set by a later intel run.
+    await applyPipelineStage(ctx, {
+      clientId,
+      toStage: "cold_outreach",
+      reason: "sourcing_promote",
+      mode: "force",
     });
     await ctx.scheduler.runAfter(0, internal.companiesHouse.syncOneCompanyFromCHInternal, {
       companyNumber: row.companyNumber,

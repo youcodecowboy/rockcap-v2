@@ -609,6 +609,10 @@ const TOOLS: McpTool[] = [
         linkedClientId: { type: "string" },
         linkedProjectId: { type: "string" },
         linkedApprovalIds: { type: "array", items: { type: "string" } },
+        revalidateResult: {
+          type: "string",
+          description: "intel-revalidate verdict: 'still_valid' | 'materially_changed'. Only for intel-revalidate runs; denormalized onto clients.lastIntelResult.",
+        },
         gaps: {
           type: "array",
           items: {
@@ -646,6 +650,7 @@ const TOOLS: McpTool[] = [
         linkedClientId: args.linkedClientId,
         linkedProjectId: args.linkedProjectId,
         linkedApprovalIds: args.linkedApprovalIds,
+        revalidateResult: args.revalidateResult,
         gaps: args.gaps,
         errors: args.errors,
       });
@@ -3438,7 +3443,7 @@ const TOOLS: McpTool[] = [
   {
     name: "cadence.approvePackage",
     description:
-      "Approve a whole cadence PACKAGE (all touches sharing a packageId) so the dispatcher will fire them. A freshly-created cold-outreach package is queued at packageApprovalStatus='pending' and never fires until approved — this is that gate. Get the packageId from cadence.create's result or cadence.listByPackage. Pair with cadence.denyPackage to discard the sequence.",
+      "Approve a cadence PACKAGE AND begin outreach in one step (prospecting v3). Flips every touch (shared packageId) to approved, writes the prospect's pipelineStage to 'cold_outreach' on first approval (forward-only — never regresses a warm prospect), backfills outreachReadyAt, and fires touch 1 within seconds (later touches auto-send on their scheduled dates). Enforces a no-contact guard: throws if the package has no sendable contact email. This is the single 'Approve & begin outreach' gate; pair with cadence.denyPackage to discard. Get the packageId from cadence.create or cadence.listByPackage.",
     inputSchema: {
       type: "object",
       properties: { packageId: { type: "string", description: "The shared packageId of the cadence touches to approve." } },
@@ -3448,6 +3453,29 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.cadences.approvePackageInternal, {
         packageId: args.packageId,
         userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "intel.revalidate",
+    description:
+      "Run the cheap intel-revalidate pass (prospecting v3, mode 2) for a prospect: a diff-focused check of whether the prior full intel still holds (new CH charges, status change, new planning/scheme activity, news). Returns 'still_valid' | 'materially_changed'. On materially_changed the prospect is flagged for an intel refresh (intelAttentionAt). This is the lightweight counterpart to a full prospect-intel re-run; the cadence dispatcher runs it automatically before a touch fires after a >30-day gap, and a booked meeting on >7-day-stale intel raises the same flag.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex clients id of the prospect." },
+        companyNumber: { type: "string", description: "Companies House number (optional; resolved from the prospect if omitted)." },
+        reason: { type: "string", description: "Optional free-text reason for the manual re-check." },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.intelRevalidate.runRevalidateInternal, {
+        clientId: args.clientId,
+        companyNumber: args.companyNumber,
+        reason: args.reason,
+        triggeredBy: "operator",
       });
       return asText(result);
     },

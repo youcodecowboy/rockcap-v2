@@ -1,11 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Prospect PIPELINE STAGES — re-export shim (prospecting v3).
+// Meeting STATUS — re-export shim (prospecting v3).
 //
-// The canonical definitions now live in convex/lib/pipelineStages.ts (a pure,
+// The canonical definitions live in convex/lib/meetingStatus.ts (a pure,
 // dependency-free module that BOTH the Convex backend and the Next.js client
-// import natively — killing the old "duplicated, KEEP IN SYNC" fragility).
-// This file re-exports everything so existing `@/lib/prospects/stages` imports
-// keep working unchanged.
+// import natively). This file re-exports everything so client-side
+// `@/lib/prospects/meetingStatus` imports resolve.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export * from "../../../convex/lib/pipelineStages";
+export * from "../../../convex/lib/meetingStatus";

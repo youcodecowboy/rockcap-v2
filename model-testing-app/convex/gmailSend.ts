@@ -674,7 +674,24 @@ export const executeClientCommunication = internalAction({
       // Seed References from the message we're replying to if not provided.
       references: p.references ?? (p.inReplyTo ? [p.inReplyTo] : undefined),
     };
-    return await performApprovedSend(ctx, approval, normalized);
+    const sent = await performApprovedSend(ctx, approval, normalized);
+
+    // Reply lifecycle: a successful outbound reply send clears the prospect's
+    // "reply needs response" needs-action flag. Tied to the actual send (not the
+    // UI handler) so both MCP-approve and UI-approve paths clear it. Best-effort:
+    // the send already succeeded, so never throw on a flag-clear failure.
+    if (approval.relatedClientId) {
+      try {
+        await ctx.runMutation(internal.clients.clearNeedsActionFlagInternal, {
+          clientId: approval.relatedClientId,
+          kind: "reply_received",
+          sourceReplyEventId: p.replyEventId,
+        });
+      } catch (err) {
+        console.error("[gmailSend] needs-action flag clear failed:", err);
+      }
+    }
+    return sent;
   },
 });
 

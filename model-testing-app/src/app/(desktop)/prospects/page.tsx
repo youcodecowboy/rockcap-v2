@@ -3,6 +3,7 @@
 import { useColors } from "@/lib/useColors";
 import { StageNavBar } from "@/components/prospects/dashboards/StageNavBar";
 import { PipelineSummary } from "@/components/prospects/dashboards/PipelineSummary";
+import { RequiresAttentionTable } from "@/components/prospects/dashboards/RequiresAttentionTable";
 import { RepliesAwaitingTriageSection } from "@/components/prospects/sections/RepliesAwaitingTriageSection";
 import { UpcomingMeetingsSection } from "@/components/prospects/sections/UpcomingMeetingsSection";
 
@@ -29,8 +30,14 @@ export default function ProspectsPage() {
 
         <PipelineSummary />
 
+        {/* "What needs me now" — the unified cross-stage action surface, first
+            thing under the KPI strip. Every row is actionable in place. */}
+        <RequiresAttentionTable />
+
         {/* Cross-cutting morning triage — not pipeline rungs, so they sit on the
-            summary. Both auto-expand when rows are present. */}
+            summary. Both auto-expand when rows are present. The unified table
+            above is the canonical home for drafted/needs-action replies; these
+            sections stay as the time-ordered "upcoming / unlinked" companions. */}
         <div style={{ marginTop: 28 }}>
           <UpcomingMeetingsSection />
           <RepliesAwaitingTriageSection />
