@@ -3,6 +3,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { backfillContactClientLinks } from "./contacts";
+import { INTEL_STALE_DAYS } from "./lib/pipelineStages";
 
 // Query: Get all clients
 export const list = query({
@@ -1372,5 +1373,187 @@ export const listOutreachReady = query({
       const st = c.prospectState;
       return st === undefined || st === "researched";
     });
+  },
+});
+
+// ── Prospecting v3 — needs-action flags + intel freshness (2026-06-26) ──
+//
+// needsActionFlags is an upsert-by-`kind` array on the clients row. Each entry
+// is one open ask raised by a feed (reply drafted, approval gated, etc.). The
+// scalar needsActionAt mirrors the EARLIEST open flag's raisedAt so the
+// requires-attention surface can sort/index on a single column; it is cleared
+// (undefined) when the last flag clears. The read-side surface derives the
+// operator-facing booleans via deriveProspectFlags() — these helpers only feed
+// the underlying flag array.
+
+type NeedsActionFlag = {
+  kind: string;
+  reason: string;
+  sourceReplyEventId?: Id<"replyEvents">;
+  sourceApprovalId?: Id<"approvals">;
+  raisedAt: string;
+};
+
+// The earliest open flag's raisedAt (ISO compare is lexicographically safe),
+// or undefined when there are no flags.
+function earliestRaisedAt(flags: NeedsActionFlag[]): string | undefined {
+  if (flags.length === 0) return undefined;
+  return flags.reduce(
+    (min, f) => (f.raisedAt < min ? f.raisedAt : min),
+    flags[0].raisedAt,
+  );
+}
+
+// Shared upsert: replaces any existing flag of the same `kind`, then recomputes
+// the scalar needsActionAt mirror.
+async function applyRaiseNeedsActionFlag(
+  ctx: any,
+  args: {
+    clientId: Id<"clients">;
+    kind: string;
+    reason: string;
+    sourceReplyEventId?: Id<"replyEvents">;
+    sourceApprovalId?: Id<"approvals">;
+  },
+): Promise<{ ok: true; needsActionAt?: string; flagCount: number }> {
+  const client = await ctx.db.get(args.clientId);
+  if (!client) throw new Error("client_not_found");
+
+  const existing: NeedsActionFlag[] = Array.isArray((client as any).needsActionFlags)
+    ? ((client as any).needsActionFlags as NeedsActionFlag[])
+    : [];
+
+  // Drop any existing entry of the same kind (upsert-by-kind), then append the
+  // fresh one. We re-stamp raisedAt so the latest raise wins on the mirror.
+  const kept = existing.filter((f) => f.kind !== args.kind);
+  const newFlag: NeedsActionFlag = {
+    kind: args.kind,
+    reason: args.reason,
+    raisedAt: new Date().toISOString(),
+  };
+  if (args.sourceReplyEventId !== undefined) newFlag.sourceReplyEventId = args.sourceReplyEventId;
+  if (args.sourceApprovalId !== undefined) newFlag.sourceApprovalId = args.sourceApprovalId;
+
+  const next = [...kept, newFlag];
+  const needsActionAt = earliestRaisedAt(next);
+
+  await ctx.db.patch(args.clientId, {
+    needsActionFlags: next,
+    needsActionAt,
+  });
+  return { ok: true, needsActionAt, flagCount: next.length };
+}
+
+// Shared clear: removes flags matching `kind` (and `sourceReplyEventId` when
+// supplied — lets a reply-specific flag clear without touching another open
+// flag of the same kind). Recomputes the scalar mirror (undefined when none
+// remain).
+async function applyClearNeedsActionFlag(
+  ctx: any,
+  args: {
+    clientId: Id<"clients">;
+    kind: string;
+    sourceReplyEventId?: Id<"replyEvents">;
+  },
+): Promise<{ ok: true; needsActionAt?: string; flagCount: number; removed: number }> {
+  const client = await ctx.db.get(args.clientId);
+  if (!client) throw new Error("client_not_found");
+
+  const existing: NeedsActionFlag[] = Array.isArray((client as any).needsActionFlags)
+    ? ((client as any).needsActionFlags as NeedsActionFlag[])
+    : [];
+
+  const next = existing.filter((f) => {
+    if (f.kind !== args.kind) return true; // unrelated kind — keep
+    if (args.sourceReplyEventId !== undefined) {
+      // Scoped clear: only remove the matching-source entry.
+      return f.sourceReplyEventId !== args.sourceReplyEventId;
+    }
+    return false; // matches kind, no source scoping — remove
+  });
+
+  const removed = existing.length - next.length;
+  const needsActionAt = earliestRaisedAt(next);
+
+  await ctx.db.patch(args.clientId, {
+    needsActionFlags: next,
+    needsActionAt,
+  });
+  return { ok: true, needsActionAt, flagCount: next.length, removed };
+}
+
+// Internal: feeds (reply drafted, approval gated, …) raise an open ask.
+export const raiseNeedsActionFlagInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    kind: v.string(),
+    reason: v.string(),
+    sourceReplyEventId: v.optional(v.id("replyEvents")),
+    sourceApprovalId: v.optional(v.id("approvals")),
+  },
+  handler: async (ctx, args) => applyRaiseNeedsActionFlag(ctx, args),
+});
+
+// Internal: a feed clears its own ask once handled.
+export const clearNeedsActionFlagInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    kind: v.string(),
+    sourceReplyEventId: v.optional(v.id("replyEvents")),
+  },
+  handler: async (ctx, args) => applyClearNeedsActionFlag(ctx, args),
+});
+
+// Public: UI "dismiss" on a requires-attention card. Resolves the acting user
+// (kept for parity with the other public mutations; clearing carries no
+// audit column today) and clears by kind.
+export const clearNeedsActionFlag = mutation({
+  args: {
+    clientId: v.id("clients"),
+    kind: v.string(),
+    sourceReplyEventId: v.optional(v.id("replyEvents")),
+  },
+  handler: async (ctx, args) => {
+    await resolveUserId(ctx);
+    return await applyClearNeedsActionFlag(ctx, args);
+  },
+});
+
+// Internal query: read-only intel-freshness snapshot for a prospect. Feeds the
+// requires-attention surface + intel-revalidate decision (Trigger A meeting +
+// >7d stale; Trigger B 30-day cadence gap is computed by the caller off gapDays
+// vs CADENCE_REVALIDATE_GAP_DAYS). Returns denormalised client fields plus the
+// derived day-deltas. ageDays/gapDays are undefined when the source timestamp
+// is unset.
+export const getIntelFreshnessInternal = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("client_not_found");
+
+    const now = Date.now();
+    const DAY_MS = 86_400_000;
+
+    const lastFullIntelAt: string | undefined = (client as any).lastFullIntelAt;
+    const lastOutreachSendAt: string | undefined = (client as any).lastOutreachSendAt;
+
+    const ageMs = lastFullIntelAt ? now - Date.parse(lastFullIntelAt) : undefined;
+    const ageDays =
+      ageMs !== undefined && isFinite(ageMs) ? Math.floor(ageMs / DAY_MS) : undefined;
+    const isStale7 = ageDays !== undefined && ageDays >= INTEL_STALE_DAYS;
+
+    const gapMs = lastOutreachSendAt ? now - Date.parse(lastOutreachSendAt) : undefined;
+    const gapDays =
+      gapMs !== undefined && isFinite(gapMs) ? Math.floor(gapMs / DAY_MS) : undefined;
+
+    return {
+      lastFullIntelAt,
+      ageDays,
+      isStale7,
+      lastOutreachSendAt,
+      gapDays,
+      intelAttentionAt: (client as any).intelAttentionAt as string | undefined,
+      intelAttentionReason: (client as any).intelAttentionReason as string | undefined,
+    };
   },
 });

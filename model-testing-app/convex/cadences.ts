@@ -1,7 +1,9 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { isCadenceFireable } from "./lib/cadenceGating";
+import { applyPipelineStage } from "./prospectStages";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
 // cadence.cancel wrap these (see convex/mcp.ts). The cron dispatcher in
@@ -187,6 +189,18 @@ export const advanceAfterFireInternal = internalMutation({
       patch.nextDueAt = args.nextDueAt;
     }
     await ctx.db.patch(args.cadenceId, patch);
+
+    // Trigger-B base: a fired touch (an approval was staged, or the legacy
+    // "sent" result) is an outbound send, so stamp the related prospect's
+    // lastOutreachSendAt — this is the base the 30-day cadence-gap freshness
+    // check measures from. Skips (paused / holiday / opted-out) are NOT sends,
+    // so they leave the clock untouched.
+    if (args.lastResult === "approval_staged" || args.lastResult === "sent") {
+      const row = await ctx.db.get(args.cadenceId);
+      if (row?.relatedClientId) {
+        await ctx.db.patch(row.relatedClientId, { lastOutreachSendAt: now });
+      }
+    }
     return { ok: true };
   },
 });
@@ -330,34 +344,131 @@ export const updateInternal = internalMutation({
 });
 
 // ── Approve all cadences in a package (single-gate approval model) ──
+//
+// THE shared package-approval helper. A plain async helper (NOT a registered
+// Convex function) so both the public approvePackage and the internal
+// approvePackageInternal route through one place. `ctx` is always a mutation
+// ctx (both callers are mutations), which lets the pipeline-stage write go
+// through applyPipelineStage directly for same-transaction consistency.
+//
+// Responsibilities, in order:
+//   1. NO-CONTACT GUARD — mirror the dispatcher's fire-time sendability check
+//      (cadenceDispatcher.ts ~lines 84-92: a touch with no contact email can
+//      never send). If no package member has a contact with an email on file,
+//      refuse to approve rather than approving a package that can only fail at
+//      fire time.
+//   2. Flip every row to approved (+ approvedBy / approvedAt / updatedAt).
+//   3. Stage write → cold_outreach (forward_only, so a prospect already further
+//      along is never demoted), keyed off the package's relatedClientId.
+//   4. Backfill clients.outreachReadyAt if unset (plumbing).
+//   5. Kick the dispatcher now so a touch already due fires within seconds.
+export async function applyPackageApproval(
+  ctx: any,
+  args: { packageId: string; userId: Id<"users"> },
+): Promise<{ ok: boolean; patched: number }> {
+  const rows = await ctx.db
+    .query("cadences")
+    .withIndex("by_package", (q: any) => q.eq("packageId", args.packageId))
+    .collect();
+
+  // 1. No-contact guard — at least one member must have a contact with an email.
+  const contactIds = Array.from(
+    new Set(rows.map((r: any) => r.contactId).filter(Boolean)),
+  );
+  const contacts = await Promise.all(
+    contactIds.map((cid: any) => ctx.db.get(cid)),
+  );
+  const hasSendableContact = contacts.some((c: any) => c?.email);
+  if (!hasSendableContact) {
+    throw new Error(
+      "Cannot approve cadence package: no contact with an email address on file. Attach a sendable contact before approving.",
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // 2. Flip every row to approved.
+  let patched = 0;
+  for (const row of rows) {
+    await ctx.db.patch(row._id, {
+      packageApprovalStatus: "approved",
+      approvedBy: args.userId,
+      approvedAt: now,
+      updatedAt: now,
+    });
+    patched++;
+  }
+
+  // 3 + 4. Stage write + outreachReadyAt backfill, keyed off the package's
+  // related client (same value across the members, but tolerate stragglers).
+  const relatedClientId = rows.find((r: any) => r.relatedClientId)
+    ?.relatedClientId as Id<"clients"> | undefined;
+  if (relatedClientId) {
+    await applyPipelineStage(ctx, {
+      clientId: relatedClientId,
+      toStage: "cold_outreach",
+      reason: "cadence_approved",
+      userId: args.userId,
+      mode: "forward_only",
+    });
+    const client = await ctx.db.get(relatedClientId);
+    if (client && !(client as any).outreachReadyAt) {
+      await ctx.db.patch(relatedClientId, { outreachReadyAt: now });
+    }
+  }
+
+  // 5. "Approve & Schedule" should feel immediate: run the dispatcher now so
+  // any touch already due (touch 1 usually is) fires within seconds instead of
+  // waiting up to 5 minutes for the next cron tick. Future touches are
+  // untouched — they fire on their own nextDueAt.
+  await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+
+  return { ok: true, patched };
+}
 
 export const approvePackageInternal = internalMutation({
   args: {
     packageId: v.string(),
     userId: v.id("users"),
   },
+  handler: async (ctx, args) =>
+    applyPackageApproval(ctx, { packageId: args.packageId, userId: args.userId }),
+});
+
+// ── Hold / release a cadence for an in-flight intel run ──
+// holdForIntelInternal pauses a cadence while intel is (re)gathered: deactivate
+// it but PRESERVE nextDueAt so clearIntelHoldInternal can reactivate it in
+// place. The intelHoldAt / intelHoldReason fields are the audit trail.
+
+export const holdForIntelInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    reason: v.string(),
+  },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("cadences")
-      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
-      .collect();
     const now = new Date().toISOString();
-    let patched = 0;
-    for (const row of rows) {
-      await ctx.db.patch(row._id, {
-        packageApprovalStatus: "approved",
-        approvedBy: args.userId,
-        approvedAt: now,
-        updatedAt: now,
-      });
-      patched++;
-    }
-    // "Approve & Schedule" should feel immediate: run the dispatcher now so
-    // any touch already due (touch 1 usually is) fires within seconds
-    // instead of waiting up to 5 minutes for the next cron tick. Future
-    // touches are untouched — they fire on their own nextDueAt.
-    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
-    return { ok: true, patched };
+    await ctx.db.patch(args.cadenceId, {
+      isActive: false,
+      intelHoldAt: now,
+      intelHoldReason: args.reason,
+      updatedAt: now,
+    });
+    return { ok: true };
+  },
+});
+
+export const clearIntelHoldInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cadenceId, {
+      isActive: true,
+      intelHoldAt: undefined,
+      intelHoldReason: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
   },
 });
 
@@ -467,23 +578,10 @@ export const approvePackage = mutation({
     const users = await ctx.db.query("users").take(1);
     const userId = users[0]?._id;
     if (!userId) throw new Error("No user available");
-    const rows = await ctx.db
-      .query("cadences")
-      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
-      .collect();
-    const now = new Date().toISOString();
-    for (const row of rows) {
-      await ctx.db.patch(row._id, {
-        packageApprovalStatus: "approved",
-        approvedBy: userId,
-        approvedAt: now,
-        updatedAt: now,
-      });
-    }
-    // Fire due touches immediately (same rationale as approvePackageInternal:
-    // "Approve & Schedule" should send touch 1 now, not on the next cron tick).
-    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
-    return { ok: true, patched: rows.length };
+    // Route through the shared helper: no-contact guard, flip rows approved,
+    // stage write (→ cold_outreach, forward_only), outreachReadyAt backfill,
+    // immediate dispatcher kick.
+    return applyPackageApproval(ctx, { packageId: args.packageId, userId });
   },
 });
 

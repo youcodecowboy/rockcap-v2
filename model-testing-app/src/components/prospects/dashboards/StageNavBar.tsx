@@ -8,14 +8,17 @@ import { PIPELINE_STAGES, type PipelineStage } from "@/lib/prospects/stages";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-// Horizontal navigation across the pipeline: Summary + the 5 stage dashboards.
-// Counts come from the same pipelineOverview query the summary uses (one shared
-// reactive subscription). `active` highlights the current board.
-export function StageNavBar({ active }: { active: PipelineStage | "summary" }) {
+// Horizontal navigation across the pipeline: Summary + Sourcing intake + the 5
+// stage dashboards. Counts come from the same pipelineOverview query the summary
+// uses (one shared reactive subscription). `active` highlights the current board.
+// "sourcing" is the pre-pipeline intake lane (charge-sourced + HubSpot
+// candidates), not one of the 5 prospect stages, so it sits between Summary and
+// Cold rather than in PIPELINE_STAGES.
+export function StageNavBar({ active }: { active: PipelineStage | "summary" | "sourcing" | "actions" }) {
   const colors = useColors();
   const router = useRouter();
   const overview = useQuery(api.prospectStages.pipelineOverview, {}) as
-    | { stages: { key: PipelineStage; count: number; actionItems: number }[]; totalProspects: number }
+    | { stages: { key: PipelineStage; count: number; actionItems: number }[]; totalProspects: number; totalActionItems?: number }
     | undefined;
 
   const countFor = (key: PipelineStage) =>
@@ -44,6 +47,21 @@ export function StageNavBar({ active }: { active: PipelineStage | "summary" }) {
         active={active === "summary"}
         accent={colors.entityTypes.prospect}
         onClick={() => router.push("/prospects")}
+        colors={colors}
+      />
+      <NavItem
+        label="Action required"
+        actions={overview?.totalActionItems}
+        active={active === "actions"}
+        accent={accentFor("orange")}
+        onClick={() => router.push("/prospects/actions")}
+        colors={colors}
+      />
+      <NavItem
+        label="Sourcing"
+        active={active === "sourcing"}
+        accent={accentFor("teal")}
+        onClick={() => router.push("/prospects/sourcing")}
         colors={colors}
       />
       {PIPELINE_STAGES.map((s) => (

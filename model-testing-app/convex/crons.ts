@@ -87,6 +87,18 @@ crons.interval(
   internal.gmailInbound.pollAllInbound,
 );
 
+// Meeting auto-complete (prospecting v3). Every hour. Marks scheduled meetings
+// whose meetingDate has passed as completed (completionSource 'date_passed'),
+// which advances the prospect to warm_post_meeting and pulls any transcript
+// into intel. The internal mutation caps rows per run so a legacy backlog of
+// past undated-status meetings drains gradually instead of mass-firing.
+crons.interval(
+  "meeting-auto-complete",
+  { hours: 1 },
+  internal.meetings.autoCompleteDueMeetings,
+  {},
+);
+
 // v1.2: stale skillRun sweep. Once daily, mark any skillRun with
 // status=running AND _creationTime > 6h as failed. Prevents stuck runs
 // from blocking future dedup checks.

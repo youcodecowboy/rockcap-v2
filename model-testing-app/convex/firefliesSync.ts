@@ -295,11 +295,20 @@ export const syncForUser = internalAction({
       const decisions: string[] = [];
       const actionItems = parseActionItemsString(t.summary?.action_items);
 
-      // Attribution: try to resolve a clientId by participant email match
-      // against contacts. Until contact-resolution is wired (a sub-skill
-      // task, see skills/sub-skills/), we cannot attribute automatically.
-      // For v1, the upsert mutation throws on missing clientId. We catch
-      // that here and record the meeting as needing manual attribution.
+      // Attribution: resolve a clientId by participant-email match against
+      // contacts (direct clientId, then linked-company → promoted client).
+      // Prefer external participants; keep the meeting unattributed rather than
+      // mis-attribute. When unresolved, clientId stays undefined and the upsert
+      // mutation throws — caught below and counted as an attribution miss.
+      const resolved = await ctx.runQuery(
+        internal.fireflies.resolveClientByParticipantEmails,
+        {
+          emails: [
+            ...(t.organizer_email ? [t.organizer_email] : []),
+            ...(t.participants ?? []),
+          ],
+        },
+      );
       try {
         const meetingId = await ctx.runMutation(internal.fireflies.upsertFirefliesMeeting, {
           firefliesId: t.id,
@@ -312,8 +321,8 @@ export const syncForUser = internalAction({
           decisions,
           actionItems,
           capturedByUserId: args.userId,
-          // clientId left undefined intentionally; attribution comes
-          // later. The mutation will throw and we catch it below.
+          // Resolved client (or undefined → upsert throws → attribution miss).
+          clientId: resolved?.clientId,
         });
 
         const segments = buildSpeakerSegments(t.sentences);

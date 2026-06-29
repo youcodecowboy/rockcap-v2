@@ -1,11 +1,14 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { useColors } from "@/lib/useColors";
-import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, ExternalLink, UserPlus } from "lucide-react";
+import { TrendingUp, AlertCircle, Plus, Mail, CheckCircle2, UserPlus, Check, X } from "lucide-react";
 import { computeProspectFlags } from "@/lib/prospects/flags";
 import { FlagChip } from "../FlagChip";
+import { InlineDraftEditor } from "../InlineDraftEditor";
 
 interface OverviewTabProps {
   prospect: any;
@@ -85,6 +88,10 @@ function classificationColor(text: string | undefined, colors: any): string {
 
 export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, onJumpToIntel, lenderTierConflict }: OverviewTabProps) {
   const colors = useColors();
+  // v3: prospectState is no longer a visible stage axis. It's read here only as
+  // plumbing to gate the "package awaiting approval" callout below (the drafted
+  // state == a cadence package queued but not yet approved); it is never shown
+  // to the operator as a stage label.
   const state = prospect?.prospectState ?? "drafted";
   const rec = parseRecommendation(intelRun?.intelMarkdown);
   const hasIntel = !!intelRun?.intelMarkdown;
@@ -101,11 +108,17 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
   // v1.3 Sprint B — pending approvals for this client. Surfaces drafts
   // staged by qualify-and-draft, meeting-prep-respond, lender-outreach,
   // and any other client_communication / gmail_send / lender_outreach
-  // approval type. Operator can click through to /approvals to review.
+  // approval type. v3: approved/rejected/edited IN PLACE here — the
+  // standalone /approvals page is retired for the prospect flow.
   const pendingApprovals = useQuery(
     api.approvals.listPendingByClient,
     prospect ? { clientId: prospect._id, limit: 10 } : "skip",
   ) ?? [];
+
+  const approveApproval = useMutation(api.approvals.approve as any);
+  const rejectApproval = useMutation(api.approvals.reject as any);
+  const [busyApprovalId, setBusyApprovalId] = useState<string | null>(null);
+  const [editingApprovalId, setEditingApprovalId] = useState<string | null>(null);
 
   return (
     <div>
@@ -393,23 +406,18 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
                 Pending operator review · {pendingApprovals.length}
               </span>
             </div>
-            <a
-              href="/approvals"
-              style={{ color: colors.accent.blue, fontSize: 10, textDecoration: "none" }}
-            >
-              Open /approvals →
-            </a>
+            <span style={{ color: colors.text.muted, fontSize: 10 }}>
+              Approve or reject below
+            </span>
           </div>
           <div>
             {pendingApprovals.map((a: any, i: number) => (
-              <a
+              <div
                 key={a._id}
-                href={`/approvals/${a._id}`}
                 style={{
                   display: "block",
                   padding: "10px 16px",
                   borderTop: i === 0 ? "none" : `1px solid ${colors.border.light}`,
-                  textDecoration: "none",
                   color: colors.text.primary,
                 }}
               >
@@ -472,12 +480,62 @@ export function OverviewTab({ prospect, intelRun, cadences, onJumpToOutreach, on
                       </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: colors.text.muted, fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap" as const }}>
+                  <div style={{ fontSize: 10, color: colors.text.muted, fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap" as const }}>
                     {a.requestedAt?.slice(0, 16)}
-                    <ExternalLink size={10} />
                   </div>
                 </div>
-              </a>
+
+                {/* v3: act in place — the standalone /approvals page is retired
+                    for the prospect flow. Edit (for email drafts) opens the
+                    shared inline editor; Approve/Reject hit the approval directly. */}
+                {editingApprovalId === a._id ? (
+                  <div style={{ marginTop: 10 }}>
+                    <InlineDraftEditor
+                      approvalId={a._id as Id<"approvals">}
+                      initialSubject={a.draftPayload?.subject ?? ""}
+                      initialBodyText={a.draftPayload?.bodyText ?? ""}
+                      initialBodyHtml={a.draftPayload?.bodyHtml}
+                      to={a.draftPayload?.to}
+                      onDone={() => setEditingApprovalId(null)}
+                      onCancel={() => setEditingApprovalId(null)}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <button
+                      onClick={async () => {
+                        setBusyApprovalId(a._id);
+                        try { await approveApproval({ approvalId: a._id }); }
+                        finally { setBusyApprovalId(null); }
+                      }}
+                      disabled={busyApprovalId === a._id}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11, borderRadius: 4, border: "none", cursor: "pointer", color: "#fff", background: colors.accent.green, opacity: busyApprovalId === a._id ? 0.6 : 1 }}
+                    >
+                      <Check size={12} /> {busyApprovalId === a._id ? "…" : "Approve"}
+                    </button>
+                    {(a.draftPayload?.subject || a.draftPayload?.bodyText) && (
+                      <button
+                        onClick={() => setEditingApprovalId(a._id)}
+                        disabled={busyApprovalId === a._id}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11, borderRadius: 4, cursor: "pointer", color: colors.text.primary, background: colors.bg.cardAlt, border: `1px solid ${colors.border.default}` }}
+                      >
+                        <Mail size={12} /> Edit
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        setBusyApprovalId(a._id);
+                        try { await rejectApproval({ approvalId: a._id }); }
+                        finally { setBusyApprovalId(null); }
+                      }}
+                      disabled={busyApprovalId === a._id}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", fontSize: 11, borderRadius: 4, cursor: "pointer", color: colors.accent.red, background: "transparent", border: `1px solid ${colors.accent.red}55` }}
+                    >
+                      <X size={12} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>

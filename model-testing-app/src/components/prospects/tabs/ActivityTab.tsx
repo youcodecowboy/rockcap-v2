@@ -1,6 +1,7 @@
 "use client";
 
 import { useColors } from "@/lib/useColors";
+import { derivePipelineStage, stageFor } from "@/lib/prospects/stages";
 
 interface ActivityTabProps {
   prospect: any;
@@ -23,8 +24,13 @@ export function ActivityTab({ prospect, intelRun, cadences }: ActivityTabProps) 
     if (c.createdAt) events.push({ at: c.createdAt, description: `cadence touch ${c.packageOrder} queued: "${c.preDraftedTouch?.subject?.slice(0, 40) ?? "—"}"` });
     if (c.lastFiredAt) events.push({ at: c.lastFiredAt, description: `cadence touch ${c.packageOrder} fired (${c.lastResult})` });
   }
-  if (prospect?.prospectStateChangedAt) {
-    events.push({ at: prospect.prospectStateChangedAt, description: `state → ${prospect.prospectState}` });
+  // v3: pipelineStage is the canonical stage axis. Surface the latest stage
+  // change from the denormalised client fields (the full stage history with
+  // provenance lives in prospectStageEvents; that read-side query is owned by
+  // another workstream). prospectState changes are no longer shown as a stage row.
+  if (prospect?.pipelineStageChangedAt) {
+    const stage = derivePipelineStage(prospect ?? {});
+    events.push({ at: prospect.pipelineStageChangedAt, description: `stage → ${stageFor(stage)?.label ?? "off-pipeline"}` });
   }
 
   events.sort((a, b) => b.at.localeCompare(a.at));

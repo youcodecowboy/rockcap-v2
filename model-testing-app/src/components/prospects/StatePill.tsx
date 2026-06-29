@@ -1,5 +1,9 @@
 "use client";
 
+// NOTE (v3): StatePill is NOT for pipelineStage. The pipeline stage axis renders
+// via StageChip on prospect surfaces. StatePill remains only for NewTab's
+// skillRun / sourcing states (new / running / stuck) and must not be reintroduced
+// as a prospectState badge on prospect detail.
 const PILL_BG: Record<string, { bg: string; fg: string; border: string }> = {
   drafted: { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" },
   needs_revision: { bg: "#ffedd5", fg: "#9a3412", border: "#fdba74" },

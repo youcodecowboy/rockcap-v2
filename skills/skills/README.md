@@ -14,6 +14,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 |---|---|---|
 | `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement; v3.1 People-tab contract 2026-05-30; **v3.2 intel-only + Definition-of-Done manifest** (outreach split out behind the accept gate) 2026-05-30; **v3.3 clientIntelligence doc enrichment** (Output #2 wired via the now-exposed `intelligence.updateClientIntelligence`) 2026-05-31 |
 | `outreach-draft/` | **v2 hardened** | **NEW 2026-05-30** — composes the cold-outreach cadence package for prospects the operator has marked ready (lifecycle step 1.5; the old prospect-intel step 11) |
+| `intel-revalidate/` | **v1** | **NEW 2026-06-26** — cheap, diff-focused intel-freshness pass (mode 2; full `prospect-intel` is mode 1). Autonomous Trigger B (cadenceDispatcher runs it before a touch fires after a >30-day gap; materially-changed → hold the send) + operator-driven via the `intel.revalidate` MCP tool. |
 | `client-context-capture/` | **v2 hardened** | **NEW 2026-05-31** — operator-input lane: turns a freeform brain-dump (meetings, calls, personal knowledge) into structured intel + a running `contextMarkdown` reference. Parallel system, not a lifecycle step |
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |

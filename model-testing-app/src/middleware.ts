@@ -55,6 +55,12 @@ const isPublicRoute = createRouteMatcher([
   '/api/classify-reply-intent(.*)',
   '/api/cadence-compose(.*)',
   '/api/meeting-prep-respond(.*)',
+  // Prospecting v3 bridge routes — Convex actions POST here server-to-server
+  // (replyEventProcessor → reply-draft; cadenceDispatcher/intelRevalidate →
+  // intel-revalidate). Self-authenticate via x-convex-internal-secret; public
+  // here so Clerk doesn't 404-reject the cookie-less Convex fetch.
+  '/api/reply-draft(.*)',
+  '/api/intel-revalidate(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.

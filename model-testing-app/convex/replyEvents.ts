@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internalMutation, internalQuery, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 
 // Internal API for the replyEvents table. Written by the Gmail push webhook
 // and the HubSpot sync sweep. Idempotency guard is the (source, externalId)
@@ -69,6 +69,7 @@ export const patchClassificationInternal = internalMutation({
       v.literal("not_interested"),
       v.literal("info_question"),
       v.literal("out_of_office"),
+      v.literal("positive"),
       v.literal("unknown"),
     ),
     classifiedConfidence: v.number(),
@@ -110,6 +111,8 @@ export const markProcessedInternal = internalMutation({
       v.literal("restored_cadences"),
       v.literal("no_contact_match"),
       v.literal("unlinked_no_review"),
+      v.literal("reply_drafted"),
+      v.literal("flag_only"),
     ),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
   },
@@ -297,6 +300,168 @@ export const countUnrouted = query({
       .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
       .collect();
     return rows.length;
+  },
+});
+
+// ── Reply lifecycle: actionable drafts + flag-only replies ───────────
+//
+// The morning queue, post auto-draft. Powers RepliesAwaitingTriageSection
+// (home) and feeds the requires-attention surface. Returns TWO row groups:
+//
+//   drafts: pending client_communication/email_reply approvals (auto-staged
+//           by replyEventProcessor.dispatchByIntent for book_meeting /
+//           info_question / positive) joined to their inbound replyEvent +
+//           contact + client. The operator can Accept & send / Edit / Reject
+//           inline without opening detail.
+//   flags:  replyEvents dispatched flag_only (not_interested / out_of_office)
+//           — flagged for an operator lost/keep decision, NO draft, NO send.
+//
+// Auto-drafted replies surface ONCE here (as a draft row); they are routed to
+// dispatchedTo "reply_drafted" precisely so the requires-attention reply filter
+// can exclude them and avoid double-counting against this approval row.
+
+type ActionableDraftRow = {
+  approvalId: Id<"approvals">;
+  clientId: Id<"clients"> | null;
+  clientName: string | null;
+  contactId: Id<"contacts"> | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  intent: string;
+  replyEventId: Id<"replyEvents"> | null;
+  inReplyToSubject: string | null;
+  inReplySnippet: string | null;
+  draftSubject: string;
+  draftBodyText: string;
+  draftBodyHtml: string;
+  reasoning: string | null;
+  receivedAt: string | null;
+  blocked: boolean;
+};
+
+type ActionableFlagRow = {
+  kind: string;
+  reason: string;
+  replyEventId: Id<"replyEvents">;
+  clientId: Id<"clients"> | null;
+  clientName: string | null;
+  contactName: string | null;
+  receivedAt: string | null;
+};
+
+export const listActionableDrafts = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ drafts: ActionableDraftRow[]; flags: ActionableFlagRow[] }> => {
+    const limit = args.limit ?? 50;
+
+    // (i) Pending email_reply approvals. by_status is the only global handle;
+    // scan a bounded window of pending rows then narrow to the auto-drafted
+    // reply shape (entityType client_communication, payload.kind email_reply,
+    // a related reply event set).
+    const pending = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .order("desc")
+      .take(Math.max(limit * 4, 200));
+
+    const drafts: ActionableDraftRow[] = [];
+    for (const a of pending) {
+      if (a.entityType !== "client_communication") continue;
+      const p: any = a.draftPayload ?? {};
+      if (p.kind !== "email_reply") continue;
+      if (!a.relatedReplyEventId) continue;
+      if (drafts.length >= limit) break;
+
+      const replyEvent = a.relatedReplyEventId
+        ? await ctx.db.get(a.relatedReplyEventId)
+        : null;
+      const clientId = a.relatedClientId ?? replyEvent?.linkedClientId ?? null;
+      let clientName: string | null = null;
+      if (clientId) {
+        const client = await ctx.db.get(clientId);
+        clientName = client?.name ?? client?.companyName ?? null;
+      }
+      const contactId = a.relatedContactId ?? p.contactId ?? replyEvent?.contactId ?? null;
+      let contactName: string | null = null;
+      let contactEmail: string | null = null;
+      if (contactId) {
+        const contact = (await ctx.db.get(contactId)) as any;
+        contactName = contact?.name ?? null;
+        contactEmail = contact?.email ?? null;
+      }
+      const inboundBody = replyEvent?.replyBodyText ?? "";
+      drafts.push({
+        approvalId: a._id,
+        clientId,
+        clientName,
+        contactId,
+        contactName,
+        contactEmail,
+        intent: p.intent ?? replyEvent?.classifiedIntent ?? "unknown",
+        replyEventId: a.relatedReplyEventId,
+        inReplyToSubject: replyEvent?.replySubject ?? null,
+        inReplySnippet: inboundBody ? inboundBody.slice(0, 140) : null,
+        draftSubject: p.subject ?? "",
+        draftBodyText: p.bodyText ?? "",
+        draftBodyHtml: p.bodyHtml ?? "",
+        reasoning: p.reasoning ?? null,
+        receivedAt: replyEvent?.receivedAt ?? a.requestedAt ?? null,
+        // A reply with no resolvable recipient will fail at send time — surface
+        // it as blocked so Accept doesn't silently 500.
+        blocked: !contactEmail,
+      });
+    }
+
+    // (ii) Flag-only replies (not_interested / out_of_office).
+    const flagRows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "flag_only"))
+      .order("desc")
+      .take(limit);
+
+    const flags: ActionableFlagRow[] = [];
+    for (const r of flagRows) {
+      const clientId = r.linkedClientId ?? null;
+      let clientName: string | null = null;
+      const client = clientId ? await ctx.db.get(clientId) : null;
+      if (client) clientName = client.name ?? client.companyName ?? null;
+      let contactName: string | null = null;
+      if (r.contactId) {
+        const contact = await ctx.db.get(r.contactId);
+        contactName = contact?.name ?? null;
+      }
+      // Prefer the exact kind/reason raised onto the client (matched by source
+      // reply event); fall back to deriving from the classified intent.
+      let kind = "reply_flag_only";
+      let reason = "Reply needs your decision";
+      const raised = (client?.needsActionFlags ?? []).find(
+        (f: any) => f.sourceReplyEventId === r._id,
+      );
+      if (raised) {
+        kind = raised.kind;
+        reason = raised.reason;
+      } else if (r.classifiedIntent === "not_interested") {
+        kind = "reply_not_interested";
+        reason = "Replied: not interested — keep or mark lost?";
+      } else if (r.classifiedIntent === "out_of_office") {
+        kind = "reply_out_of_office";
+        reason = "Out of office auto-reply — cadence paused 7 days";
+      }
+      flags.push({
+        kind,
+        reason,
+        replyEventId: r._id,
+        clientId,
+        clientName,
+        contactName,
+        receivedAt: r.receivedAt ?? null,
+      });
+    }
+
+    return { drafts, flags };
   },
 });
 

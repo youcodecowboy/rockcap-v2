@@ -12,72 +12,32 @@
 // bundle boundary is fragile. KEEP THE TWO IN SYNC.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { resolveProspectDealSizeGBP, median } from "./lib/dealSizeParse";
+import {
+  STAGE_KEYS,
+  PRE_QUAL_KEYS,
+  QUALIFIED_KEYS,
+  SUBSTAGE_LABELS,
+  PIPELINE_TARGETS,
+  MANUAL_MOVE_STALE_DAYS,
+  derivePipelineStage,
+  deriveProspectFlags,
+  isForwardStage,
+  stageFor,
+  type PipelineStage,
+  type PipelineStageReason,
+  type PipelineTargets,
+} from "./lib/pipelineStages";
 
-const STAGE_KEYS = [
-  "cold_outreach",
-  "warm_pre_meeting",
-  "warm_post_meeting",
-  "pre_qualification",
-  "qualified",
-] as const;
-type Stage = (typeof STAGE_KEYS)[number];
-
-// prospectState → default stage (only when no pipelineStage is stored).
-const DERIVE: Record<string, Stage> = {
-  researched: "cold_outreach",
-  drafted: "cold_outreach",
-  needs_revision: "cold_outreach",
-  active: "cold_outreach",
-  replied: "warm_pre_meeting",
-  engaged: "warm_post_meeting",
-};
-
-// Ladder step keys — KEEP IN SYNC with PRE_QUAL_STEPS / QUALIFIED_STEPS.
-const PRE_QUAL_KEYS = [
-  "modelling_required",
-  "modelling_review_required",
-  "qualitative_feedback_required",
-  "feedback_given",
-  "feedback_discussed",
-] as const;
-const QUALIFIED_KEYS = [
-  "terms_requested",
-  "terms_presented",
-  "progression_to_credit",
-  "formal_dd",
-  "credit_approved",
-] as const;
-const SUBSTAGE_LABELS: Record<string, string> = {
-  modelling_required: "Modelling required",
-  modelling_review_required: "Modelling review required",
-  qualitative_feedback_required: "Qualitative feedback required",
-  feedback_given: "Feedback given",
-  feedback_discussed: "Feedback discussed",
-  terms_requested: "Terms requested",
-  terms_presented: "Terms presented",
-  progression_to_credit: "Progression to credit",
-  formal_dd: "Formal due diligence",
-  credit_approved: "Credit approved",
-};
-
-// Default house targets — KEEP IN SYNC with PIPELINE_TARGETS in
-// src/lib/prospects/stages.ts. These seed the editable pipelineTargets
-// singleton; loadTargets() returns the stored row when one exists.
-type Targets = {
-  weeklyReachOut: number;
-  weeklyFollowUp: number;
-  monthlyMeetings: number;
-  monthlyTermsRequested: number;
-};
-const DEFAULT_TARGETS: Targets = {
-  weeklyReachOut: 10,
-  weeklyFollowUp: 10,
-  monthlyMeetings: 8,
-  monthlyTermsRequested: 5,
-};
+// v3: the pipeline taxonomy, ladders, and targets now live in the canonical
+// pure module convex/lib/pipelineStages.ts (imported above) — no more local
+// duplication. These aliases keep the rest of this file unchanged.
+type Stage = PipelineStage;
+type Targets = PipelineTargets;
+const DEFAULT_TARGETS: Targets = PIPELINE_TARGETS;
 
 async function loadTargets(ctx: any): Promise<Targets> {
   const row = await ctx.db.query("pipelineTargets").first();
@@ -90,13 +50,10 @@ async function loadTargets(ctx: any): Promise<Targets> {
   };
 }
 
-function effectiveStage(c: any): Stage | null {
-  if (c.pipelineStage && (STAGE_KEYS as readonly string[]).includes(c.pipelineStage)) {
-    return c.pipelineStage as Stage;
-  }
-  if (!c.prospectState) return null;
-  return DERIVE[c.prospectState as string] ?? null;
-}
+// effectiveStage = canonical derive (a stored pipelineStage always wins; the
+// legacy fallback derives from prospectState for rows that predate explicit
+// stage writes). pipelineStage is authoritative in v3.
+const effectiveStage = (c: any): Stage | null => derivePipelineStage(c);
 
 // ── Value parsing ────────────────────────────────────────────────────────────
 
@@ -158,24 +115,32 @@ type Kpi = {
 // Per-source caps. cadences (preDraftedTouch.bodyHtml) and approvals (draft
 // payloads) carry the heaviest bodies, so they get tighter caps. skillRuns are
 // tightest — brief / intelMarkdown / structureGraph are the heaviest of all.
-const REPLY_CAP = 100;
 const APPROVAL_CAP = 75;
 const CADENCE_CAP = 75;
 const INTEL_RUN_CAP = 6;
 
 async function gatherActionSignals(ctx: any) {
-  const unrouted = await ctx.db
-    .query("replyEvents")
-    .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", "operator_review"))
-    .order("desc")
-    .take(REPLY_CAP);
-  const replies = unrouted.filter((r: any) => !r.processed && r.linkedClientId);
-
-  const pendingApprovals = (await ctx.db
+  // Pending approvals — split into the auto-drafted REPLY approvals (rendered as
+  // an inline editor / reply_draft action) vs everything else (plain approval).
+  // A reply draft is a pending client_communication approval whose draftPayload
+  // is an email_reply tied to a reply event (matches replyEvents.listActionableDrafts).
+  const pendingRaw = (await ctx.db
     .query("approvals")
     .withIndex("by_status", (q: any) => q.eq("status", "pending"))
     .order("desc")
     .take(APPROVAL_CAP)) as any[];
+  const draftedReplies: any[] = [];
+  const pendingApprovals: any[] = [];
+  for (const a of pendingRaw) {
+    const p: any = a.draftPayload ?? {};
+    const isReplyDraft =
+      !!a.relatedReplyEventId &&
+      (p.kind === "email_reply" ||
+        (a.entityType === "client_communication" && p.kind === "email_reply") ||
+        a.entityType === "gmail_send");
+    if (isReplyDraft) draftedReplies.push(a);
+    else pendingApprovals.push(a);
+  }
 
   const pendingCadences = (await ctx.db
     .query("cadences")
@@ -201,7 +166,327 @@ async function gatherActionSignals(ctx: any) {
   // "N+" when a source hits its cap; exhaustive ledgers live on their own pages.
   const intelRuns = [...failedRuns, ...gappyRuns].filter((r: any) => r.linkedClientId);
 
-  return { replies, pendingApprovals, pendingCadences, intelRuns };
+  // NB: the needs-action reply / flag-only triage signals are NOT read here —
+  // they live denormalised on the prospect doc (needsActionFlags + needsActionAt,
+  // raised by the reply lifecycle) and the intel-attention nudge on
+  // intelAttentionAt. buildActionGroups derives those per-prospect with no extra
+  // query, so the surface stays needsActionAt-driven and within the byte budget.
+  return { draftedReplies, pendingApprovals, pendingCadences, intelRuns };
+}
+
+// ── Action model + grouping (shared by stageDashboard + requiresAttention) ────
+// The full v3 action union. Beyond the original cadence/approval/intel signals
+// it carries the reply_draft (inline editor), flag (needs-action dismiss),
+// intel_attention (re-validate) and manual_move (stage decision) kinds. Each row
+// ships only what the matching inline control needs to fire its mutation.
+export type ProspectActionType =
+  | "reply"
+  | "reply_draft"
+  | "flag"
+  | "approval"
+  | "cadence"
+  | "intel"
+  | "intel_attention"
+  | "manual_move";
+
+type ProspectAction = {
+  id: string;
+  type: ProspectActionType;
+  title: string;
+  subtitle: string;
+  when: string;
+  severity: "warn" | "info" | "ok";
+  blocked: boolean;
+  approve:
+    | { kind: "cadence"; packageId: string }
+    | { kind: "approval"; approvalId: string }
+    | null;
+  // Inline-control payloads (only set for the matching kind).
+  replyDraft?: { approvalId: string; subject: string; bodyText: string; bodyHtml?: string; to?: string };
+  flag?: { clientId: string; kind: string; sourceReplyEventId?: string };
+  intelAttention?: { clientId: string; reason?: string };
+  manualMove?: { clientId: string; stage: string; currentSubStage?: string };
+};
+
+type ProspectActionGroup = {
+  clientId: string | null;
+  clientName: string;
+  stage?: string | null;
+  stageLabel?: string;
+  stageAccentKey?: string;
+  blocking: { kind: "no_contact"; label: string } | null;
+  actions: ProspectAction[];
+  latestAt: string;
+};
+
+function flagTitle(kind: string): string {
+  switch (kind) {
+    case "reply_received":
+      return "Reply received — review & route";
+    case "reply_flag_only":
+      return "Reply needs a decision";
+    case "reply_not_interested":
+      return "Replied: not interested";
+    case "reply_out_of_office":
+      return "Out-of-office auto-reply";
+    default:
+      return "Needs your attention";
+  }
+}
+
+function intelAttentionLabel(reason?: string | null): string {
+  if (reason === "meeting_booked_stale") return "Meeting booked — intel is stale, re-validate before the call";
+  if (reason === "revalidate_materially_changed") return "Re-validation flagged material changes — review";
+  return "Intel may be out of date — re-validate";
+}
+
+// Build per-prospect action groups from the gathered signals + the prospect docs
+// already in hand (needsActionFlags / intelAttentionAt / qualSubStage are read
+// straight off the doc — no extra query). `attachStage` adds the stage chip data
+// per group for the cross-stage home table. Returns the FULL sorted group list
+// + tallied counts; callers cap/slice as needed.
+async function buildActionGroups(
+  ctx: any,
+  opts: {
+    prospects: any[];
+    signals: Awaited<ReturnType<typeof gatherActionSignals>>;
+    nowMs: number;
+    attachStage: boolean;
+  },
+): Promise<{
+  groups: ProspectActionGroup[];
+  counts: {
+    flags: number;
+    replyDrafts: number;
+    approvals: number;
+    cadences: number;
+    intel: number;
+    intelAttention: number;
+    manualMoves: number;
+  };
+}> {
+  const { prospects, signals, nowMs, attachStage } = opts;
+  const prospectIds = new Set(prospects.map((p) => String(p._id)));
+  const byId = new Map<string, any>(prospects.map((p) => [String(p._id), p]));
+  const nameById = new Map<string, string>(
+    prospects.map((p) => [String(p._id), p.name ?? p.companyName ?? "Unknown"]),
+  );
+
+  const draftedReplies = (signals.draftedReplies ?? []).filter((a: any) => prospectIds.has(String(a.relatedClientId)));
+  const pendingApprovals = (signals.pendingApprovals ?? []).filter((a: any) => prospectIds.has(String(a.relatedClientId)));
+  const pendingCadences = (signals.pendingCadences ?? []).filter((c: any) => prospectIds.has(String(c.relatedClientId)));
+  const intelRuns = (signals.intelRuns ?? []).filter((r: any) => prospectIds.has(String(r.linkedClientId)));
+
+  const byClient = new Map<string, ProspectAction[]>();
+  const pushAction = (clientId: any, a: ProspectAction) => {
+    const key = clientId ? String(clientId) : "_unlinked";
+    const arr = byClient.get(key) ?? [];
+    arr.push(a);
+    byClient.set(key, arr);
+  };
+
+  const counts = { flags: 0, replyDrafts: 0, approvals: 0, cadences: 0, intel: 0, intelAttention: 0, manualMoves: 0 };
+
+  // reply_draft — auto-drafted replies, accepted/edited inline.
+  for (const a of draftedReplies) {
+    const p: any = a.draftPayload ?? {};
+    counts.replyDrafts += 1;
+    pushAction(a.relatedClientId, {
+      id: String(a._id),
+      type: "reply_draft",
+      title: "Drafted reply — review & send",
+      subtitle: p.subject || (p.bodyText ? String(p.bodyText).slice(0, 90) : "Auto-drafted reply"),
+      when: a.requestedAt ?? (a._creationTime ? new Date(a._creationTime).toISOString() : ""),
+      severity: "warn",
+      blocked: false,
+      approve: null,
+      replyDraft: {
+        approvalId: String(a._id),
+        subject: p.subject ?? "",
+        bodyText: p.bodyText ?? "",
+        bodyHtml: p.bodyHtml ?? undefined,
+        to: p.to ?? undefined,
+      },
+    });
+  }
+
+  // approval — generic pending approvals.
+  for (const a of pendingApprovals) {
+    counts.approvals += 1;
+    pushAction(a.relatedClientId, {
+      id: String(a._id),
+      type: "approval",
+      title: a.summary || "Approval pending",
+      subtitle: `${String(a.entityType).replace(/_/g, " ")}${a.requestSourceName ? ` · ${a.requestSourceName}` : ""}`,
+      when: a.requestedAt ?? "",
+      severity: "info",
+      blocked: false,
+      approve: { kind: "approval", approvalId: String(a._id) },
+    });
+  }
+
+  // cadence — collapse per-touch rows to one approve-package action.
+  const seenPackages = new Set<string>();
+  for (const c of pendingCadences) {
+    const pkg = c.packageId ? String(c.packageId) : `cadence:${String(c._id)}`;
+    if (seenPackages.has(pkg)) continue;
+    seenPackages.add(pkg);
+    counts.cadences += 1;
+    pushAction(c.relatedClientId, {
+      id: pkg,
+      type: "cadence",
+      title: "Cadence package awaiting approval",
+      subtitle: c.cadenceType ? String(c.cadenceType).replace(/_/g, " ") : "Outreach cadence",
+      when: c.createdAt ?? (c._creationTime ? new Date(c._creationTime).toISOString() : ""),
+      severity: "info",
+      blocked: false,
+      approve: c.packageId ? { kind: "cadence", packageId: String(c.packageId) } : null,
+    });
+  }
+
+  // intel — failed / gappy intel runs needing a rerun.
+  for (const r of intelRuns) {
+    counts.intel += 1;
+    const gap = r.gaps?.[0]?.description;
+    pushAction(r.linkedClientId, {
+      id: String(r._id),
+      type: "intel",
+      title: "Intelligence needs rerun",
+      subtitle: gap ? String(gap).slice(0, 90) : r.status === "failed" ? "Run failed" : "Completed with gaps",
+      when: r.completedAt ?? "",
+      severity: "warn",
+      blocked: false,
+      approve: null,
+    });
+  }
+
+  // Derived, per-prospect (no extra query): flags, intel-attention, manual move.
+  for (const p of prospects) {
+    const flags = Array.isArray(p.needsActionFlags) ? p.needsActionFlags : [];
+    for (const f of flags) {
+      counts.flags += 1;
+      pushAction(p._id, {
+        id: `flag:${String(p._id)}:${f.kind}:${f.sourceReplyEventId ? String(f.sourceReplyEventId) : ""}`,
+        type: "flag",
+        title: flagTitle(f.kind),
+        subtitle: f.reason || "Needs your decision",
+        when: f.raisedAt ?? p.needsActionAt ?? "",
+        severity: "warn",
+        blocked: false,
+        approve: null,
+        flag: {
+          clientId: String(p._id),
+          kind: f.kind,
+          sourceReplyEventId: f.sourceReplyEventId ? String(f.sourceReplyEventId) : undefined,
+        },
+      });
+    }
+
+    if (p.intelAttentionAt) {
+      counts.intelAttention += 1;
+      pushAction(p._id, {
+        id: `intel_att:${String(p._id)}`,
+        type: "intel_attention",
+        title: "Intel needs re-validation",
+        subtitle: intelAttentionLabel(p.intelAttentionReason),
+        when: p.intelAttentionAt ?? "",
+        severity: "warn",
+        blocked: false,
+        approve: null,
+        intelAttention: { clientId: String(p._id), reason: p.intelAttentionReason ?? undefined },
+      });
+    }
+
+    const derived = deriveProspectFlags(p, nowMs);
+    if (derived.manualMoveReady) {
+      counts.manualMoves += 1;
+      const stage = effectiveStage(p);
+      const def = stageFor(stage);
+      pushAction(p._id, {
+        id: `manual:${String(p._id)}`,
+        type: "manual_move",
+        title: "Stage decision needed",
+        subtitle: `In ${def?.label ?? "this stage"} ${MANUAL_MOVE_STALE_DAYS}+ days — set the next step`,
+        when: p.pipelineStageChangedAt ?? "",
+        severity: "info",
+        blocked: false,
+        approve: null,
+        manualMove: {
+          clientId: String(p._id),
+          stage: stage ?? "",
+          currentSubStage: p.qualSubStage ?? undefined,
+        },
+      });
+    }
+  }
+
+  // ── Blocking signal per prospect: no sendable contact ────────────────────
+  // Only matters for groups carrying an OUTBOUND action (cadence/approval/reply
+  // draft) — those can't usefully fire without a verified contact email.
+  const OUTBOUND: ProspectActionType[] = ["cadence", "approval", "reply_draft"];
+  const groupClientIds = [...byClient.keys()].filter((k) => k !== "_unlinked");
+  const sendableByClient = new Map<string, boolean>();
+  await Promise.all(
+    groupClientIds.map(async (cid) => {
+      const actions = byClient.get(cid) ?? [];
+      if (!actions.some((a) => OUTBOUND.includes(a.type))) return; // skip contact read when not needed
+      const contacts = await ctx.db
+        .query("contacts")
+        .withIndex("by_client", (q: any) => q.eq("clientId", cid as any))
+        .collect();
+      const sendable = contacts.some(
+        (ct: any) => ct.email && (ct.emailStatus == null || ct.emailStatus === "verified"),
+      );
+      sendableByClient.set(cid, sendable);
+    }),
+  );
+
+  const groups: ProspectActionGroup[] = [];
+  for (const [key, actions] of byClient.entries()) {
+    const clientId = key === "_unlinked" ? null : key;
+    const hasOutbound = actions.some((a) => OUTBOUND.includes(a.type));
+    const sendable = clientId ? sendableByClient.get(clientId) ?? true : true;
+    const blocking =
+      clientId && hasOutbound && !sendable
+        ? { kind: "no_contact" as const, label: "No verified contact — add an email to unblock sends" }
+        : null;
+    if (blocking) {
+      for (const a of actions) if (OUTBOUND.includes(a.type)) a.blocked = true;
+    }
+    actions.sort((a, b) => (b.when || "").localeCompare(a.when || ""));
+    const latestAt = actions.reduce((m, a) => (a.when > m ? a.when : m), "");
+
+    const group: ProspectActionGroup = {
+      clientId,
+      clientName: clientId ? nameById.get(clientId) ?? "Unknown" : "Unlinked",
+      blocking,
+      actions,
+      latestAt,
+    };
+    if (attachStage && clientId) {
+      const doc = byId.get(clientId);
+      const stage = doc ? effectiveStage(doc) : null;
+      const def = stageFor(stage);
+      group.stage = stage;
+      group.stageLabel = def?.label;
+      group.stageAccentKey = def?.accentKey;
+    }
+    groups.push(group);
+  }
+
+  // Sort: blocked first (need a decision before anything moves), then groups with
+  // a decision nudge (manual_move / intel_attention) bubble up, then most recent.
+  const decisionRank = (g: ProspectActionGroup) =>
+    g.actions.some((a) => a.type === "manual_move" || a.type === "intel_attention") ? 0 : 1;
+  groups.sort((a, b) => {
+    if (!!a.blocking !== !!b.blocking) return a.blocking ? -1 : 1;
+    const da = decisionRank(a);
+    const db = decisionRank(b);
+    if (da !== db) return da - db;
+    return (b.latestAt || "").localeCompare(a.latestAt || "");
+  });
+
+  return { groups, counts };
 }
 
 // ── Per-prospect activity rollup for a stage ─────────────────────────────────
@@ -543,34 +828,88 @@ export const pipelineOverview = query({
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .collect();
-    const prospects = (clients as any[]).filter((c) => c.prospectState);
+    // Include prospects filed into a stage by pipelineStage even if no
+    // prospectState is set yet — a sourcing-promoted candidate sits in Cold
+    // before its first intel run writes a prospectState.
+    const prospects = (clients as any[]).filter(
+      (c) => c.prospectState || c.pipelineStage,
+    );
 
-    const { replies, pendingApprovals, pendingCadences, intelRuns } =
+    const nowMs = Date.now();
+    const { draftedReplies, pendingApprovals, pendingCadences, intelRuns } =
       await gatherActionSignals(ctx);
 
+    // Per-client signal counts (signals that come off side tables). The derived
+    // per-prospect flags (needs-action / intel-attention / manual-move) are added
+    // inside the prospect loop below where the client doc is already in hand.
     const actionByClient = new Map<string, number>();
     const bump = (id: any) => {
       if (!id) return;
       actionByClient.set(String(id), (actionByClient.get(String(id)) ?? 0) + 1);
     };
-    replies.forEach((r: any) => bump(r.linkedClientId));
+    draftedReplies.forEach((a: any) => bump(a.relatedClientId));
     pendingApprovals.forEach((a: any) => bump(a.relatedClientId));
-    pendingCadences.forEach((c: any) => bump(c.relatedClientId));
+    // Collapse cadence touches to one count per package so a multi-touch package
+    // is one action, matching the grouped queue.
+    const seenCadencePkgs = new Set<string>();
+    pendingCadences.forEach((c: any) => {
+      const pkg = c.packageId ? String(c.packageId) : `cadence:${String(c._id)}`;
+      if (seenCadencePkgs.has(pkg)) return;
+      seenCadencePkgs.add(pkg);
+      bump(c.relatedClientId);
+    });
     intelRuns.forEach((r: any) => bump(r.linkedClientId));
+
+    // Per-prospect derived action contribution (no extra reads).
+    const derivedActionCount = (p: any): number => {
+      const flags = Array.isArray(p.needsActionFlags) ? p.needsActionFlags.length : 0;
+      const intelAtt = p.intelAttentionAt ? 1 : 0;
+      const manual = deriveProspectFlags(p, nowMs).manualMoveReady ? 1 : 0;
+      return flags + intelAtt + manual;
+    };
+    let totalActionItems = 0;
 
     const stages: Record<
       Stage,
-      { key: Stage; count: number; pipelineValueGBP: number; pipelineValueLabel: string; pricedCount: number; actionItems: number }
+      {
+        key: Stage;
+        count: number;
+        pipelineValueGBP: number;
+        pipelineValueLabel: string;
+        pricedCount: number;
+        actionItems: number;
+        // Estimated value: operator dealValueGBP where set, else the AI
+        // dealSizeRange midpoint. estCount = prospects in this stage with any
+        // estimate (the basis for the value label).
+        estValueGBP: number;
+        estValueLabel: string;
+        estCount: number;
+      }
     > = Object.fromEntries(
       STAGE_KEYS.map((k) => [
         k,
-        { key: k, count: 0, pipelineValueGBP: 0, pipelineValueLabel: "—", pricedCount: 0, actionItems: 0 },
+        {
+          key: k,
+          count: 0,
+          pipelineValueGBP: 0,
+          pipelineValueLabel: "—",
+          pricedCount: 0,
+          actionItems: 0,
+          estValueGBP: 0,
+          estValueLabel: "—",
+          estCount: 0,
+        },
       ]),
     ) as any;
 
     let holding = 0;
     let pricedTotal = 0;
+    // Per-prospect estimated deal sizes across the live pipeline (in-stage only;
+    // holding/lost/promoted are excluded). Feeds the mean/median/total headline.
+    const estDealSizes: number[] = [];
     for (const p of prospects) {
+      const actionCount = (actionByClient.get(String(p._id)) ?? 0) + derivedActionCount(p);
+      totalActionItems += actionCount;
       const stage = effectiveStage(p);
       if (!stage) {
         holding += 1;
@@ -578,18 +917,37 @@ export const pipelineOverview = query({
       }
       const bucket = stages[stage];
       bucket.count += 1;
-      // Operator-entered deal value only — the AI dealSizeRange is never summed.
+      // Operator-entered deal value only — kept as the authoritative figure.
       if (typeof p.dealValueGBP === "number" && p.dealValueGBP > 0) {
         bucket.pipelineValueGBP += p.dealValueGBP;
         bucket.pricedCount += 1;
         pricedTotal += 1;
       }
-      bucket.actionItems += actionByClient.get(String(p._id)) ?? 0;
+      // Estimated value — operator figure if present, else AI midpoint. This is
+      // what surfaces while operators have not yet priced deals by hand.
+      const est = resolveProspectDealSizeGBP(p);
+      if (est != null && est > 0) {
+        bucket.estValueGBP += est;
+        bucket.estCount += 1;
+        estDealSizes.push(est);
+      }
+      bucket.actionItems += actionCount;
     }
     for (const k of STAGE_KEYS) {
       stages[k].pipelineValueLabel =
         stages[k].pipelineValueGBP > 0 ? fmtGBP(stages[k].pipelineValueGBP) : "—";
+      stages[k].estValueLabel =
+        stages[k].estValueGBP > 0 ? fmtGBP(stages[k].estValueGBP) : "—";
     }
+
+    // Whole-pipeline estimate rollup. Total is mean-based (Σ midpoints) so the
+    // big schemes count toward expected value; median is the robust "typical
+    // deal" that the outliers don't distort. Both are returned so the UI can
+    // show them side by side.
+    const estTotalGBP = estDealSizes.reduce((s, v) => s + v, 0);
+    const estCount = estDealSizes.length;
+    const estMeanGBP = estCount > 0 ? estTotalGBP / estCount : 0;
+    const estMedianGBP = median(estDealSizes);
 
     // Curated cross-pipeline KPI strip (the client's "Summary" spec). These are
     // whole-pipeline rollups, so we gather activity across every prospect once.
@@ -609,15 +967,17 @@ export const pipelineOverview = query({
       { label: "Formal DD", value: String(act.subStageNow["formal_dd"] ?? 0), accentKey: "orange" },
     ];
 
-    const totalActionItems =
-      replies.length + pendingApprovals.length + pendingCadences.length + intelRuns.length;
-
     return {
       stages: STAGE_KEYS.map((k) => stages[k]),
       totalProspects: prospects.length,
       holding,
       totalActionItems,
       pricedTotal,
+      // Estimated pipeline value (AI dealSizeRange + operator overrides).
+      estTotalGBP,
+      estMeanGBP,
+      estMedianGBP,
+      estCount,
       summaryKpis,
     };
   },
@@ -637,12 +997,11 @@ export const stageDashboard = query({
       .query("clients")
       .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .collect();
+    // effectiveStage already encodes "has a stage" (stored pipelineStage or a
+    // derivable prospectState), so it alone is the membership test — this also
+    // picks up sourcing-promoted prospects filed by pipelineStage pre-intel.
     const prospects = (clients as any[]).filter(
-      (c) => c.prospectState && effectiveStage(c) === stage,
-    );
-    const prospectIds = new Set(prospects.map((p) => String(p._id)));
-    const nameById = new Map<string, string>(
-      prospects.map((p) => [String(p._id), p.name ?? p.companyName ?? "Unknown"]),
+      (c) => effectiveStage(c) === stage,
     );
     const count = prospects.length;
 
@@ -650,148 +1009,16 @@ export const stageDashboard = query({
     const t = await loadTargets(ctx);
     const built = STAGE_BUILDERS[stage](activity, count, t);
 
-    const { replies, pendingApprovals, pendingCadences, intelRuns } =
-      await gatherActionSignals(ctx);
-    const stageReplies = replies.filter((r: any) => prospectIds.has(String(r.linkedClientId)));
-    const stageApprovals = pendingApprovals.filter((a: any) => prospectIds.has(String(a.relatedClientId)));
-    const stageCadences = pendingCadences.filter((c: any) => prospectIds.has(String(c.relatedClientId)));
-    const stageIntel = intelRuns.filter((r: any) => prospectIds.has(String(r.linkedClientId)));
-
-    // ── Build action items, then group by prospect ──────────────────────────
-    // approve: one-click metadata the UI wires to the matching mutation.
-    // blocked: the action can't usefully fire yet (e.g. a send with no contact).
-    type Action = {
-      id: string;
-      type: "reply" | "approval" | "cadence" | "intel";
-      title: string;
-      subtitle: string;
-      when: string;
-      severity: "warn" | "info" | "ok";
-      blocked: boolean;
-      approve:
-        | { kind: "cadence"; packageId: string }
-        | { kind: "approval"; approvalId: string }
-        | null;
-    };
-
-    const byClient = new Map<string, Action[]>();
-    const pushAction = (clientId: any, a: Action) => {
-      const key = clientId ? String(clientId) : "_unlinked";
-      const arr = byClient.get(key) ?? [];
-      arr.push(a);
-      byClient.set(key, arr);
-    };
-
-    for (const r of stageReplies) {
-      pushAction(r.linkedClientId, {
-        id: String(r._id),
-        type: "reply",
-        title: "Reply awaiting triage",
-        subtitle: r.replySubject || (r.replyBodyText ? String(r.replyBodyText).slice(0, 90) : "Inbound reply — open to route"),
-        when: r.receivedAt ?? "",
-        severity: "warn",
-        blocked: false,
-        approve: null,
-      });
-    }
-    for (const a of stageApprovals) {
-      pushAction(a.relatedClientId, {
-        id: String(a._id),
-        type: "approval",
-        title: a.summary || "Approval pending",
-        subtitle: `${String(a.entityType).replace(/_/g, " ")}${a.requestSourceName ? ` · ${a.requestSourceName}` : ""}`,
-        when: a.requestedAt ?? "",
-        severity: "info",
-        blocked: false,
-        approve: { kind: "approval", approvalId: String(a._id) },
-      });
-    }
-    // Cadence rows are per-touch; collapse to one action per package so the
-    // queue shows "approve this package" once, not once per touch.
-    const seenPackages = new Set<string>();
-    for (const c of stageCadences) {
-      const pkg = c.packageId ? String(c.packageId) : `cadence:${String(c._id)}`;
-      if (seenPackages.has(pkg)) continue;
-      seenPackages.add(pkg);
-      pushAction(c.relatedClientId, {
-        id: pkg,
-        type: "cadence",
-        title: "Cadence package awaiting approval",
-        subtitle: c.cadenceType ? String(c.cadenceType).replace(/_/g, " ") : "Outreach cadence",
-        when: c.createdAt ?? (c._creationTime ? new Date(c._creationTime).toISOString() : ""),
-        severity: "info",
-        blocked: false,
-        approve: c.packageId ? { kind: "cadence", packageId: String(c.packageId) } : null,
-      });
-    }
-    for (const r of stageIntel) {
-      const gap = r.gaps?.[0]?.description;
-      pushAction(r.linkedClientId, {
-        id: String(r._id),
-        type: "intel",
-        title: "Intelligence needs rerun",
-        subtitle: gap ? String(gap).slice(0, 90) : r.status === "failed" ? "Run failed" : "Completed with gaps",
-        when: r.completedAt ?? "",
-        severity: "warn",
-        blocked: false,
-        approve: null,
-      });
-    }
-
-    // ── Detect the blocking signal per prospect: no sendable contact ─────────
-    // A contact is sendable if it has an email that isn't flagged bad. With no
-    // sendable contact, every outbound action (cadence / send approval) is
-    // useless, so we surface it as the group's blocker and mark those blocked.
-    const groupClientIds = [...byClient.keys()].filter((k) => k !== "_unlinked");
-    const sendableByClient = new Map<string, boolean>();
-    await Promise.all(
-      groupClientIds.map(async (cid) => {
-        const contacts = await ctx.db
-          .query("contacts")
-          .withIndex("by_client", (q: any) => q.eq("clientId", cid as any))
-          .collect();
-        const sendable = contacts.some(
-          (ct: any) => ct.email && (ct.emailStatus == null || ct.emailStatus === "verified"),
-        );
-        sendableByClient.set(cid, sendable);
-      }),
-    );
-
-    type Group = {
-      clientId: string | null;
-      clientName: string;
-      blocking: { kind: "no_contact"; label: string } | null;
-      actions: Action[];
-      latestAt: string;
-    };
-    const groups: Group[] = [];
-    for (const [key, actions] of byClient.entries()) {
-      const clientId = key === "_unlinked" ? null : key;
-      const sendable = clientId ? sendableByClient.get(clientId) ?? true : true;
-      const hasOutbound = actions.some((a) => a.type === "cadence" || a.type === "approval");
-      const blocking =
-        clientId && !sendable && hasOutbound
-          ? { kind: "no_contact" as const, label: "No verified contact — add an email to unblock sends" }
-          : null;
-      if (blocking) {
-        for (const a of actions) if (a.type === "cadence" || a.type === "approval") a.blocked = true;
-      }
-      // Within a group: blocked/blocker context first, then most recent.
-      actions.sort((a, b) => (b.when || "").localeCompare(a.when || ""));
-      const latestAt = actions.reduce((m, a) => (a.when > m ? a.when : m), "");
-      groups.push({
-        clientId,
-        clientName: clientId ? nameById.get(clientId) ?? "Unknown" : "Unlinked",
-        blocking,
-        actions,
-        latestAt,
-      });
-    }
-    // Blocked prospects float to the top (they need a decision before anything
-    // else can move), then by most recent activity.
-    groups.sort((a, b) => {
-      if (!!a.blocking !== !!b.blocking) return a.blocking ? -1 : 1;
-      return (b.latestAt || "").localeCompare(a.latestAt || "");
+    const signals = await gatherActionSignals(ctx);
+    // Reuse the shared grouping: scope to THIS stage's prospects, no stage chip
+    // (the dashboard is already a single-stage view). The derived flag /
+    // intel_attention / manual_move actions surface here too, so per-stage queues
+    // match the unified home table.
+    const { groups, counts } = await buildActionGroups(ctx, {
+      prospects,
+      signals,
+      nowMs: Date.now(),
+      attachStage: false,
     });
 
     // Backward-compat: keep the old flat `actionItems` shape so a frontend
@@ -823,11 +1050,62 @@ export const stageDashboard = query({
       actionGroups: groups.slice(0, 40),
       actionGroupTotal: groups.length,
       actionCounts: {
-        replies: stageReplies.length,
-        approvals: stageApprovals.length,
-        cadences: seenPackages.size,
-        intel: stageIntel.length,
+        // `replies` kept for back-compat — now the needs-action triage (flag) count.
+        replies: counts.flags,
+        approvals: counts.approvals,
+        cadences: counts.cadences,
+        intel: counts.intel,
+        replyDrafts: counts.replyDrafts,
+        intelAttention: counts.intelAttention,
+        manualMoves: counts.manualMoves,
       },
+    };
+  },
+});
+
+// ── Requires attention — unified cross-stage action GROUPS for the home page ──
+// Runs the same signal gather + grouping as the per-stage dashboards but across
+// EVERY prospect, tagging each group with its pipeline stage. This is the single
+// canonical "what needs me now" surface on /prospects. Defensive throughout:
+// every sibling-owned field (needsActionFlags / intelAttentionAt / draftPayload)
+// is read optionally so a deploy-skew (Convex live before Vercel) never crashes.
+const REQ_ATTENTION_GROUP_CAP = 60;
+
+export const requiresAttention = query({
+  args: { reasonFilter: v.optional(v.array(v.string())) },
+  handler: async (ctx, args) => {
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .collect();
+    const prospects = (clients as any[]).filter((c) => c.prospectState || c.pipelineStage);
+
+    const signals = await gatherActionSignals(ctx);
+    const { groups, counts } = await buildActionGroups(ctx, {
+      prospects,
+      signals,
+      nowMs: Date.now(),
+      attachStage: true,
+    });
+
+    // Optional type filter — keep groups that have at least one action of a
+    // requested type, dropping the rest of that group's non-matching actions.
+    let filtered = groups;
+    const filter = Array.isArray(args.reasonFilter) ? args.reasonFilter.filter(Boolean) : [];
+    if (filter.length > 0) {
+      const wanted = new Set(filter);
+      filtered = groups
+        .map((g) => ({ ...g, actions: g.actions.filter((a) => wanted.has(a.type)) }))
+        .filter((g) => g.actions.length > 0);
+    }
+
+    const blockedCount = filtered.filter((g) => g.blocking).length;
+
+    return {
+      groups: filtered.slice(0, REQ_ATTENTION_GROUP_CAP),
+      total: filtered.length,
+      blockedCount,
+      counts,
     };
   },
 });
@@ -844,44 +1122,105 @@ async function resolveUserId(ctx: any): Promise<Id<"users"> | undefined> {
   return user?._id;
 }
 
+// ── Canonical pipeline-stage write (v3) ──────────────────────────────────────
+// THE single place pipelineStage is written. Every event path (sourcing promote,
+// cadence approve, meeting booked/completed, reply, manual move) routes through
+// here so the stage is authoritative + every move is logged with provenance.
+//
+//   mode: "forward_only" → no-op if `toStage` is not strictly ahead of the
+//          prospect's current effective stage (event-driven moves never demote,
+//          e.g. approving a re-engagement cadence on a warm prospect).
+//   mode: "force"        → always set (manual operator moves can go any direction).
+//
+// Does NOT touch prospectState (kept as internal plumbing) or clients.status.
+// `ctx` is a mutation ctx; same-transaction callers import + await this directly.
+const STAGE_LITERALS = v.union(
+  v.literal("cold_outreach"),
+  v.literal("warm_pre_meeting"),
+  v.literal("warm_post_meeting"),
+  v.literal("pre_qualification"),
+  v.literal("qualified"),
+);
+
+export async function applyPipelineStage(
+  ctx: any,
+  args: {
+    clientId: Id<"clients">;
+    toStage: Stage;
+    reason: PipelineStageReason;
+    userId?: Id<"users">;
+    mode?: "forward_only" | "force";
+  },
+): Promise<{ ok: boolean; stage: Stage; changedAt: string; skipped: boolean }> {
+  const mode = args.mode ?? "force";
+  const client = await ctx.db.get(args.clientId);
+  if (!client) throw new Error("Prospect not found");
+
+  const fromValue = effectiveStage(client) ?? undefined;
+
+  if (mode === "forward_only" && !isForwardStage(fromValue ?? null, args.toStage)) {
+    // The prospect is already at or ahead of the requested stage — leave them.
+    return { ok: true, stage: (fromValue ?? args.toStage) as Stage, changedAt: client.pipelineStageChangedAt ?? "", skipped: true };
+  }
+
+  const now = new Date().toISOString();
+  await ctx.db.patch(args.clientId, {
+    pipelineStage: args.toStage,
+    pipelineStageChangedAt: now,
+    pipelineStageChangedBy: args.userId,
+  });
+  if (fromValue !== args.toStage) {
+    await ctx.db.insert("prospectStageEvents", {
+      clientId: args.clientId,
+      kind: "pipeline_stage",
+      fromValue,
+      toValue: args.toStage,
+      at: now,
+      byUserId: args.userId,
+      reason: args.reason,
+    });
+  }
+  return { ok: true, stage: args.toStage, changedAt: now, skipped: false };
+}
+
+// Internal wrapper for scheduler / action callers (no same-tx ctx). Resolves
+// nothing about identity — pass userId explicitly when known.
+export const setPipelineStageInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    toStage: STAGE_LITERALS,
+    reason: v.string(),
+    userId: v.optional(v.id("users")),
+    mode: v.optional(v.union(v.literal("forward_only"), v.literal("force"))),
+  },
+  handler: async (ctx, args) =>
+    applyPipelineStage(ctx, {
+      clientId: args.clientId,
+      toStage: args.toStage as Stage,
+      reason: args.reason as PipelineStageReason,
+      userId: args.userId,
+      mode: args.mode,
+    }),
+});
+
 // ── Manual stage promotion ───────────────────────────────────────────────────
-// Moves a prospect between the 5 manual pipeline stages and logs the transition.
-// Does NOT touch prospectState (the outreach engine owns that) or clients.status.
+// Operator moves a prospect between the 5 manual pipeline stages (any direction).
+// Delegates to applyPipelineStage (reason: "manual", mode: "force").
 
 export const promoteStage = mutation({
   args: {
     clientId: v.id("clients"),
-    toStage: v.union(
-      v.literal("cold_outreach"),
-      v.literal("warm_pre_meeting"),
-      v.literal("warm_post_meeting"),
-      v.literal("pre_qualification"),
-      v.literal("qualified"),
-    ),
+    toStage: STAGE_LITERALS,
   },
   handler: async (ctx, args) => {
     const userId = await resolveUserId(ctx);
-    const client = await ctx.db.get(args.clientId);
-    if (!client) throw new Error("Prospect not found");
-
-    const now = new Date().toISOString();
-    const fromValue = effectiveStage(client) ?? undefined;
-    await ctx.db.patch(args.clientId, {
-      pipelineStage: args.toStage,
-      pipelineStageChangedAt: now,
-      pipelineStageChangedBy: userId,
+    return applyPipelineStage(ctx, {
+      clientId: args.clientId,
+      toStage: args.toStage as Stage,
+      reason: "manual",
+      userId,
+      mode: "force",
     });
-    if (fromValue !== args.toStage) {
-      await ctx.db.insert("prospectStageEvents", {
-        clientId: args.clientId,
-        kind: "pipeline_stage",
-        fromValue,
-        toValue: args.toStage,
-        at: now,
-        byUserId: userId,
-      });
-    }
-    return { ok: true, stage: args.toStage, changedAt: now };
   },
 });
 
