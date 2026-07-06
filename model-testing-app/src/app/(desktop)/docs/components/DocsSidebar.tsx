@@ -73,17 +73,24 @@ export default function DocsSidebar({
 
   // Build client list with document counts. BUG FIX: api.clients.list returns
   // ALL client rows including prospects and archived; the docs library is for
-  // live clients only. Restrict to active + past (prospects and archived out).
+  // live clients only. Zero-doc prospects/archived are noise here, but a client
+  // whose row is still mis-statused as "prospect" must never lose its visible
+  // library — so keep active + past, plus ANY client that has documents.
   const clientsWithCounts = useMemo(() => {
     if (!clients) return [];
 
     const counts = documentCounts || {};
     return clients
-      .filter((client: any) => client.status === 'active' || client.status === 'past')
       .map(client => ({
         ...client,
         documentCount: counts[client._id] || 0,
-      }));
+      }))
+      .filter(
+        (client: any) =>
+          client.status === 'active' ||
+          client.status === 'past' ||
+          client.documentCount > 0
+      );
   }, [clients, documentCounts]);
 
   // Filter clients
