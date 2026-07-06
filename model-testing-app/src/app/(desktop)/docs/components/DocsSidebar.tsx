@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { Button, Input, StatusPill, EmptyState } from '@/components/layouts';
+import { Button, Input, StatusPill, EmptyState, IconButton } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
 import {
   Search,
@@ -17,6 +18,8 @@ import {
   ChevronLeft,
   Building,
   User,
+  Network,
+  ArrowUpRight,
 } from 'lucide-react';
 import InternalFolderList from './InternalFolderList';
 import PersonalFolderList from './PersonalFolderList';
@@ -45,6 +48,8 @@ interface DocsSidebarProps {
   onInternalFolderSelect: (folder: FolderSelection | null) => void;
   selectedPersonalFolder: FolderSelection | null;
   onPersonalFolderSelect: (folder: FolderSelection | null) => void;
+  /** Opens the knowledge-graph drawer for the selected client (drawer mounts at page level). */
+  onOpenKnowledgeGraph?: () => void;
 }
 
 type FilterType = 'all' | 'borrower' | 'lender';
@@ -62,6 +67,7 @@ export default function DocsSidebar({
   onInternalFolderSelect,
   selectedPersonalFolder,
   onPersonalFolderSelect,
+  onOpenKnowledgeGraph,
 }: DocsSidebarProps) {
   const colors = useColors();
   const [filterType, setFilterType] = useState<FilterType>('all');
@@ -193,6 +199,35 @@ export default function DocsSidebar({
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
+
+        {/* Selected-client affordances: open the knowledge graph + jump to the client profile. */}
+        <div className="mt-2 flex flex-col items-center gap-1">
+          {onOpenKnowledgeGraph && (
+            <IconButton label="Knowledge graph" onClick={onOpenKnowledgeGraph}>
+              <Network className="w-4 h-4" />
+            </IconButton>
+          )}
+          {selectedClientId && (
+            <Link
+              href={`/clients/${selectedClientId}`}
+              title="Client profile"
+              aria-label="Client profile"
+              className="flex items-center justify-center"
+              style={{
+                width: 28,
+                height: 28,
+                color: colors.text.muted,
+                borderRadius: 4,
+                transition: 'background 100ms linear',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
+          )}
+        </div>
+
         <div
           className="flex-1 min-h-0 flex items-center justify-center mt-2"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}

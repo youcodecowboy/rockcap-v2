@@ -21,7 +21,9 @@ import {
   Plus,
   Settings,
   Flag,
+  Network,
 } from 'lucide-react';
+import KnowledgeGraphDrawer from '@/components/knowledge/KnowledgeGraphDrawer';
 import FlagCreationModal from '@/components/FlagCreationModal';
 import { FlagIndicator } from '@/components/FlagIndicator';
 import RestorationBanner from '@/components/RestorationBanner';
@@ -70,6 +72,7 @@ function ClientProfileContent() {
   const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
 
   // Convex hooks
@@ -201,6 +204,9 @@ function ClientProfileContent() {
 
   const actions = (
     <>
+      <Button size="sm" variant="ghost" onClick={() => setGraphOpen(true)} title="Knowledge graph">
+        <Network className="w-3.5 h-3.5" /> Knowledge graph
+      </Button>
       <Button size="sm" variant="ghost" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
         <Settings className="w-3.5 h-3.5" /> Settings
       </Button>
@@ -311,6 +317,16 @@ function ClientProfileContent() {
         entityName={client.name}
         clientId={clientId}
       />
+
+      {/* Knowledge Graph Drawer */}
+      {graphOpen && (
+        <KnowledgeGraphDrawer
+          entryEntityType="client"
+          entryEntityId={clientId}
+          entryName={client.name}
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
     </>
   );
 }
