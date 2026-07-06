@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic, Mail, Key } from 'lucide-react';
+import { Settings, Link2, User, Bell, Shield, ChevronRight, FileText, Tag, History, Calculator, Mic, Mail, Key, HardDrive } from 'lucide-react';
 import { useColors } from '@/lib/useColors';
 
 const settingsSections = [
@@ -26,6 +26,13 @@ const settingsSections = [
     description: 'Connect your Gmail account for inbound capture and approval-gated outbound send',
     icon: Mail,
     href: '/settings/gmail',
+  },
+  {
+    id: 'drive',
+    title: 'Google Drive Integration',
+    description: 'Connect one org-wide Google account to mirror a Drive folder into the app',
+    icon: HardDrive,
+    href: '/settings/drive',
   },
   {
     id: 'mcp-token',

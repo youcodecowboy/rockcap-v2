@@ -4306,6 +4306,29 @@ export default defineSchema({
   })
     .index("by_user", ["userId"]),
 
+  // googleDriveTokens - single-row table (one org-wide Drive connection;
+  // NOT per-user like Gmail). Independent OAuth client from Gmail/Calendar.
+  // The row records which app user connected it (userId), but at most one
+  // active connection exists app-wide. saveTokens PATCHes the existing row
+  // on reconnect and preserves the sync watermark (startPageToken) + root
+  // folder, so a reconnect never resets the mirror.
+  googleDriveTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    lastPollStartedAt: v.optional(v.number()),
+    startPageToken: v.optional(v.string()),   // Drive changes.list watermark
+    rootFolderId: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
   // gmailSendConfig (BL-4.x) - global send kill switch.
   // Singleton row. isEnabled gates outbound for the whole org; per-user
   // sendEnabled on googleGmailTokens layers on top. Both must be true.
