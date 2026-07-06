@@ -35,9 +35,12 @@ import {
 // Google Drive settings page.
 // - Independent OAuth client from Gmail/Calendar.
 // - ONE org-wide connection (app@rockcap.uk); NOT per-user like Gmail.
-// - Full drive scope (write-back is a committed fast-follow).
+// - Full drive scope.
 // - Phase 1: OAuth connect/disconnect + root-folder selection. The changes
 //   poller, mirror tables, and file UI are later phases.
+// - Phase 6: write-back kill switch (driveWriteConfig). Gates the ONLY
+//   writes the app makes to Drive — organizational folder/move/rename
+//   operations, each of which ALSO requires explicit operator approval.
 
 // Parse a Drive folder id out of a pasted URL, or accept a bare id.
 // Handles: drive.google.com/drive/folders/<id>, ...?id=<id>, or raw id.
@@ -68,6 +71,12 @@ function DriveSettingsInner() {
   const validateAndSetRootFolder = useAction(
     api.driveTokens.validateAndSetRootFolder as any,
   );
+
+  // Phase 6 — write-back kill switch (getConfig is not auth-gated, mirrors
+  // gmailTokens.getSendConfig; setEnabled is Clerk-authed).
+  const writeConfig = useQuery(api.driveWriteback.getConfig as any);
+  const setWriteEnabled = useMutation(api.driveWriteback.setEnabled as any);
+  const [togglingWrite, setTogglingWrite] = useState(false);
 
   // Phase 4b — sync stats, corpus mapping, extraction errors.
   const mirrorStats = useQuery(
@@ -215,9 +224,9 @@ function DriveSettingsInner() {
             <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
               Drive uses Google OAuth with its own client, independent of Gmail
               and Calendar. Connecting opens a Google consent screen and
-              requests full Drive access (read now; write-back is a planned
-              fast-follow). Disconnecting clears the local connection; you can
-              also revoke access from the Google account settings.
+              requests full Drive access (organizational write-back is gated
+              separately below). Disconnecting clears the local connection; you
+              can also revoke access from the Google account settings.
             </p>
 
             {loading ? (
@@ -400,6 +409,78 @@ function DriveSettingsInner() {
               </Button>
             </div>
           </Panel>
+        )}
+
+        {/* ── Write-back kill switch (phase 6) ──────────────────── */}
+        {status?.connected && (
+          <div style={{ marginTop: 24 }}>
+            <Panel
+              title="Write-back"
+              actions={
+                writeConfig === undefined ? (
+                  <Skeleton width={40} height={18} />
+                ) : (
+                  <StatusPill
+                    label={writeConfig?.isEnabled ? "on" : "off"}
+                    tone={writeConfig?.isEnabled ? colors.accent.green : colors.text.dim}
+                  />
+                )
+              }
+            >
+              <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
+                Allows approved folder/move/rename operations to modify Google
+                Drive. Every operation still requires explicit approval. Drive
+                stays the source of truth for file contents — the app never
+                edits contents, only organization (create folder, move file,
+                rename). With this switch off, no Drive write can be staged or
+                executed, even one that was already approved.
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    Organization write-back
+                  </div>
+                  <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                    Kill switch for approval-gated create-folder / move / rename.
+                    Default off.
+                  </div>
+                </div>
+                <Button
+                  onClick={async () => {
+                    setError(null);
+                    setSuccessMessage(null);
+                    setTogglingWrite(true);
+                    try {
+                      await setWriteEnabled({ isEnabled: !(writeConfig?.isEnabled === true) });
+                    } catch (e: any) {
+                      setError(e?.message || "Failed to toggle Drive write-back.");
+                    } finally {
+                      setTogglingWrite(false);
+                    }
+                  }}
+                  variant={writeConfig?.isEnabled ? "secondary" : "primary"}
+                  disabled={togglingWrite || writeConfig === undefined}
+                >
+                  {togglingWrite
+                    ? "Saving"
+                    : writeConfig?.isEnabled
+                    ? "Disable write-back"
+                    : "Enable write-back"}
+                </Button>
+              </div>
+            </Panel>
+          </div>
         )}
 
         {/* ── Sync stats + manual sync ──────────────────────────── */}

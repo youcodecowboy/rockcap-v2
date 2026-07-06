@@ -45,6 +45,7 @@ import type * as documents from "../documents.js";
 import type * as driveHydration from "../driveHydration.js";
 import type * as driveSync from "../driveSync.js";
 import type * as driveTokens from "../driveTokens.js";
+import type * as driveWriteback from "../driveWriteback.js";
 import type * as emails from "../emails.js";
 import type * as enrichment from "../enrichment.js";
 import type * as events from "../events.js";
@@ -207,6 +208,7 @@ declare const fullApi: ApiFromModules<{
   driveHydration: typeof driveHydration;
   driveSync: typeof driveSync;
   driveTokens: typeof driveTokens;
+  driveWriteback: typeof driveWriteback;
   emails: typeof emails;
   enrichment: typeof enrichment;
   events: typeof events;

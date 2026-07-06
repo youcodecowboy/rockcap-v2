@@ -4152,6 +4152,10 @@ const TOOLS: McpTool[] = [
   // the live extraction link on. Folder imports dry-run first — a deliberate
   // cost barrier, because every imported file is later extracted through the
   // Claude-powered v4 pipeline. These tools drive ingestion from Claude Code.
+  // Phase 6 adds the ONLY writes back to Drive — organizational operations
+  // (createFolder / moveFile / rename; never file contents) — each staged as
+  // a PENDING approval and gated behind the /settings/drive write-back
+  // kill switch (checked at queue time AND re-checked at execute time).
   {
     name: "drive.status",
     description:
@@ -4288,6 +4292,94 @@ const TOOLS: McpTool[] = [
         confirm: args?.confirm,
       });
       return asText(result);
+    },
+  },
+  {
+    name: "drive.createFolder",
+    description:
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only three writes the app EVER makes to Drive (create folder / move file / rename — organizational only, never file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name of the new folder" },
+        parentFolderId: {
+          type: "string",
+          description: "Drive folder id of the parent (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["name", "parentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "create_folder",
+        args: { name: args.name, parentFolderId: args.parentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Folder creation staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.moveFile",
+    description:
+      "Stage moving a Drive file to a different folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the move execute (the executor fetches the file's CURRENT parents live from Drive at that moment, so a file that moved in the meantime is handled correctly, and the mirror is updated immediately — no re-extraction is queued, since contents don't change). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. Both the file and the destination folder must be in the mirror. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFileId: { type: "string", description: "Drive file id to move" },
+        newParentFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["driveFileId", "newParentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "move_file",
+        args: { driveFileId: args.driveFileId, newParentFolderId: args.newParentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Move staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.rename",
+    description:
+      "Stage renaming a Drive file or folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the rename execute (echoed into the mirror immediately — folder renames recompute descendant paths, imported file renames update the library's fileName live; no re-extraction is queued). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. The item must be in the mirror; the connection root folder cannot be renamed. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveId: { type: "string", description: "Drive id of the file or folder to rename" },
+        newName: { type: "string", description: "The new name" },
+        kind: {
+          type: "string",
+          description: '"file" or "folder" — which table the id refers to',
+        },
+      },
+      required: ["driveId", "newName", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "rename",
+        args: { driveId: args.driveId, newName: args.newName, kind: args.kind },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
     },
   },
 

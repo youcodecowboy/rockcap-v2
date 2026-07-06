@@ -80,7 +80,9 @@ function statusLabel(status: ApprovalStatus, entityType?: string): string {
     case "approved":
       return "Executing";
     case "executed":
-      return entityType === "document_publish" ? "Filed" : "Sent";
+      if (entityType === "document_publish") return "Filed";
+      if (entityType === "drive_write") return "Applied";
+      return "Sent";
     case "execution_failed":
       return "Failed";
     default:

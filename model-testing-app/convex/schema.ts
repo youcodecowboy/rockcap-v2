@@ -4178,6 +4178,7 @@ export default defineSchema({
       v.literal("client_communication"),
       v.literal("skill_action"),
       v.literal("cadence_fire"),
+      v.literal("drive_write"),
       v.literal("other")
     ),
     entityRefId: v.optional(v.string()),         // id of the entity this approval acts on, if any
@@ -4418,6 +4419,20 @@ export default defineSchema({
   // Singleton row. isEnabled gates outbound for the whole org; per-user
   // sendEnabled on googleGmailTokens layers on top. Both must be true.
   gmailSendConfig: defineTable({
+    isEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // driveWriteConfig (Drive phase 6) - global write-back kill switch.
+  // Singleton row; no row = disabled. Gates the ONLY writes the app ever
+  // makes to Google Drive: organizational operations (create folder, move
+  // file, rename) staged through driveWriteback.requestWrite. File CONTENTS
+  // are never written — Drive stays the source of truth for bytes. Every
+  // operation additionally routes through an approvals row; this switch
+  // layers on top (checked at queue time AND re-checked at execute time).
+  driveWriteConfig: defineTable({
     isEnabled: v.boolean(),
     updatedAt: v.string(),
     updatedBy: v.optional(v.id("users")),
