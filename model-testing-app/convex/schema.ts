@@ -441,6 +441,21 @@ export default defineSchema({
     noteCount: v.optional(v.number()),
     // Intelligence integration - flag to track if document analysis was added to client/project intelligence
     addedToIntelligence: v.optional(v.boolean()),
+    // Origin of the document (drive ingestion vs direct upload vs generated).
+    // Absent = legacy upload. Set by the Drive ingestion pipeline (phase 3)
+    // and by future upload/generation writers.
+    source: v.optional(v.union(
+      v.literal("upload"),
+      v.literal("drive"),
+      v.literal("generated")
+    )),
+    // Drive provenance (only when source === "drive"): the mirrored file this
+    // document was extracted from, plus a deep link back into Drive.
+    driveFileId: v.optional(v.string()),
+    driveWebViewLink: v.optional(v.string()),
+    // Checksum of the source bytes at extraction time (md5 from Drive) —
+    // lets re-extraction detect content drift without refetching bytes.
+    contentChecksum: v.optional(v.string()),
     // Soft delete
     isDeleted: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
@@ -4163,6 +4178,7 @@ export default defineSchema({
       v.literal("client_communication"),
       v.literal("skill_action"),
       v.literal("cadence_fire"),
+      v.literal("drive_write"),
       v.literal("other")
     ),
     entityRefId: v.optional(v.string()),         // id of the entity this approval acts on, if any
@@ -4306,10 +4322,117 @@ export default defineSchema({
   })
     .index("by_user", ["userId"]),
 
+  // googleDriveTokens - single-row table (one org-wide Drive connection;
+  // NOT per-user like Gmail). Independent OAuth client from Gmail/Calendar.
+  // The row records which app user connected it (userId), but at most one
+  // active connection exists app-wide. saveTokens PATCHes the existing row
+  // on reconnect and preserves the sync watermark (startPageToken) + root
+  // folder, so a reconnect never resets the mirror.
+  googleDriveTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    lastPollStartedAt: v.optional(v.number()),
+    startPageToken: v.optional(v.string()),   // Drive changes.list watermark
+    rootFolderId: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // driveFolders - metadata mirror of Drive folders under the org root.
+  // Drive is a one-way feed; this mirror is a disposable cache rebuilt by
+  // driveSync.backfillWalk at any time. There is NO stored sync mode: the
+  // effective hydration scope of any folder/file is the nearest ancestor
+  // folder (walking parentFolderId up to the root) with clientId set —
+  // see driveSync.resolveFolderScope.
+  driveFolders: defineTable({
+    driveFolderId: v.string(),
+    name: v.string(),
+    parentFolderId: v.optional(v.string()),   // absent = the root folder itself
+    path: v.string(),                          // materialized, e.g. "/ClientCo/Deals/2026" ("/" for root)
+    clientId: v.optional(v.id("clients")),     // operator mapping — set ONLY on explicitly mapped folders
+    trashed: v.optional(v.boolean()),
+    lastSyncedAt: v.string(),
+  })
+    .index("by_drive_id", ["driveFolderId"])
+    .index("by_parent", ["parentFolderId"])
+    .index("by_client", ["clientId"]),
+
+  // driveFiles - metadata mirror of Drive files under the org root.
+  // Extraction fields are stamped here by the changes poller (settling
+  // debounce, dirty tracking) for the phase-3 hydration worker to consume;
+  // nothing in this phase fetches bytes.
+  driveFiles: defineTable({
+    driveFileId: v.string(),
+    name: v.string(),
+    mimeType: v.string(),
+    parentFolderId: v.optional(v.string()),
+    size: v.optional(v.number()),
+    modifiedTime: v.string(),
+    md5Checksum: v.optional(v.string()),       // absent on Google-native files
+    headRevisionId: v.optional(v.string()),
+    webViewLink: v.optional(v.string()),
+    trashed: v.optional(v.boolean()),
+    // Hydration/extraction state (consumed by phase 3).
+    cachedStorageId: v.optional(v.id("_storage")),
+    extractedChecksum: v.optional(v.string()),
+    extractionStatus: v.union(
+      v.literal("none"),
+      v.literal("settling"),
+      v.literal("processing"),
+      v.literal("complete"),
+      v.literal("error")
+    ),
+    extractionError: v.optional(v.string()),
+    settleAfter: v.optional(v.number()),       // ms epoch — pushed forward on every change (debounce)
+    firstDirtyAt: v.optional(v.number()),      // ms epoch — starvation guard, never pushed out
+    processingStartedAt: v.optional(v.number()),
+    documentId: v.optional(v.id("documents")),
+    lastSyncedAt: v.string(),
+  })
+    .index("by_drive_id", ["driveFileId"])
+    .index("by_parent", ["parentFolderId"])
+    .index("by_extraction_status", ["extractionStatus"])
+    .index("by_document", ["documentId"]),
+
+  // ingestionEvents - durable post-extraction feed (Spec 2's hook). Every
+  // document that enters the corpus (Drive extraction, direct upload, ...)
+  // appends a row here; downstream consumers tail by_at. Phase 3 writes it.
+  ingestionEvents: defineTable({
+    documentId: v.id("documents"),
+    driveFileId: v.optional(v.string()),
+    source: v.string(),                        // "drive" | "upload" | ...
+    checksum: v.optional(v.string()),
+    kind: v.union(v.literal("created"), v.literal("reextracted")),
+    at: v.string(),
+  })
+    .index("by_at", ["at"])
+    .index("by_document", ["documentId"]),
+
   // gmailSendConfig (BL-4.x) - global send kill switch.
   // Singleton row. isEnabled gates outbound for the whole org; per-user
   // sendEnabled on googleGmailTokens layers on top. Both must be true.
   gmailSendConfig: defineTable({
+    isEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // driveWriteConfig (Drive phase 6) - global write-back kill switch.
+  // Singleton row; no row = disabled. Gates the ONLY writes the app ever
+  // makes to Google Drive: organizational operations (create folder, move
+  // file, rename) staged through driveWriteback.requestWrite. File CONTENTS
+  // are never written — Drive stays the source of truth for bytes. Every
+  // operation additionally routes through an approvals row; this switch
+  // layers on top (checked at queue time AND re-checked at execute time).
+  driveWriteConfig: defineTable({
     isEnabled: v.boolean(),
     updatedAt: v.string(),
     updatedBy: v.optional(v.id("users")),

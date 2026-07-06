@@ -73,6 +73,14 @@ export default function DocumentReaderPage() {
     );
   }
 
+  // Drive-sourced rows have no Convex fileStorageId — preview via Google's
+  // embedded viewer; "Open in New Tab" goes to the Drive web view link.
+  const isDrive = (document as any).source === 'drive' && !!(document as any).driveFileId;
+  const driveEmbedUrl = (document as any).driveFileId
+    ? `https://drive.google.com/file/d/${(document as any).driveFileId}/preview`
+    : null;
+  const driveWebViewLink = (document as any).driveWebViewLink as string | undefined;
+
   const isPDF = document.fileType === 'application/pdf' || document.fileName.toLowerCase().endsWith('.pdf');
   const isImage = document.fileType.startsWith('image/') ||
     /\.(jpg|jpeg|png|gif|webp)$/i.test(document.fileName);
@@ -92,6 +100,10 @@ export default function DocumentReaderPage() {
   };
 
   const handleOpenInNewTab = () => {
+    if (isDrive && driveWebViewLink) {
+      window.open(driveWebViewLink, '_blank');
+      return;
+    }
     if (fileUrl) {
       window.open(fileUrl, '_blank');
     }
@@ -124,14 +136,16 @@ export default function DocumentReaderPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={handleOpenInNewTab} disabled={!fileUrl}>
+          <Button variant="secondary" size="sm" onClick={handleOpenInNewTab} disabled={isDrive ? !driveWebViewLink : !fileUrl}>
             <ExternalLink className="w-4 h-4" />
-            Open in New Tab
+            {isDrive ? 'Open in Google Drive' : 'Open in New Tab'}
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleDownload} disabled={!fileUrl}>
-            <Download className="w-4 h-4" />
-            Download
-          </Button>
+          {!isDrive && (
+            <Button variant="secondary" size="sm" onClick={handleDownload} disabled={!fileUrl}>
+              <Download className="w-4 h-4" />
+              Download
+            </Button>
+          )}
         </div>
       </div>
 
@@ -139,7 +153,15 @@ export default function DocumentReaderPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Document Preview - 75% */}
         <div className="w-3/4 overflow-auto" style={{ background: colors.bg.cardAlt, padding: 16 }}>
-          {!fileUrl ? (
+          {isDrive && driveEmbedUrl ? (
+            <iframe
+              src={driveEmbedUrl}
+              allow="autoplay"
+              className="w-full h-full"
+              style={{ background: colors.bg.card, borderRadius: 4, border: `1px solid ${colors.border.mid}` }}
+              title={document.fileName}
+            />
+          ) : !fileUrl ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
                 {getFileIcon()}

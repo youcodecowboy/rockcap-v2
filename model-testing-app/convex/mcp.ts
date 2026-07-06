@@ -4145,6 +4145,244 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Drive domain ─────────────────────────────────────────────
+  // One org-wide Google Drive connection, mirrored every 2 min into
+  // driveFolders/driveFiles. Mapping a folder to a client sets OWNERSHIP SCOPE
+  // only; IMPORT is the purposeful act that creates a documents row and turns
+  // the live extraction link on. Folder imports dry-run first — a deliberate
+  // cost barrier, because every imported file is later extracted through the
+  // Claude-powered v4 pipeline. These tools drive ingestion from Claude Code.
+  // Phase 6 adds the ONLY writes back to Drive — organizational operations
+  // (createFolder / moveFile / rename; never file contents) — each staged as
+  // a PENDING approval and gated behind the /settings/drive write-back
+  // kill switch (checked at queue time AND re-checked at execute time).
+  {
+    name: "drive.status",
+    description:
+      "Google Drive connection status + mirror stats in one call. Returns the connected account email, root folder, lastSyncAt, and whether the connection needs re-authorising (needsReconnect), plus mirror counts: total/mapped/trashed folders, total/imported/trashed files, and files by extractionStatus. Read-only. Start here to confirm Drive is connected and synced before listing or importing.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (ctx, _userId) => {
+      const result = await ctx.runQuery(internal.driveSync.getStatusForMcpInternal, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.listFolders",
+    description:
+      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping: effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient; nothing is imported by listing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        parentFolderId: {
+          type: "string",
+          description: "Drive folder id to list children of. Omit for the connection root.",
+        },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.listFolderChildrenInternal, {
+        parentFolderId: args?.parentFolderId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.listFiles",
+    description:
+      "List the files in a Drive folder from the mirror: name, mimeType, size, modifiedTime, driveFileId, imported (whether a documents row exists — i.e. documentId is set), extractionStatus (none/settling/processing/complete/error), and documentId when imported. By default lists only the folder's direct files; pass subtree:true to list the whole descendant subtree (import-picker style, capped at 500 rows with a `truncated` flag). Read-only. Use to see what is importable and what has already been imported/extracted before calling drive.importFiles / drive.importFolder.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        folderId: { type: "string", description: "Drive folder id" },
+        subtree: {
+          type: "boolean",
+          description: "List the whole descendant subtree (capped at 500) instead of just direct files.",
+        },
+      },
+      required: ["folderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.listFilesForMcpInternal, {
+        folderId: args.folderId,
+        subtree: args?.subtree,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.getFile",
+    description:
+      "Full mirror detail for a single Drive file by driveFileId: name, mimeType, size, modifiedTime, parentFolderId, trashed, md5Checksum, webViewLink, imported flag + linked documentId, extractionStatus/extractionError, and the effective client scope (inScope / clientId / clientName / mappedFolderId — resolved via the nearest mapped ancestor folder). Read-only. Use to inspect one file's import + extraction state and confirm which client it would import under.",
+    inputSchema: {
+      type: "object",
+      properties: { driveFileId: { type: "string", description: "Drive file id" } },
+      required: ["driveFileId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.getFileForMcpInternal, {
+        driveFileId: args.driveFileId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.mapFolderToClient",
+    description:
+      "Map a Drive folder to a client — or omit clientId to clear the mapping. Mapping sets OWNERSHIP SCOPE ONLY: it does NOT import or extract anything, creates no documents rows, and queues no work, so mapping a 10,000-file historical folder costs nothing. The mapping is inherited by descendant folders/files (nearest-ancestor wins) and determines which client a later import files under. To actually bring files into the app library, use drive.importFolder / drive.importFiles after mapping. Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id" },
+        clientId: {
+          type: "string",
+          description: "Convex clients id to map to. Omit to clear the mapping.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.mapFolderToClientInternal, {
+        driveFolderId: args.driveFolderId,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.importFiles",
+    description:
+      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFileIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Drive file ids to import (max 200).",
+        },
+      },
+      required: ["driveFileIds"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.importDriveFilesInternal, {
+        driveFileIds: args.driveFileIds,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.importFolder",
+    description:
+      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id" },
+        confirm: {
+          type: "boolean",
+          description:
+            "Omit/false for a dry-run count (nothing imported). Pass true ONLY after the operator approves the count.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.importDriveFolderInternal, {
+        driveFolderId: args.driveFolderId,
+        confirm: args?.confirm,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.createFolder",
+    description:
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only three writes the app EVER makes to Drive (create folder / move file / rename — organizational only, never file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name of the new folder" },
+        parentFolderId: {
+          type: "string",
+          description: "Drive folder id of the parent (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["name", "parentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "create_folder",
+        args: { name: args.name, parentFolderId: args.parentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Folder creation staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.moveFile",
+    description:
+      "Stage moving a Drive file to a different folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the move execute (the executor fetches the file's CURRENT parents live from Drive at that moment, so a file that moved in the meantime is handled correctly, and the mirror is updated immediately — no re-extraction is queued, since contents don't change). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. Both the file and the destination folder must be in the mirror. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFileId: { type: "string", description: "Drive file id to move" },
+        newParentFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["driveFileId", "newParentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "move_file",
+        args: { driveFileId: args.driveFileId, newParentFolderId: args.newParentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Move staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.rename",
+    description:
+      "Stage renaming a Drive file or folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the rename execute (echoed into the mirror immediately — folder renames recompute descendant paths, imported file renames update the library's fileName live; no re-extraction is queued). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. The item must be in the mirror; the connection root folder cannot be renamed. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveId: { type: "string", description: "Drive id of the file or folder to rename" },
+        newName: { type: "string", description: "The new name" },
+        kind: {
+          type: "string",
+          description: '"file" or "folder" — which table the id refers to',
+        },
+      },
+      required: ["driveId", "newName", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "rename",
+        args: { driveId: args.driveId, newName: args.newName, kind: args.kind },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+
   // ── Meta / introspection ─────────────────────────────────────
   // Self-describing catalogue. The skills repo lives separately from this app,
   // so skill-forge calls this at the start of each session to refresh its

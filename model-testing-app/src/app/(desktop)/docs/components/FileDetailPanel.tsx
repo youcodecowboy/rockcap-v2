@@ -109,6 +109,12 @@ interface Document {
   addedToIntelligence?: boolean;
   scope?: 'client' | 'internal' | 'personal';
   textContent?: string;
+  displayName?: string;
+  status?: string;
+  // Drive provenance (source: "drive" rows mirror a Google Drive file).
+  source?: 'upload' | 'drive' | 'generated';
+  driveFileId?: string;
+  driveWebViewLink?: string;
 }
 
 interface FileDetailPanelProps {
@@ -380,6 +386,18 @@ export default function FileDetailPanel({
                      document.fileType.toLowerCase().includes('image') ||
                      isXlsx;
 
+  // Drive-sourced rows have no Convex fileStorageId — they preview via Google's
+  // embedded viewer and open in Drive rather than downloading a stored blob.
+  const isDrive = document.source === 'drive' && !!document.driveFileId;
+  const driveEmbedUrl = document.driveFileId
+    ? `https://drive.google.com/file/d/${document.driveFileId}/preview`
+    : null;
+  const handleOpenInDrive = () => {
+    if (document.driveWebViewLink) {
+      window.open(document.driveWebViewLink, '_blank');
+    }
+  };
+
   const hasAnalysis = !!document.documentAnalysis;
   const hasSummary = hasAnalysis || !!document.summary;
   const hasChecklist = checklistLinks && checklistLinks.length > 0;
@@ -506,6 +524,19 @@ export default function FileDetailPanel({
                     )}
                     <Row label="File size" value={formatFileSize(document.fileSize)} />
                     <Row label="Uploaded" value={formatDate(document.uploadedAt)} />
+                    {isDrive && (
+                      <Row
+                        label="Source"
+                        value={
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            Google Drive
+                          </span>
+                        }
+                      />
+                    )}
+                    {document.savedAt && document.savedAt !== document.uploadedAt && (
+                      <Row label="Updated" value={formatDate(document.savedAt)} />
+                    )}
                     {document.version && (
                       <Row label="Version" value={document.version} mono />
                     )}
@@ -826,7 +857,17 @@ export default function FileDetailPanel({
           {/* Right Column - Document Preview */}
           <div className="flex-1 flex flex-col min-w-0" style={{ background: colors.bg.light }}>
             <div className="flex-1 p-4 flex flex-col">
-              {canPreview && fileUrl ? (
+              {isDrive && driveEmbedUrl ? (
+                <div className="w-full flex-1 min-h-0 relative">
+                  <iframe
+                    src={driveEmbedUrl}
+                    allow="autoplay"
+                    className="w-full h-full"
+                    style={{ minHeight: '600px', borderRadius: 4, border: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+                    title="Google Drive Preview"
+                  />
+                </div>
+              ) : canPreview && fileUrl ? (
                 <div className="w-full flex-1 min-h-0 relative">
                   {document.fileType.toLowerCase().includes('pdf') ? (
                     // Browser's native PDF viewer. toolbar=1 exposes the
@@ -907,14 +948,37 @@ export default function FileDetailPanel({
         {/* Sticky Footer Actions */}
         <div className="p-4 flex-shrink-0" style={{ borderTop: `1px solid ${colors.border.default}`, background: colors.bg.card }}>
           <div className="flex items-center gap-3">
-            <Button variant="primary" onClick={handleOpenReader} style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}>
-              <BookOpen className="w-5 h-5" />
-              Open in Reader
-            </Button>
-            <Button variant="secondary" onClick={handleDownload} disabled={!fileUrl} style={{ padding: '10px 14px' }}>
-              <Download className="w-5 h-5" />
-              Download
-            </Button>
+            {isDrive ? (
+              <>
+                <Button
+                  variant="primary"
+                  onClick={handleOpenInDrive}
+                  disabled={!document.driveWebViewLink}
+                  style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}
+                >
+                  <ExternalLink className="w-5 h-5" />
+                  Open in Google Drive
+                </Button>
+                {/* Extracted Drive files keep the reader path (extracted text). */}
+                {document.status === 'completed' && (
+                  <Button variant="secondary" onClick={handleOpenReader} style={{ padding: '10px 14px' }}>
+                    <BookOpen className="w-5 h-5" />
+                    Reader
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="primary" onClick={handleOpenReader} style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}>
+                  <BookOpen className="w-5 h-5" />
+                  Open in Reader
+                </Button>
+                <Button variant="secondary" onClick={handleDownload} disabled={!fileUrl} style={{ padding: '10px 14px' }}>
+                  <Download className="w-5 h-5" />
+                  Download
+                </Button>
+              </>
+            )}
             {onMove && (
               <Button variant="secondary" onClick={onMove} style={{ padding: '10px 14px' }}>
                 <FolderInput className="w-5 h-5" />

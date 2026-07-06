@@ -36,6 +36,9 @@ const executeClientCommunicationRef = makeFunctionReference<"action", { approval
 const executeLenderOutreachRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
   "gmailSend:executeLenderOutreach",
 );
+const executeDriveWriteRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "driveWriteback:execute",
+);
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Approvals (BL-1.9 surface, BL-5.7 queries + dispatch).
@@ -73,6 +76,7 @@ const ENTITY_TYPE = v.union(
   v.literal("client_communication"),
   v.literal("skill_action"),
   v.literal("cadence_fire"),
+  v.literal("drive_write"),
   v.literal("other"),
 );
 
@@ -643,6 +647,16 @@ export const executeApproval = internalAction({
           // the related BDM contact. The entityType stays distinct only so the
           // approvals UI can apply lender-specific review gates.
           result = await ctx.runAction(executeLenderOutreachRef, {
+            approvalId: args.approvalId,
+          });
+          break;
+        case "drive_write":
+          // Organizational Drive write-back (create folder / move file /
+          // rename) — the ONLY class of writes the app makes to Drive.
+          // The executor re-checks the driveWriteConfig kill switch at
+          // fire time (defense-in-depth, mirrors the gmail_send pattern)
+          // and echoes the result into the mirror on success.
+          result = await ctx.runAction(executeDriveWriteRef, {
             approvalId: args.approvalId,
           });
           break;
