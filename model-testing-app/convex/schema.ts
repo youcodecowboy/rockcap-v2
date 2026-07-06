@@ -4734,5 +4734,224 @@ export default defineSchema({
     // skillRun docs carry heavy brief / intelMarkdown / structureGraph fields,
     // so reading them all blows the per-query byte limit.
     .index("by_skill_and_status", ["skillName", "status"]),
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Knowledge Layer (Spec 2, Phase 2a.1) — docs/spec-2-knowledge-layer.md §3
+  //
+  // Five additive tables. `atoms` holds ONE row per fact identity
+  // (subjectType, subjectId, predicate, qualifier, object-kind); every
+  // source occurrence lives in `atomObservations` (separate table because
+  // Convex can't index into arrays and re-extraction needs by_document).
+  // `facilities` is the deterministic n-ary hub minted from atoms;
+  // `documentChunks` is the narrative dual index; `entityCandidates` holds
+  // provisional entities so facts about unresolved mentions are never lost.
+  //
+  // Deviation from spec §3.1/§3.4 (deliberate): `embedding` is OPTIONAL —
+  // atoms/chunks must be writable before the embeddings lane (Phase 2a.2)
+  // exists. Convex vector indexes only include documents that contain a
+  // vector in the indexed field, so rows without embeddings are simply
+  // absent from vector search until 2a.2 backfills them.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // Canonical facts — spec §3.1. Predicates validate in code against
+  // convex/knowledge/vocabulary.ts (never a schema union: the vocabulary
+  // must grow without schema pushes, and dev IS prod).
+  atoms: defineTable({
+    // ── Fact ──
+    statement: v.string(), // one self-contained sentence; the embedded + searched text
+    subjectType: v.union(
+      v.literal("client"),
+      v.literal("project"),
+      v.literal("contact"),
+      v.literal("company"),
+      v.literal("facility"),
+      v.literal("candidate"),
+    ),
+    subjectId: v.string(), // stringified Convex id (table per subjectType)
+    predicate: v.string(), // validated in code against the vocabulary module (spec §5)
+    objectEntityType: v.optional(
+      v.union(
+        v.literal("client"),
+        v.literal("project"),
+        v.literal("contact"),
+        v.literal("company"),
+        v.literal("facility"),
+        v.literal("candidate"),
+      ),
+    ),
+    objectEntityId: v.optional(v.string()), // set ⇒ EDGE
+    objectLiteral: v.optional(
+      v.object({
+        // set ⇒ ATTRIBUTE (exactly one of the two, enforced in atomsCore)
+        value: v.any(), // canonicalized (ISO dates, raw numbers)
+        valueType: v.union(
+          v.literal("currency"),
+          v.literal("number"),
+          v.literal("percentage"),
+          v.literal("date"),
+          v.literal("string"),
+          v.literal("range"),
+        ),
+        currency: v.optional(v.string()),
+        unit: v.optional(v.string()),
+      }),
+    ),
+    qualifier: v.optional(v.string()), // multi-instance disambiguation ("Senior" vs "Mezzanine"); part of identity
+    // ── Scope (denormalized for filtered retrieval) ──
+    clientId: v.optional(v.id("clients")), // owning scope; null = company-wide
+    projectId: v.optional(v.id("projects")),
+    // ── Time & lifecycle ──
+    asOf: v.optional(v.string()), // when true in the world (from doc content/date)
+    observedAt: v.string(), // latest observation time
+    status: v.union(
+      v.literal("active"),
+      v.literal("contested"),
+      v.literal("superseded"),
+      v.literal("retired"),
+    ),
+    supersededBy: v.optional(v.id("atoms")),
+    supersessionReason: v.optional(
+      v.union(
+        v.literal("revised"),
+        v.literal("removed_from_source"),
+        v.literal("document_trashed"),
+        v.literal("operator"),
+      ),
+    ),
+    confidence: v.number(), // corroboration-adjusted (spec §7)
+    salience: v.optional(v.number()), // IDF-informed ranking weight (spec §6.2, Phase 2c)
+    primarySourceType: v.string(), // most-authoritative observation's sourceType (display convenience)
+    embedding: v.optional(v.array(v.float64())), // 1024-dim (spec §13); optional until 2a.2 embeds
+  })
+    .index("by_subject", ["subjectType", "subjectId", "status"])
+    .index("by_object", ["objectEntityType", "objectEntityId", "status"])
+    .index("by_client_status", ["clientId", "status"])
+    .index("by_predicate", ["predicate", "status"])
+    .searchIndex("search_statement", {
+      searchField: "statement",
+      filterFields: ["clientId", "subjectType", "status"],
+    })
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1024,
+      filterFields: ["clientId", "subjectType", "status"],
+    }),
+
+  // Per-source provenance — spec §3.2. One row per (atom, source occurrence).
+  // v1 locator caveat: parsed xlsx is `Row N: cell | cell` lines, so
+  // spreadsheet locators are {sheet, row} until deep extraction lands;
+  // sourceText is the dependable audit anchor either way.
+  atomObservations: defineTable({
+    atomId: v.id("atoms"),
+    sourceType: v.union(
+      v.literal("document"),
+      v.literal("companies_house"),
+      v.literal("apollo"),
+      v.literal("operator"),
+      v.literal("skill"),
+      v.literal("migration"),
+    ),
+    documentId: v.optional(v.id("documents")),
+    contentChecksum: v.optional(v.string()), // WHICH revision asserted this
+    locator: v.optional(
+      v.object({
+        page: v.optional(v.number()),
+        sheet: v.optional(v.string()),
+        row: v.optional(v.number()),
+        cellRange: v.optional(v.string()),
+        section: v.optional(v.string()),
+      }),
+    ),
+    sourceText: v.optional(v.string()), // verbatim snippet — the reliable audit anchor
+    externalRef: v.optional(v.string()), // CH charge/filing ID, Apollo ID, skillRunId, userId
+    extractedValue: v.optional(v.any()), // what THIS source said (may differ from canonical)
+    observedAt: v.string(),
+    authorityTier: v.number(), // spec §7 document-type authority (higher = more authoritative)
+    superseded: v.optional(v.boolean()), // same-lineage replacement marker
+  })
+    .index("by_atom", ["atomId"])
+    .index("by_document", ["documentId"]),
+
+  // The n-ary hub — spec §3.3. Minted deterministically from atoms when
+  // facility-shaped predicates arrive; columns are mirrors of winning atoms,
+  // rebuildable at any time. NOTE: spec text reads `v.id("companies")` for
+  // lenderCompanyId but the comment says "CH company when known" — the
+  // `companies` table here is HubSpot prospects, so the CH intent maps to
+  // `companiesHouseCompanies` (matches the atom "company" entity type).
+  facilities: defineTable({
+    projectId: v.id("projects"),
+    lenderClientId: v.optional(v.id("clients")), // clients row, type="lender"; optional (external lender)
+    lenderCompanyId: v.optional(v.id("companiesHouseCompanies")), // CH company when known
+    borrowerClientId: v.optional(v.id("clients")),
+    tranche: v.optional(v.string()), // "senior" | "mezzanine" | "bridge" | "equity"
+    // Materialized terms — mirrors of winning atoms, rebuildable at any time
+    amountGBP: v.optional(v.number()),
+    interestRate: v.optional(v.number()),
+    maturityDate: v.optional(v.string()),
+    securitySummary: v.optional(v.string()),
+    status: v.optional(v.string()), // "indicative" | "live" | "repaid" | "defaulted"
+    dedupeKey: v.string(), // `${projectId}:${lenderKey}:${tranche ?? "single"}`
+    createdFrom: v.union(
+      v.literal("atomizer"),
+      v.literal("operator"),
+      v.literal("migration"),
+    ),
+    lastRebuiltAt: v.string(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_lender", ["lenderClientId"])
+    .index("by_lender_company", ["lenderCompanyId"])
+    .index("by_dedupe", ["dedupeKey"]),
+
+  // The narrative dual index — spec §3.4. Chunks are disposable derivatives
+  // of ONE revision: on re-extraction, delete the document's chunks and
+  // recreate (unlike atoms, chunks carry no identity worth preserving).
+  documentChunks: defineTable({
+    documentId: v.id("documents"),
+    contentChecksum: v.string(),
+    chunkIndex: v.number(),
+    text: v.string(),
+    tokenCount: v.optional(v.number()),
+    locator: v.optional(
+      v.object({
+        page: v.optional(v.number()),
+        sheet: v.optional(v.string()),
+        section: v.optional(v.string()),
+      }),
+    ),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    embedding: v.optional(v.array(v.float64())), // optional until 2a.2 embeds
+  })
+    .index("by_document", ["documentId"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["clientId"] })
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1024,
+      filterFields: ["clientId"],
+    }),
+
+  // Provisional entities — spec §3.5. Atoms MAY reference a candidate so
+  // the fact is never dropped; the enrichment worker (Phase 2b) resolves
+  // people → Apollo → contacts, companies → CH → companiesHouseCompanies,
+  // then re-points referencing atoms. resolvedTo* stays as a tombstone so
+  // re-extraction resolves instantly.
+  entityCandidates: defineTable({
+    mentionText: v.string(),
+    normalizedName: v.string(),
+    guessedType: v.union(v.literal("person"), v.literal("company")),
+    contextSnippet: v.optional(v.string()),
+    sourceDocumentId: v.optional(v.id("documents")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("resolved"),
+      v.literal("dismissed"),
+    ),
+    resolvedToType: v.optional(v.string()),
+    resolvedToId: v.optional(v.string()),
+    enrichmentAttempts: v.number(),
+  })
+    .index("by_normalized_name", ["normalizedName"])
+    .index("by_status", ["status"]),
 });
 
