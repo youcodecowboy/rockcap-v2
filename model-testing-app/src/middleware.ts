@@ -40,6 +40,12 @@ const isPublicRoute = createRouteMatcher([
   // action. Self-authenticates via X-Cron-Secret, same pattern as
   // webhook-process.
   '/api/hubspot/fireflies-backfill(.*)',
+  // Drive hydration bridge — the Convex hydration sweep POSTs settled Drive
+  // files here to run v4 extraction (pipeline code lives Next-side). Self-
+  // authenticates via x-cron-secret, same pattern as the hubspot bridges.
+  // Without this entry Clerk 404-rejects the cookie-less Convex fetch and
+  // every Drive extraction fails with "ingest route 404".
+  '/api/drive/ingest(.*)',
   // Convex action → Next bridge for the corporate-structure chart renderer.
   // The `structureGen.renderChart` action POSTs here server-to-server (no Clerk
   // cookie); the handler self-authenticates via x-convex-internal-secret. Public
