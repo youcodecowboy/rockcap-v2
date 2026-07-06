@@ -141,4 +141,17 @@ crons.daily(
   internal.skillRuns.sweepStaleRunningRunsInternal,
 );
 
+// Knowledge-layer atomization sweep (Spec 2 §11 + §14b.1). Every 10 minutes,
+// tail the ingestionEvents feed for changed documents whose client is already
+// knowledge-enabled (has ≥1 atom) and whose (documentId, contentChecksum) has
+// no atomObservations yet, then re-atomize up to 3/tick via the Next
+// /api/knowledge/atomize route → reatomizeDiff. The knowledge-enabled gate is
+// the cost wall: clients never onboarded through the harness lane are skipped.
+// Self-skips when NEXT_APP_URL / CRON_SECRET are unset.
+crons.interval(
+  "knowledge-atomize-sweep",
+  { minutes: 10 },
+  internal.knowledge.atomizerLane.sweep,
+);
+
 export default crons;

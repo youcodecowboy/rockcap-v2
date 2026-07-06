@@ -1,5 +1,6 @@
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { PREDICATES } from "./knowledge/vocabulary";
 
 // MCP server (BL-5.1).
 // HTTP endpoint that speaks the Model Context Protocol over JSON-RPC.
@@ -4403,6 +4404,205 @@ const TOOLS: McpTool[] = [
         message:
           "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
+    },
+  },
+
+  // ── atoms.* — Knowledge Layer (Spec 2 §11 / §14b.1) ──────────
+  // The HARNESS LANE write surface. Claude Code (subscription cost) does bulk
+  // atomization via these tools; the API lane (a Convex cron → Next route)
+  // handles cheap incremental re-atomization. BOTH lanes persist through
+  // knowledge/atomsCore, so the three persistence gates (anchored /
+  // discriminating / material) are machine-checked server-side and cannot be
+  // bypassed. Predicates come from a versioned vocabulary module — call
+  // atoms.vocabulary FIRST so you never guess a predicate name.
+  {
+    name: "atoms.createBatch",
+    description:
+      "Persist a batch of candidate atoms (≤100 per call — chunk larger sets). Each atom is ONE self-contained fact anchored to a rostered entity. THREE GATES are enforced server-side and an atom that fails ANY is REJECTED, not stored: (1) anchored — subjectId must resolve to a real row (clients/projects/contacts/companiesHouseCompanies/facilities) or the atom is dropped; (2) discriminating — the peer test is your job at extraction time (see the atomize-document skill); (3) material — amounts, terms, parties/roles, dates, obligations, security, ownership, status, appetite. Predicates MUST come from the vocabulary (families: financing, people, structure, property) — call atoms.vocabulary first; unknown or native-store predicates (officer_of, has_appetite_for, etc.) are rejected. Each atom needs EXACTLY ONE of objectEntityId (an EDGE — also set objectEntityType) or objectLiteral{value,valueType,currency?,unit?} (an ATTRIBUTE). Returns the engine's result verbatim: {created, corroborated, superseded, contested, rejected, facilities}. CRITICAL: READ the `rejected` array — each entry has {index, statement, reason}. Do NOT silently drop rejects: fix the cause (usually a subjectId/objectEntityId that isn't a real row, an unknown predicate, or edge/literal both-or-neither) and resubmit the repaired atoms. Corroboration, contradiction and supersession are handled automatically (five docs stating one GDV converge on one atom).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atoms: {
+          type: "array",
+          description: "≤100 candidate atoms.",
+          items: {
+            type: "object",
+            properties: {
+              statement: { type: "string", description: "One self-contained sentence." },
+              subjectType: { type: "string", description: "client | project | contact | company | facility" },
+              subjectId: { type: "string", description: "Stringified Convex id of the subject row (must exist)." },
+              predicate: { type: "string", description: "A vocabulary predicate (call atoms.vocabulary)." },
+              objectEntityType: { type: "string", description: "EDGE only: type of the object row." },
+              objectEntityId: { type: "string", description: "EDGE only: Convex id of the object row (must exist). Mutually exclusive with objectLiteral." },
+              objectLiteral: {
+                type: "object",
+                description: "ATTRIBUTE only. Mutually exclusive with objectEntityId.",
+                properties: {
+                  value: { description: "Canonicalized value (ISO date / raw number / string / range)." },
+                  valueType: { type: "string", description: "currency | number | percentage | date | string | range" },
+                  currency: { type: "string" },
+                  unit: { type: "string" },
+                },
+              },
+              qualifier: { type: "string", description: "Multi-instance disambiguation, e.g. Senior / Mezzanine." },
+              clientId: { type: "string", description: "Owning client scope (Convex id)." },
+              projectId: { type: "string", description: "Owning project scope (Convex id)." },
+              asOf: { type: "string", description: "ISO date the fact was true in the world." },
+              confidence: { type: "number", description: "0..1." },
+              observation: {
+                type: "object",
+                description: "Provenance for THIS source occurrence.",
+                properties: {
+                  sourceType: { type: "string", description: "document | companies_house | apollo | operator | skill | migration" },
+                  documentId: { type: "string" },
+                  contentChecksum: { type: "string" },
+                  locator: {
+                    type: "object",
+                    properties: {
+                      page: { type: "number" },
+                      sheet: { type: "string" },
+                      row: { type: "number" },
+                      cellRange: { type: "string" },
+                      section: { type: "string" },
+                    },
+                  },
+                  sourceText: { type: "string", description: "Verbatim snippet — the audit anchor." },
+                  externalRef: { type: "string", description: "CH charge/filing id, Apollo id, skillRunId, userId." },
+                  authorityTier: { type: "number", description: "5 executed-legal > 4 facility-letter > 3 valuation > 2 internal-brief > 1 email." },
+                },
+                required: ["sourceType", "authorityTier"],
+              },
+            },
+            required: ["statement", "subjectType", "subjectId", "predicate", "confidence", "observation"],
+          },
+        },
+      },
+      required: ["atoms"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.createAtomsBatch, {
+        candidates: args.atoms ?? [],
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.vocabulary",
+    description:
+      "Return the legal predicate vocabulary as a map of {name → {kind, family, direction?, description, store}}. Call this BEFORE atoms.createBatch so you use real predicate names instead of guessing. `kind` is edge (needs objectEntityId) or attribute (needs objectLiteral). `store` of 'native' means the fact lives in a structural table and is REJECTED as an atom (officer_of, funds_project native side, has_appetite_for, etc.); 'atom'/'both' are storable. Families: financing, people, structure, property, meta.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_ctx, _userId, _args) => {
+      return asText({
+        predicates: PREDICATES,
+        families: ["financing", "people", "structure", "property", "meta"],
+        note: "store='native' predicates are rejected by atoms.createBatch (they belong in structural tables). Use kind to decide objectEntityId (edge) vs objectLiteral (attribute).",
+      });
+    },
+  },
+  {
+    name: "atoms.supersede",
+    description:
+      "Operator/hygiene: mark an atom superseded (status=superseded, reason=operator). Use when a fact is stale/wrong and should drop out of retrieval but its provenance must survive (atoms are never hard-deleted). `reason` is a free-text explanation for the audit note; the lifecycle reason is recorded as 'operator'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atomId: { type: "string", description: "Convex id of the atom." },
+        reason: { type: "string", description: "Why it is being superseded (audit note)." },
+      },
+      required: ["atomId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.supersedeAtom, {
+        atomId: args.atomId,
+        reason: "operator" as const,
+      });
+      return asText({ ...result, operatorReason: args.reason });
+    },
+  },
+  {
+    name: "atoms.retire",
+    description:
+      "Operator/hygiene: retire an atom (status=retired). Stronger than supersede — the fact is removed from the live graph but kept for provenance. Use for atoms that should never have existed (misextraction). `reason` is a free-text audit note.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atomId: { type: "string", description: "Convex id of the atom." },
+        reason: { type: "string", description: "Why it is being retired (audit note)." },
+      },
+      required: ["atomId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.retireAtom, {
+        atomId: args.atomId,
+      });
+      return asText({ ...result, operatorReason: args.reason });
+    },
+  },
+  {
+    name: "atoms.getForSubject",
+    description:
+      "Return the atoms already stored for a subject entity (with observation counts), so you can check existing coverage before atomizing — the idempotency check for the harness lane. Pass subjectType + subjectId; optional status filter (active / contested / superseded / retired). Default returns all statuses.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subjectType: { type: "string", description: "client | project | contact | company | facility" },
+        subjectId: { type: "string", description: "Stringified Convex id of the subject." },
+        status: { type: "string", description: "Optional: active | contested | superseded | retired." },
+      },
+      required: ["subjectType", "subjectId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.atomsCore.getAtomsForSubject, {
+        subjectType: args.subjectType,
+        subjectId: args.subjectId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.upsertChunks",
+    description:
+      "Persist the narrative dual index for a document (spec §3.4): the chunk retrieval side that complements atoms for prose-heavy docs (legal opinions, reports). Chunks are disposable derivatives of ONE revision — this deletes the document's existing chunks and recreates them. Chunk narrative documents into ~800-token sections; SKIP fact-dense spreadsheets (atoms win there). Pass documentId, contentChecksum, and chunks:[{chunkIndex, text, locator?}] plus optional clientId/projectId scope tags.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        contentChecksum: { type: "string" },
+        clientId: { type: "string" },
+        projectId: { type: "string" },
+        chunks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              chunkIndex: { type: "number" },
+              text: { type: "string" },
+              tokenCount: { type: "number" },
+              locator: {
+                type: "object",
+                properties: {
+                  page: { type: "number" },
+                  sheet: { type: "string" },
+                  section: { type: "string" },
+                },
+              },
+            },
+            required: ["chunkIndex", "text"],
+          },
+        },
+      },
+      required: ["documentId", "contentChecksum", "chunks"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.upsertChunks, {
+        documentId: args.documentId,
+        contentChecksum: args.contentChecksum,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        chunks: args.chunks ?? [],
+      });
+      return asText(result);
     },
   },
 
