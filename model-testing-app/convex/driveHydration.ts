@@ -13,10 +13,13 @@ import {
   type MirrorFolder,
 } from "./driveSync";
 
-// Google Drive hydration — the extraction pipeline (phase 3).
+// Google Drive hydration — the extraction pipeline (phase 3, reshaped by
+// phase 4a's import-gated model).
 //
 // The phase-2 mirror (driveSync.ts) stamps settled/dirty bookkeeping onto
-// driveFiles; THIS module turns settled rows into `documents` rows:
+// IMPORTED driveFiles rows (documentId set — see driveSync.importDriveFiles);
+// THIS module fills those files' import-created `documents` rows with
+// extracted content:
 //
 //   hydrateSettled (cron, every 5 min)
 //     1. RECLAIM: "processing" rows stuck > 30 min → back to "settling"
@@ -64,6 +67,7 @@ function parseAttempts(extractionError: string | undefined): number {
 type HydrationSelection = {
   candidateIds: Id<"driveFiles">[];
   upToDateIds: Id<"driveFiles">[];
+  unimportedIds: Id<"driveFiles">[];
 };
 
 // Pick this tick's work. Returns ids only — the action re-reads each row
@@ -74,6 +78,7 @@ export const selectCandidatesInternal = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, args): Promise<HydrationSelection> => {
     const upToDateIds: Id<"driveFiles">[] = [];
+    const unimportedIds: Id<"driveFiles">[] = [];
     const eligible: Doc<"driveFiles">[] = [];
 
     const settling = await ctx.db
@@ -85,6 +90,13 @@ export const selectCandidatesInternal = internalQuery({
     for (const f of settling) {
       if (f.trashed === true) continue;
       if (!f.md5Checksum) continue; // Google-native / checksum-less — nothing fetchable
+      if (!f.documentId) {
+        // Never imported — must not extract (documentId IS the imported
+        // flag). Legacy rows queued under the old mapping-queues-extraction
+        // model are normalized back to "none".
+        unimportedIds.push(f._id);
+        continue;
+      }
       if (f.md5Checksum === f.extractedChecksum) {
         // Edited then reverted (or drift race resolved itself): the current
         // bytes are already extracted. Normalize to "complete" so the row
@@ -107,6 +119,10 @@ export const selectCandidatesInternal = internalQuery({
     for (const f of errored) {
       if (f.trashed === true) continue;
       if (!f.md5Checksum) continue;
+      if (!f.documentId) {
+        unimportedIds.push(f._id); // legacy pre-import error row — normalize
+        continue;
+      }
       if (f.md5Checksum === f.extractedChecksum) continue; // nothing new to extract
       if (parseAttempts(f.extractionError) >= MAX_ATTEMPTS) continue; // budget spent
       // markExtractionError always sets settleAfter = failure + 30 min; a
@@ -124,6 +140,7 @@ export const selectCandidatesInternal = internalQuery({
     return {
       candidateIds: eligible.slice(0, MAX_FILES_PER_TICK).map((f) => f._id),
       upToDateIds,
+      unimportedIds,
     };
   },
 });
@@ -142,8 +159,9 @@ export const getFileInternal = internalQuery({
 // than 30 min means the hydration action died mid-flight (after the byte
 // fetch, before applyExtraction/markExtractionError landed). Put it back
 // in "settling" — its settleAfter/firstDirtyAt were never cleared, so the
-// selector picks it up again immediately. No documents row was created
-// (creation only happens inside applyExtraction), so no duplicate results.
+// selector picks it up again immediately. The documents row already exists
+// (created at import) and applyExtraction only ever patches it in place,
+// so a re-run can't duplicate anything.
 export const reclaimStaleProcessing = internalMutation({
   args: { now: v.number() },
   handler: async (ctx, args): Promise<number> => {
@@ -188,18 +206,20 @@ export const markUpToDateInternal = internalMutation({
   },
 });
 
-// File's effective scope lost its client mapping since it was queued
-// (folder unmapped / moved) — nothing to hydrate into.
+// Rows that must not extract (never imported — no documents row) are
+// normalized back to "none". Import re-queues them explicitly.
 export const resetToNoneInternal = internalMutation({
-  args: { fileId: v.id("driveFiles") },
+  args: { fileIds: v.array(v.id("driveFiles")) },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.fileId, {
-      extractionStatus: "none",
-      settleAfter: undefined,
-      firstDirtyAt: undefined,
-      processingStartedAt: undefined,
-      extractionError: undefined,
-    });
+    for (const fileId of args.fileIds) {
+      await ctx.db.patch(fileId, {
+        extractionStatus: "none",
+        settleAfter: undefined,
+        firstDirtyAt: undefined,
+        processingStartedAt: undefined,
+        extractionError: undefined,
+      });
+    }
   },
 });
 
@@ -240,23 +260,33 @@ export const markExtractionErrorInternal = internalMutation({
 
 // ── applyExtraction — persist a mapped v4 result ─────────────────
 //
-// One transaction: document row (create or in-place re-extract), the
-// create-only side effects (knowledge bank entry, meeting extraction job,
-// context-cache invalidation), the ingestionEvents feed row, and the
+// One transaction: patch the (import-created) documents row with the
+// analysis fields, the first-extraction side effects (placement into the
+// client folder taxonomy, knowledge bank entry, meeting extraction job),
+// context-cache invalidation, the ingestionEvents feed row, and the
 // driveFiles bookkeeping patch.
+//
+// The documents row ALWAYS exists before extraction (metadata-first, created
+// by importDriveFiles/importDriveFolder) — this mutation never creates one.
+// A missing documentId means the invariant broke (extraction ran for an
+// unimported file): the driveFiles row is put into "error" with a spent
+// attempt budget instead.
 export const applyExtraction = internalMutation({
   args: {
     driveFileId: v.string(),
     checksumAtFetch: v.string(),
     storageId: v.id("_storage"),
-    clientId: v.id("clients"),
+    // Effective folder-scope client at hydration time. The documents row's
+    // own clientId (stamped at import) takes precedence — an operator's
+    // reassignment or a later unmapping must not re-home the document.
+    clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
     mapped: v.any(), // /api/drive/ingest's mapped single-doc result
   },
   handler: async (
     ctx,
     args,
-  ): Promise<{ documentId: Id<"documents">; created: boolean }> => {
+  ): Promise<{ documentId: Id<"documents"> | null; applied: boolean }> => {
     const row = await ctx.db
       .query("driveFiles")
       .withIndex("by_drive_id", (q) => q.eq("driveFileId", args.driveFileId))
@@ -266,6 +296,20 @@ export const applyExtraction = internalMutation({
     }
 
     const now = new Date().toISOString();
+
+    // Invariant: extraction only ever runs for imported files. If the
+    // documents row is missing (never imported, or hard-deleted), error the
+    // driveFiles row with the attempt budget spent — retrying can't help.
+    const existingDoc = row.documentId ? await ctx.db.get(row.documentId) : null;
+    if (!existingDoc) {
+      await ctx.db.patch(row._id, {
+        extractionStatus: "error",
+        extractionError: `attempt=${MAX_ATTEMPTS}|invariant violation: extraction ran for a file with no documents row (${row.documentId ? "documentId dangling" : "not imported"})`,
+        processingStartedAt: undefined,
+      });
+      return { documentId: null, applied: false };
+    }
+    const documentId: Id<"documents"> = existingDoc._id;
     const m = args.mapped ?? {};
     // Convex rejects null on optional fields; the route serializes absent
     // values as null — coerce everything to undefined.
@@ -294,40 +338,73 @@ export const applyExtraction = internalMutation({
           : undefined,
     };
 
-    let documentId: Id<"documents"> | undefined = row.documentId;
-    let created = false;
+    // First extraction = the metadata-first row has never had content
+    // applied. Distinguished by contentChecksum (only ever stamped here) so
+    // the first-extraction side effects survive a crash-and-reclaim replay.
+    const firstExtraction = existingDoc.contentChecksum === undefined;
 
-    const existingDoc = documentId ? await ctx.db.get(documentId) : null;
-    if (documentId && existingDoc) {
-      // ── RE-EXTRACTION: patch the SAME documents row in place. Drive
-      // revisions are the upstream history — no version-chain rows, and no
-      // duplicate knowledgeBankEntries row (the original one still points
-      // at this documentId).
-      await ctx.db.patch(documentId, {
-        ...analysisFields,
-        fileStorageId: args.storageId,
-        fileSize: row.size ?? existingDoc.fileSize,
-        contentChecksum: args.checksumAtFetch,
-        savedAt: now,
-      });
-      await ctx.db.insert("ingestionEvents", {
-        documentId,
-        driveFileId: args.driveFileId,
-        source: "drive",
-        checksum: args.checksumAtFetch,
-        kind: "reextracted",
-        at: now,
-      });
-    } else {
-      // ── CREATE: lean internal counterpart of documents.create (which is
-      // Clerk-coupled and does an O(n) scan to invent a code). We reuse the
-      // mapped documentCode as-is; the collision probe below is a full
-      // filter scan (documents has no by_documentCode index) but runs once
-      // per newly ingested file, matching documents.create's own cost.
-      created = true;
-      const client = await ctx.db.get(args.clientId);
+    // Ownership: the documents row's clientId (stamped at import, possibly
+    // operator-reassigned since) wins over the hydration-time folder scope.
+    const effectiveClientId: Id<"clients"> | undefined =
+      existingDoc.clientId ?? args.clientId;
+    const effectiveProjectId: Id<"projects"> | undefined =
+      existingDoc.projectId ?? args.projectId;
 
-      let documentCode: string | undefined =
+    // ── PLACEMENT: on FIRST successful extraction only (folderId not yet
+    // set), resolve the v4 placement (mapped.targetFolder — a folder key)
+    // against the client's real folder taxonomy and stamp folderId/
+    // folderType. Same resolution order as bulkUpload.fileItem's
+    // client-scope path: exact key → "miscellaneous" → any client folder.
+    // Once folderId is set it is APP-OWNED: operators move documents freely
+    // and re-extraction must never touch it (this block is skipped).
+    let placementPatch: { folderId: string; folderType: "client" } | undefined;
+    if (!existingDoc.folderId && effectiveClientId) {
+      const targetFolder: string | undefined =
+        typeof m.targetFolder === "string" && m.targetFolder
+          ? m.targetFolder
+          : undefined;
+      const matchExact = targetFolder
+        ? await ctx.db
+            .query("clientFolders")
+            .withIndex("by_client_type", (q: any) =>
+              q.eq("clientId", effectiveClientId).eq("folderType", targetFolder),
+            )
+            .first()
+        : null;
+      let resolvedKey: string | undefined = matchExact
+        ? targetFolder
+        : undefined;
+      if (!resolvedKey) {
+        const misc = await ctx.db
+          .query("clientFolders")
+          .withIndex("by_client_type", (q: any) =>
+            q.eq("clientId", effectiveClientId).eq("folderType", "miscellaneous"),
+          )
+          .first();
+        const anyFolder = misc
+          ? null
+          : await ctx.db
+              .query("clientFolders")
+              .withIndex("by_client", (q: any) =>
+                q.eq("clientId", effectiveClientId),
+              )
+              .first();
+        resolvedKey = (misc ?? anyFolder)?.folderType;
+      }
+      // A client with no folders at all leaves the doc unfiled — the next
+      // (re-)extraction retries placement because folderId is still unset.
+      if (resolvedKey) {
+        placementPatch = { folderId: resolvedKey, folderType: "client" };
+      }
+    }
+
+    // Document code — stamped once, on first extraction (the metadata-first
+    // row has none). Collision probe is a full filter scan (documents has no
+    // by_documentCode index) but runs once per imported file, matching
+    // documents.create's own cost.
+    let documentCode: string | undefined;
+    if (firstExtraction && !existingDoc.documentCode) {
+      documentCode =
         typeof m.documentCode === "string" && m.documentCode
           ? m.documentCode
           : undefined;
@@ -338,27 +415,33 @@ export const applyExtraction = internalMutation({
           .first();
         if (collision) documentCode = `${documentCode}-1`;
       }
+    }
 
-      documentId = await ctx.db.insert("documents", {
-        fileStorageId: args.storageId,
-        fileName: row.name,
-        fileSize: row.size ?? 0,
-        fileType: row.mimeType,
-        uploadedAt: now,
-        ...analysisFields,
-        clientId: args.clientId,
-        clientName: client?.name,
-        projectId: args.projectId,
-        documentCode,
-        scope: "client",
-        status: "completed",
-        savedAt: now,
-        source: "drive",
-        driveFileId: args.driveFileId,
-        driveWebViewLink: row.webViewLink,
-        contentChecksum: args.checksumAtFetch,
-      });
+    // ── PATCH the import-created row in place (first extraction and every
+    // re-extraction alike). Drive revisions are the upstream history — no
+    // version-chain rows. folderId/folderType only via placementPatch (first
+    // extraction); clientId/projectId are never touched here.
+    await ctx.db.patch(documentId, {
+      ...analysisFields,
+      fileStorageId: args.storageId,
+      fileSize: row.size ?? existingDoc.fileSize,
+      contentChecksum: args.checksumAtFetch,
+      status: "completed" as const,
+      savedAt: now,
+      ...(documentCode ? { documentCode } : {}),
+      ...(placementPatch ?? {}),
+    });
+    await ctx.db.insert("ingestionEvents", {
+      documentId,
+      driveFileId: args.driveFileId,
+      source: "drive",
+      checksum: args.checksumAtFetch,
+      kind: firstExtraction ? "created" : "reextracted",
+      at: now,
+    });
 
+    if (firstExtraction && effectiveClientId) {
+      // ── First-extraction side effects (previously the create branch).
       // Knowledge bank entry — replicated minimally from documents.create
       // (convex/documents.ts, "Automatically create knowledge bank entry"
       // block) so Drive-ingested documents get side-effect parity. Kept in
@@ -413,11 +496,11 @@ export const applyExtraction = internalMutation({
         }
 
         const tags: string[] = [category, fileTypeDetected];
-        if (args.projectId) tags.push("project-related");
+        if (effectiveProjectId) tags.push("project-related");
 
         await ctx.db.insert("knowledgeBankEntries", {
-          clientId: args.clientId,
-          projectId: args.projectId,
+          clientId: effectiveClientId,
+          projectId: effectiveProjectId,
           sourceType: "document",
           sourceId: documentId,
           entryType,
@@ -434,9 +517,9 @@ export const applyExtraction = internalMutation({
         console.error("[driveHydration] knowledge bank entry failed:", error);
       }
 
-      // Meeting extraction job — same heuristics as documents.create. A
-      // freshly inserted documentId can't already have a job, so the
-      // existing-job probe there is skipped here.
+      // Meeting extraction job — same heuristics as documents.create. Runs
+      // only on FIRST extraction, so this documentId can't already have a
+      // job; the existing-job probe there is skipped here.
       const meetingTypes = ["Meeting Minutes", "Meeting Notes", "Minutes"];
       const fileTypeLower = fileTypeDetected.toLowerCase();
       const fileNameLower = row.name.toLowerCase();
@@ -448,8 +531,8 @@ export const applyExtraction = internalMutation({
         try {
           await ctx.db.insert("meetingExtractionJobs", {
             documentId,
-            clientId: args.clientId,
-            projectId: args.projectId,
+            clientId: effectiveClientId,
+            projectId: effectiveProjectId,
             fileStorageId: args.storageId,
             documentName: row.name,
             status: "pending",
@@ -462,31 +545,23 @@ export const applyExtraction = internalMutation({
           console.error("[driveHydration] meeting extraction job failed:", error);
         }
       }
-
-      await ctx.db.insert("ingestionEvents", {
-        documentId,
-        driveFileId: args.driveFileId,
-        source: "drive",
-        checksum: args.checksumAtFetch,
-        kind: "created",
-        at: now,
-      });
     }
 
-    // Context cache invalidation on create AND re-extract — the cached
-    // client/project context embeds document summaries, and both paths
-    // change them. (documents.create only ever creates, so its
-    // invalidation is create-time by construction.)
-    // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
-    await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
-      contextType: "client",
-      contextId: args.clientId,
-    });
-    if (args.projectId) {
+    // Context cache invalidation on first extraction AND re-extract — the
+    // cached client/project context embeds document summaries, and both
+    // paths change them.
+    if (effectiveClientId) {
+      // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+      await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
+        contextType: "client",
+        contextId: effectiveClientId,
+      });
+    }
+    if (effectiveProjectId) {
       // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
       await ctx.scheduler.runAfter(0, api.contextCache.invalidate, {
         contextType: "project",
-        contextId: args.projectId,
+        contextId: effectiveProjectId,
       });
     }
 
@@ -517,7 +592,7 @@ export const applyExtraction = internalMutation({
           }),
     });
 
-    return { documentId, created };
+    return { documentId, applied: true };
   },
 });
 
@@ -550,6 +625,14 @@ export const hydrateSettled = internalAction({
     if (selection.upToDateIds.length > 0) {
       await ctx.runMutation(internal.driveHydration.markUpToDateInternal, {
         fileIds: selection.upToDateIds,
+      });
+    }
+    if (selection.unimportedIds.length > 0) {
+      // Settling/error rows without a documents row (never imported —
+      // legacy queueing) must not extract; normalize back to "none".
+      // Capped per tick — a big legacy backlog self-drains over ticks.
+      await ctx.runMutation(internal.driveHydration.resetToNoneInternal, {
+        fileIds: selection.unimportedIds.slice(0, 200),
       });
     }
     if (selection.candidateIds.length === 0) {
@@ -601,6 +684,15 @@ export const hydrateSettled = internalAction({
         skipped++;
         continue;
       }
+      if (!file.documentId) {
+        // Not imported — extraction is import-gated (documentId IS the
+        // imported flag). Normalize a stray queued row back to "none".
+        await ctx.runMutation(internal.driveHydration.resetToNoneInternal, {
+          fileIds: [fileId],
+        });
+        skipped++;
+        continue;
+      }
       // Only hydrate rows still in a claimable state. A slow tick can be
       // overlapped by the next cron fire (no lease here — the byte fetch +
       // extraction round-trip is minutes-long by design); a row another
@@ -625,19 +717,14 @@ export const hydrateSettled = internalAction({
       }
 
       try {
-        // a. Effective scope — nearest ancestor folder with a clientId. If
-        // the mapping vanished since the row was queued, there is nothing
-        // to file into: reset to "none".
+        // a. Effective scope — nearest ancestor folder with a clientId.
+        // Advisory only under the import-gated model: the documents row's
+        // own clientId (stamped at import) wins inside applyExtraction, so
+        // an unmapped-since-import folder does NOT stop an imported file
+        // from syncing.
         const scope = file.parentFolderId
           ? resolveFolderScope(file.parentFolderId, foldersById, rootFolderId)
           : { inScope: false, clientId: null, mappedFolderId: null };
-        if (!scope.clientId) {
-          await ctx.runMutation(internal.driveHydration.resetToNoneInternal, {
-            fileId,
-          });
-          skipped++;
-          continue;
-        }
 
         // b. Token — re-read per file (a refresh earlier in the tick
         // persisted a new accessToken). A refresh failure flags reconnect
@@ -735,7 +822,7 @@ export const hydrateSettled = internalAction({
           driveFileId: file.driveFileId,
           checksumAtFetch,
           storageId,
-          clientId: scope.clientId as Id<"clients">,
+          clientId: (scope.clientId ?? undefined) as Id<"clients"> | undefined,
           mapped: payload.mapped,
         });
         processed++;

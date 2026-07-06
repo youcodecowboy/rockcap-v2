@@ -157,6 +157,11 @@ export async function POST(request: NextRequest) {
           (result.metadata?.totalInputTokens || 0) +
           (result.metadata?.totalOutputTokens || 0),
         documentCode: doc.itemAnalysis.generatedDocumentCode,
+        // v4 placement output — the folder KEY the pipeline suggests.
+        // driveHydration.applyExtraction resolves it against the client's
+        // real folder taxonomy on FIRST extraction only (folderId is
+        // app-owned once set).
+        targetFolder: doc.itemAnalysis.targetFolder ?? null,
         extractedData: doc.itemAnalysis.extractedData ?? null,
         extractedIntelligence:
           intelligenceFields.length > 0 ? { fields: intelligenceFields } : null,

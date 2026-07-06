@@ -1,11 +1,14 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import {
   query,
+  mutation,
   internalAction,
   internalMutation,
   internalQuery,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Doc, Id } from "./_generated/dataModel";
 import { refreshAccessToken } from "./driveTokens";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 
@@ -253,16 +256,51 @@ export const patchFolderPathsInternal = internalMutation({
   },
 });
 
+// Drive-trash ↔ documents soft-delete propagation (single helper — every
+// path that flips a mirror row's trashed state on an IMPORTED file routes
+// through here). Trashing in Drive soft-deletes the library row; the file
+// re-appearing un-deletes it — but ONLY when the soft-delete was ours
+// (deletedReason "trashed_in_drive"). An operator's own delete is never
+// resurrected by Drive activity.
+export const DRIVE_TRASH_REASON = "trashed_in_drive";
+async function propagateDriveTrashToDocument(
+  ctx: any,
+  doc: Doc<"documents"> | null,
+  trashed: boolean,
+) {
+  if (!doc) return;
+  if (trashed) {
+    if (doc.isDeleted !== true) {
+      await ctx.db.patch(doc._id, {
+        isDeleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedReason: DRIVE_TRASH_REASON,
+      });
+    }
+  } else if (doc.isDeleted === true && doc.deletedReason === DRIVE_TRASH_REASON) {
+    await ctx.db.patch(doc._id, {
+      isDeleted: undefined,
+      deletedAt: undefined,
+      deletedBy: undefined,
+      deletedReason: undefined,
+    });
+  }
+}
+
 // Upsert file metadata by driveFileId, stamping extraction bookkeeping:
-//  - queueSettling=true (changes poll / reconcile diff): a new-or-changed
-//    checksum on a file whose effective scope is mapped (hydrate) enters
-//    "settling" — settleAfter pushed forward on EVERY change (debounce),
-//    firstDirtyAt preserved from the first dirty moment (starvation guard).
-//    An "error" row that changes again resets to settling with the error
-//    cleared.
-//  - queueSettling=false (initial backfill): new rows land as "none";
-//    existing rows get metadata-only updates (a reseed must never downgrade
-//    or mass-queue extraction state).
+//  - queueSettling=true (changes poll / reconcile diff): a changed checksum
+//    on an IMPORTED file (documentId set — import is the only gate; see
+//    importDriveFiles) enters "settling" — settleAfter pushed forward on
+//    EVERY change (debounce), firstDirtyAt preserved from the first dirty
+//    moment (starvation guard). An "error" row that changes again resets to
+//    settling with the error cleared.
+//  - queueSettling=false (initial backfill): existing rows get metadata-only
+//    updates (a reseed must never downgrade or mass-queue extraction state).
+//  - New rows ALWAYS land as "none" — a file can never be born settling;
+//    extraction is queued only for imported files.
+//  - Imported files additionally get their documents row's surfaced metadata
+//    (fileName / fileSize / driveWebViewLink) patched live, so the library
+//    reflects Drive renames within a poll tick, ahead of any re-extraction.
 export const upsertFilesInternal = internalMutation({
   args: {
     files: v.array(
@@ -276,7 +314,6 @@ export const upsertFilesInternal = internalMutation({
         md5Checksum: v.optional(v.string()),
         headRevisionId: v.optional(v.string()),
         webViewLink: v.optional(v.string()),
-        hydrate: v.boolean(), // effective scope has a clientId
       }),
     ),
     queueSettling: v.boolean(),
@@ -302,14 +339,10 @@ export const upsertFilesInternal = internalMutation({
         .withIndex("by_drive_id", (q) => q.eq("driveFileId", f.driveFileId))
         .first();
       if (!existing) {
-        const dirty =
-          args.queueSettling && f.hydrate && f.md5Checksum !== undefined;
         await ctx.db.insert("driveFiles", {
           driveFileId: f.driveFileId,
           ...meta,
-          extractionStatus: dirty ? "settling" : "none",
-          settleAfter: dirty ? now + SETTLE_MS : undefined,
-          firstDirtyAt: dirty ? now : undefined,
+          extractionStatus: "none",
         });
         continue;
       }
@@ -317,7 +350,7 @@ export const upsertFilesInternal = internalMutation({
       const dirty =
         args.queueSettling &&
         checksumChanged &&
-        f.hydrate &&
+        existing.documentId !== undefined && // imported files only
         f.md5Checksum !== undefined;
       if (dirty) {
         await ctx.db.patch(existing._id, {
@@ -330,6 +363,28 @@ export const upsertFilesInternal = internalMutation({
       } else {
         await ctx.db.patch(existing._id, meta);
       }
+
+      // Live library metadata + un-trash self-healing for imported files.
+      if (existing.documentId) {
+        const doc = await ctx.db.get(existing.documentId);
+        if (doc) {
+          const docPatch: Record<string, unknown> = {};
+          if (doc.fileName !== f.name) docPatch.fileName = f.name;
+          if (f.webViewLink !== undefined && doc.driveWebViewLink !== f.webViewLink) {
+            docPatch.driveWebViewLink = f.webViewLink;
+          }
+          if (f.size !== undefined && doc.fileSize !== f.size) {
+            docPatch.fileSize = f.size;
+          }
+          if (Object.keys(docPatch).length > 0) {
+            await ctx.db.patch(doc._id, docPatch);
+          }
+          if (existing.trashed === true) {
+            // The walk/poll sees the file again after a trash — un-delete.
+            await propagateDriveTrashToDocument(ctx, doc, false);
+          }
+        }
+      }
     }
   },
 });
@@ -337,6 +392,7 @@ export const upsertFilesInternal = internalMutation({
 // Mark mirror rows trashed by Drive id (folder or file — checks both
 // tables; no-ops on ids we never mirrored). Used for removed/trashed
 // changes and for items that moved out of scope (left the corpus).
+// Imported files propagate the trash to their documents row (soft delete).
 export const markTrashedInternal = internalMutation({
   args: { driveIds: v.array(v.string()), syncedAt: v.string() },
   handler: async (ctx, args) => {
@@ -354,6 +410,13 @@ export const markTrashedInternal = internalMutation({
         .first();
       if (file && file.trashed !== true) {
         await ctx.db.patch(file._id, { trashed: true, lastSyncedAt: args.syncedAt });
+        if (file.documentId) {
+          await propagateDriveTrashToDocument(
+            ctx,
+            await ctx.db.get(file.documentId),
+            true,
+          );
+        }
       }
     }
   },
@@ -379,6 +442,13 @@ export const markUnseenTrashedInternal = internalMutation({
     for (const f of files) {
       if (f.trashed !== true && f.lastSyncedAt < args.walkStart) {
         await ctx.db.patch(f._id, { trashed: true, lastSyncedAt: args.walkStart });
+        if (f.documentId) {
+          await propagateDriveTrashToDocument(
+            ctx,
+            await ctx.db.get(f.documentId),
+            true,
+          );
+        }
         if (++patched >= cap) return { done: false, patched };
       }
     }
@@ -654,9 +724,9 @@ export const pollChanges = internalAction({
             }
           }
         } else {
-          // File upsert. Hydrate iff the nearest ancestor with clientId
-          // exists in the (now fully resolved) folder map.
-          const scope = resolveFolderScope(parentId!, foldersById, rootFolderId);
+          // File upsert. Whether a changed checksum queues extraction is
+          // decided inside upsertFilesInternal: imported files only
+          // (driveFiles.documentId set) — folder mappings alone never queue.
           batch.files.push({
             driveFileId: fileId,
             name: file.name,
@@ -667,7 +737,6 @@ export const pollChanges = internalAction({
             md5Checksum: file.md5Checksum,
             headRevisionId: file.headRevisionId,
             webViewLink: file.webViewLink,
-            hydrate: scope.clientId != null,
           });
         }
       }
@@ -712,12 +781,12 @@ export const pollChanges = internalAction({
 //  - mode "backfill": seeds/reseeds the mirror. FIRST fetches a fresh
 //    changes startPageToken and stashes it, so changes landing during the
 //    walk are replayed by the poller afterwards (upserts are idempotent).
-//    New files land as extractionStatus "none" — initial hydration of mapped
-//    folders is triggered later (mapping, phase 4/5, or the operator); do
-//    NOT mass-queue settling during backfill. Existing rows get
-//    metadata-only updates (extraction state preserved).
-//  - mode "reconcile": same walk as a diff. Changed checksums in mapped
-//    scopes follow the normal settling rules; unseen rows are trashed in
+//    New files land as extractionStatus "none" — extraction is queued only
+//    by an explicit import (importDriveFiles/importDriveFolder); do NOT
+//    mass-queue settling during backfill. Existing rows get metadata-only
+//    updates (extraction state preserved).
+//  - mode "reconcile": same walk as a diff. Changed checksums on IMPORTED
+//    files follow the normal settling rules; unseen rows are trashed in
 //    finalize.
 
 export const backfillWalk = internalAction({
@@ -803,7 +872,7 @@ export const backfillWalk = internalAction({
       });
     }
 
-    // Folder map: paths for children + (reconcile) hydrate resolution. Every
+    // Folder map: paths for children. Every
     // queued folder was upserted by a previous invocation (or the root init
     // above), so its path is always resolvable.
     const folderRows: MirrorFolder[] = await ctx.runQuery(
@@ -866,9 +935,6 @@ export const backfillWalk = internalAction({
             });
             rest.push(f.id); // enqueue subfolder for a later invocation
           } else {
-            const hydrate =
-              args.mode === "reconcile" &&
-              resolveFolderScope(folderId, foldersById, rootFolderId).clientId != null;
             fileUpserts.push({
               driveFileId: f.id,
               name: f.name,
@@ -879,7 +945,6 @@ export const backfillWalk = internalAction({
               md5Checksum: f.md5Checksum,
               headRevisionId: f.headRevisionId,
               webViewLink: f.webViewLink,
-              hydrate,
             });
           }
         }
@@ -1004,5 +1069,619 @@ export const getMirrorStats = query({
       trashedFiles,
       byExtractionStatus,
     };
+  },
+});
+
+// ── UI-facing browser queries/mutations (phase 4) ────────────────
+//
+// The docs-area Drive browser drives these. All folder rows fit comfortably
+// in memory (the mirror is a disposable cache of one org drive), so each
+// query does ONE .collect() on driveFolders and answers scope/path/breadcrumb
+// questions over an in-memory Map — the same posture the sync engine uses.
+
+// Clerk-authenticated user resolver for the public MUTATION (writes must be
+// attributable; a missing identity is an error, not an empty render). Public
+// QUERIES below use getAuthenticatedUserOrNull and render empty instead.
+async function requireUser(ctx: any) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .first();
+  if (!user) throw new Error("User not found");
+  return user;
+}
+
+// Nearest ancestor clientId (including the folder itself), walking the map.
+// Returns the mapped clientId + whether THIS folder carries the mapping.
+function effectiveClientOf(
+  folderId: string,
+  foldersById: Map<string, MirrorFolder>,
+): { clientId: string | null; isExplicit: boolean } {
+  const self = foldersById.get(folderId);
+  const isExplicit = !!self?.clientId;
+  let current: string | undefined = folderId;
+  for (let depth = 0; depth < 64 && current; depth++) {
+    const row = foldersById.get(current);
+    if (row?.clientId) return { clientId: row.clientId, isExplicit };
+    if (!row) break;
+    current = row.parentFolderId;
+  }
+  return { clientId: null, isExplicit };
+}
+
+// 1. Children of a folder (undefined ⇒ the token's root folder), plus the
+//    root→here breadcrumb. Each folder row is enriched with its effective
+//    client mapping (own clientId, else inherited via ancestor walk).
+export const listFolderChildren = query({
+  args: { parentFolderId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return { folders: [], breadcrumb: [], notConnected: true as const };
+
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) {
+      return { folders: [], breadcrumb: [], notConnected: true as const };
+    }
+    const parentId = args.parentFolderId ?? token.rootFolderId;
+
+    const rows = await ctx.db.query("driveFolders").collect();
+    const foldersById = new Map<string, MirrorFolder>(
+      rows.map((r) => [
+        r.driveFolderId,
+        {
+          driveFolderId: r.driveFolderId,
+          name: r.name,
+          parentFolderId: r.parentFolderId,
+          path: r.path,
+          clientId: r.clientId as string | undefined,
+          trashed: r.trashed,
+        },
+      ]),
+    );
+
+    const children = rows
+      .filter((r) => r.parentFolderId === parentId && r.trashed !== true)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Resolve client display names for the effective mappings on this page.
+    const enriched = children.map((r) => {
+      const eff = effectiveClientOf(r.driveFolderId, foldersById);
+      return {
+        driveFolderId: r.driveFolderId,
+        name: r.name,
+        path: r.path,
+        effectiveClientId: eff.clientId,
+        isExplicitMapping: eff.isExplicit,
+        effectiveClientName: null as string | null,
+      };
+    });
+    const clientIds = Array.from(
+      new Set(enriched.map((e) => e.effectiveClientId).filter(Boolean) as string[]),
+    );
+    const nameById = new Map<string, string>();
+    await Promise.all(
+      clientIds.map(async (id) => {
+        const c = await ctx.db.get(id as Id<"clients">);
+        if (c) nameById.set(id, (c as any).name ?? (c as any).companyName ?? "Client");
+      }),
+    );
+    for (const e of enriched) {
+      if (e.effectiveClientId) {
+        e.effectiveClientName = nameById.get(e.effectiveClientId) ?? null;
+      }
+    }
+
+    // Breadcrumb: root → … → parentId (walk up the map, then reverse).
+    const breadcrumb: Array<{ driveFolderId: string; name: string }> = [];
+    let cur: string | undefined = parentId;
+    for (let depth = 0; depth < 64 && cur; depth++) {
+      const row = foldersById.get(cur);
+      if (!row) break;
+      breadcrumb.unshift({ driveFolderId: row.driveFolderId, name: row.name });
+      if (cur === token.rootFolderId) break;
+      cur = row.parentFolderId;
+    }
+
+    return { folders: enriched, breadcrumb, notConnected: false as const };
+  },
+});
+
+// 2. Files under a folder, paginated by_parent. Trashed rows are filtered out.
+//    NOTE: driveFiles has no per-parent modifiedTime index, so this returns
+//    rows in index (insertion) order; the browser sorts each loaded page by
+//    modifiedTime desc client-side. Shape mirrors replyEvents.listInboundPaginated.
+export const listFilesPaginated = query({
+  args: { parentFolderId: v.string(), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return { page: [], isDone: true, continueCursor: "" };
+
+    const result = await ctx.db
+      .query("driveFiles")
+      .withIndex("by_parent", (q) => q.eq("parentFolderId", args.parentFolderId))
+      .filter((q) => q.neq(q.field("trashed"), true))
+      .paginate(args.paginationOpts);
+
+    const page = result.page.map((f) => ({
+      _id: f._id,
+      driveFileId: f.driveFileId,
+      name: f.name,
+      mimeType: f.mimeType,
+      size: f.size,
+      modifiedTime: f.modifiedTime,
+      webViewLink: f.webViewLink,
+      extractionStatus: f.extractionStatus,
+      extractionError: f.extractionError,
+      documentId: f.documentId,
+    }));
+    return { ...result, page };
+  },
+});
+
+// 3. Map (or clear) a folder's client mapping. Mapping ONLY establishes
+//    scope/ownership for later imports — it creates no documents rows and
+//    queues no extraction (import is the purposeful act; see
+//    importDriveFiles/importDriveFolder below). An unmapped 10,000-file
+//    historical folder therefore costs nothing, forever.
+export const mapFolderToClient = mutation({
+  args: {
+    driveFolderId: v.string(),
+    clientId: v.optional(v.id("clients")),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+
+    const folder = await ctx.db
+      .query("driveFolders")
+      .withIndex("by_drive_id", (q) => q.eq("driveFolderId", args.driveFolderId))
+      .first();
+    if (!folder) throw new Error("Folder not found in the Drive mirror");
+
+    // patch with undefined clears the field (Convex removes it).
+    await ctx.db.patch(folder._id, { clientId: args.clientId });
+
+    return { ok: true, cleared: args.clientId === undefined };
+  },
+});
+
+// ── Import — the purposeful act that puts Drive files in the library ──
+//
+// Importing creates a METADATA-FIRST documents row per file immediately
+// (fileName/size/link visible in the library at once; classification fields
+// are placeholders) and flips the live link on: from now on the poller
+// queues this file for (re-)extraction whenever its content changes —
+// driveFiles.documentId presence IS the imported flag. First successful
+// extraction fills in the analysis fields and auto-files the document into
+// the client's folder taxonomy (driveHydration.applyExtraction); after that
+// folderId is app-owned and re-extraction never touches it.
+
+const STAGGER_MS = 90_000; // settleAfter spacing across an import batch
+const IMPORT_BATCH_CAP = 200; // importDriveFiles per-call cap
+// Folder imports chain through the scheduler: each slice is ~2 writes per
+// file (documents insert + driveFiles patch), so 75 files stays under the
+// ~150-writes-per-mutation posture (idiom: bulkBackgroundProcessor).
+const IMPORT_SLICE = 75;
+
+// Load the whole driveFolders table into the in-memory map every walk-style
+// query/mutation uses (the folder table is small by construction).
+async function loadFolderMap(ctx: any): Promise<Map<string, MirrorFolder>> {
+  const rows = await ctx.db.query("driveFolders").collect();
+  return new Map<string, MirrorFolder>(
+    rows.map((r: any) => [
+      r.driveFolderId,
+      {
+        driveFolderId: r.driveFolderId,
+        name: r.name,
+        parentFolderId: r.parentFolderId,
+        path: r.path,
+        clientId: r.clientId as string | undefined,
+        trashed: r.trashed,
+      },
+    ]),
+  );
+}
+
+// Full descendant-folder set of a Drive folder (the folder itself included),
+// skipping trashed folders. Unlike scope resolution this does NOT stop at
+// clientId overrides — an import targets the physical subtree; each file's
+// owning client still resolves per-file via resolveFolderScope.
+function subtreeFolderIds(
+  rootId: string,
+  foldersById: Map<string, MirrorFolder>,
+): string[] {
+  const childrenByParent = new Map<string, MirrorFolder[]>();
+  for (const row of foldersById.values()) {
+    if (!row.parentFolderId || row.trashed === true) continue;
+    const list = childrenByParent.get(row.parentFolderId) ?? [];
+    list.push(row);
+    childrenByParent.set(row.parentFolderId, list);
+  }
+  const out: string[] = [rootId];
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    for (const child of childrenByParent.get(id) ?? []) {
+      out.push(child.driveFolderId);
+      stack.push(child.driveFolderId);
+    }
+  }
+  return out;
+}
+
+type ImportSkip = { driveFileId: string; reason: string };
+
+// Shared import core (importDriveFiles + importDriveFolder + continuation).
+// Per mirror row: validate (not trashed / not already imported / resolves to
+// a mapped client), insert the metadata-first documents row, then patch the
+// mirror row — documentId always; settling bookkeeping only when the file
+// has fetchable content (md5). Google-native files (Docs/Sheets — no md5)
+// become permanent links: documents.status "completed", never extracted in
+// v1, extractionStatus stays "none".
+// `base`+`nextIndex` stagger settleAfter in 90s steps across the WHOLE
+// import (chained slices keep counting), so a big import trickles through
+// the hydration cron instead of arriving as one thundering herd.
+async function importFileRows(
+  ctx: any,
+  rows: Doc<"driveFiles">[],
+  foldersById: Map<string, MirrorFolder>,
+  rootFolderId: string,
+  base: number,
+  startIndex: number,
+): Promise<{ imported: number; skipped: ImportSkip[]; nextIndex: number }> {
+  const nowIso = new Date().toISOString();
+  const clientNames = new Map<string, string | undefined>();
+  const skipped: ImportSkip[] = [];
+  let imported = 0;
+  let index = startIndex;
+
+  for (const row of rows) {
+    if (row.trashed === true) {
+      skipped.push({ driveFileId: row.driveFileId, reason: "trashed" });
+      continue;
+    }
+    if (row.documentId) {
+      skipped.push({ driveFileId: row.driveFileId, reason: "already_imported" });
+      continue;
+    }
+    const scope = row.parentFolderId
+      ? resolveFolderScope(row.parentFolderId, foldersById, rootFolderId)
+      : { inScope: false, clientId: null, mappedFolderId: null };
+    if (!scope.clientId) {
+      skipped.push({ driveFileId: row.driveFileId, reason: "no_client_mapping" });
+      continue;
+    }
+    const clientId = scope.clientId as Id<"clients">;
+    if (!clientNames.has(clientId)) {
+      const client: any = await ctx.db.get(clientId);
+      clientNames.set(
+        clientId,
+        client ? (client.name ?? client.companyName ?? undefined) : undefined,
+      );
+    }
+
+    const isGoogleNative = row.md5Checksum === undefined;
+    const documentId: Id<"documents"> = await ctx.db.insert("documents", {
+      fileName: row.name,
+      fileSize: row.size ?? 0,
+      fileType: row.mimeType,
+      uploadedAt: nowIso,
+      summary: isGoogleNative
+        ? "Google-native file — view in Drive"
+        : "Imported from Google Drive — content sync pending",
+      fileTypeDetected: "Unclassified",
+      category: "Unclassified",
+      reasoning:
+        "Metadata-first import from Google Drive; classification runs on first extraction.",
+      confidence: 0,
+      tokensUsed: 0,
+      clientId,
+      clientName: clientNames.get(clientId),
+      scope: "client",
+      // Google-native files are links with a Drive preview — terminal state.
+      status: isGoogleNative ? "completed" : "pending",
+      savedAt: nowIso,
+      source: "drive",
+      driveFileId: row.driveFileId,
+      driveWebViewLink: row.webViewLink,
+      // folderId/folderType deliberately unset — the doc lands "unfiled";
+      // first extraction stamps the v4 placement into the client taxonomy.
+    });
+
+    if (isGoogleNative) {
+      await ctx.db.patch(row._id, { documentId });
+    } else {
+      await ctx.db.patch(row._id, {
+        documentId,
+        extractionStatus: "settling",
+        extractionError: undefined,
+        settleAfter: base + index * STAGGER_MS,
+        firstDirtyAt: base,
+      });
+      index++;
+    }
+    imported++;
+  }
+
+  return { imported, skipped, nextIndex: index };
+}
+
+// 3a. Import explicit Drive files (operator selection / MCP tool, later
+//     phases call this). Capped at 200 per call.
+export const importDriveFiles = mutation({
+  args: { driveFileIds: v.array(v.string()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ imported: number; skipped: ImportSkip[] }> => {
+    await requireUser(ctx);
+    if (args.driveFileIds.length > IMPORT_BATCH_CAP) {
+      throw new Error(
+        `Import at most ${IMPORT_BATCH_CAP} files per call (got ${args.driveFileIds.length})`,
+      );
+    }
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) throw new Error("Google Drive is not connected");
+
+    const foldersById = await loadFolderMap(ctx);
+    const skipped: ImportSkip[] = [];
+    const rows: Doc<"driveFiles">[] = [];
+    for (const id of Array.from(new Set(args.driveFileIds))) {
+      const row = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_drive_id", (q) => q.eq("driveFileId", id))
+        .first();
+      if (!row) {
+        skipped.push({ driveFileId: id, reason: "not_found" });
+        continue;
+      }
+      rows.push(row);
+    }
+
+    const res = await importFileRows(
+      ctx,
+      rows,
+      foldersById,
+      token.rootFolderId,
+      Date.now(),
+      0,
+    );
+    return { imported: res.imported, skipped: [...skipped, ...res.skipped] };
+  },
+});
+
+// 3b. Import a whole Drive folder subtree. WITHOUT confirm this is a dry
+//     run — counts only, zero writes — which is the cost barrier both the
+//     UI and the MCP tool surface before an operator commits to a large
+//     historical folder. With confirm it imports via the shared core,
+//     chaining through the scheduler beyond the first slice.
+export const importDriveFolder = mutation({
+  args: { driveFolderId: v.string(), confirm: v.optional(v.boolean()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | { dryRun: true; fileCount: number; alreadyImported: number; folders: number }
+    | {
+        dryRun: false;
+        fileCount: number;
+        alreadyImported: number;
+        imported: number;
+        queuedForImport: number;
+        skipped: ImportSkip[];
+      }
+  > => {
+    await requireUser(ctx);
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) throw new Error("Google Drive is not connected");
+
+    const foldersById = await loadFolderMap(ctx);
+    const folder = foldersById.get(args.driveFolderId);
+    if (!folder || folder.trashed === true) {
+      throw new Error("Folder not found in the Drive mirror");
+    }
+
+    const subtree = subtreeFolderIds(args.driveFolderId, foldersById);
+    const candidates: Doc<"driveFiles">[] = [];
+    let alreadyImported = 0;
+    for (const fid of subtree) {
+      const files = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .filter((q) => q.neq(q.field("trashed"), true))
+        .collect();
+      for (const f of files) {
+        if (f.documentId) {
+          alreadyImported++;
+        } else {
+          candidates.push(f);
+        }
+      }
+    }
+
+    if (!args.confirm) {
+      return {
+        dryRun: true as const,
+        fileCount: candidates.length,
+        alreadyImported,
+        folders: subtree.length,
+      };
+    }
+
+    const base = Date.now();
+    const first = candidates.slice(0, IMPORT_SLICE);
+    const rest = candidates.slice(IMPORT_SLICE);
+    const res = await importFileRows(
+      ctx,
+      first,
+      foldersById,
+      token.rootFolderId,
+      base,
+      0,
+    );
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.driveSync.importFolderContinuation, {
+        fileIds: rest.map((f) => f._id),
+        base,
+        startIndex: res.nextIndex,
+      });
+    }
+    return {
+      dryRun: false as const,
+      fileCount: candidates.length,
+      alreadyImported,
+      imported: res.imported,
+      queuedForImport: rest.length,
+      skipped: res.skipped,
+    };
+  },
+});
+
+// Continuation for importDriveFolder beyond the first slice (same scheduler
+// chaining idiom as bulkBackgroundProcessor). Re-reads each row — a file
+// trashed or imported between slices skips safely inside importFileRows.
+export const importFolderContinuation = internalMutation({
+  args: {
+    fileIds: v.array(v.id("driveFiles")),
+    base: v.number(),
+    startIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) return;
+    const foldersById = await loadFolderMap(ctx);
+
+    const slice = args.fileIds.slice(0, IMPORT_SLICE);
+    const rest = args.fileIds.slice(IMPORT_SLICE);
+    const rows: Doc<"driveFiles">[] = [];
+    for (const id of slice) {
+      const row = await ctx.db.get(id);
+      if (row) rows.push(row);
+    }
+    const res = await importFileRows(
+      ctx,
+      rows,
+      foldersById,
+      token.rootFolderId,
+      args.base,
+      args.startIndex,
+    );
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.driveSync.importFolderContinuation, {
+        fileIds: rest,
+        base: args.base,
+        startIndex: res.nextIndex,
+      });
+    }
+  },
+});
+
+// 3c. Subtree listing for the import picker (phase 4b UI): every non-trashed
+//     file under the folder with its imported flag and display path. Capped
+//     at 500 rows; `truncated` tells the picker to fall back to
+//     import-the-whole-folder instead of per-file selection.
+export const listImportCandidates = query({
+  args: { driveFolderId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return { files: [], truncated: false };
+
+    const foldersById = await loadFolderMap(ctx);
+    if (!foldersById.has(args.driveFolderId)) return { files: [], truncated: false };
+
+    const subtree = subtreeFolderIds(args.driveFolderId, foldersById);
+    const files: Array<{
+      driveFileId: string;
+      name: string;
+      mimeType: string;
+      size: number | undefined;
+      modifiedTime: string;
+      imported: boolean;
+      path: string;
+    }> = [];
+    let truncated = false;
+
+    outer: for (const fid of subtree) {
+      const rows = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .filter((q) => q.neq(q.field("trashed"), true))
+        .collect();
+      const folderPath = foldersById.get(fid)?.path ?? "/";
+      for (const f of rows) {
+        if (files.length >= 500) {
+          truncated = true;
+          break outer;
+        }
+        files.push({
+          driveFileId: f.driveFileId,
+          name: f.name,
+          mimeType: f.mimeType,
+          size: f.size,
+          modifiedTime: f.modifiedTime,
+          imported: f.documentId !== undefined,
+          path: childPath(folderPath, f.name),
+        });
+      }
+    }
+
+    return { files, truncated };
+  },
+});
+
+// 4. Files currently in extraction error, with a computed path for display.
+export const listExtractionErrors = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
+
+    const errored = await ctx.db
+      .query("driveFiles")
+      .withIndex("by_extraction_status", (q) => q.eq("extractionStatus", "error"))
+      .collect();
+    if (errored.length === 0) return [];
+
+    const rows = await ctx.db.query("driveFolders").collect();
+    const pathById = new Map<string, string>(
+      rows.map((r) => [r.driveFolderId, r.path]),
+    );
+
+    return errored
+      .filter((f) => f.trashed !== true)
+      .map((f) => {
+        const folderPath = f.parentFolderId ? pathById.get(f.parentFolderId) : undefined;
+        const path =
+          folderPath && folderPath !== "/"
+            ? `${folderPath}/${f.name}`
+            : `/${f.name}`;
+        return {
+          driveFileId: f.driveFileId,
+          name: f.name,
+          path,
+          extractionError: f.extractionError ?? null,
+        };
+      });
+  },
+});
+
+// 5. Active, non-deleted clients for the folder-mapping picker. Explicit
+//    status filter — clients.list does NOT default-filter by status.
+export const getActiveClientsForMapping = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUserOrNull(ctx);
+    if (!user) return [];
+
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .collect();
+
+    return clients
+      .map((c) => ({ _id: c._id, name: c.name ?? c.companyName ?? "Client" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   },
 });
