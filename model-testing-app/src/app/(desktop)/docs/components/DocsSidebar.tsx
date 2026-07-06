@@ -14,6 +14,7 @@ import {
   Briefcase,
   Plus,
   ChevronRight,
+  ChevronLeft,
   Building,
   User,
 } from 'lucide-react';
@@ -70,15 +71,19 @@ export default function DocsSidebar({
   const unfiledCount = useQuery(api.documents.getUnfiledCount);
   const documentCounts = useQuery(api.documents.getClientDocumentCounts);
 
-  // Build client list with document counts
+  // Build client list with document counts. BUG FIX: api.clients.list returns
+  // ALL client rows including prospects and archived; the docs library is for
+  // live clients only. Restrict to active + past (prospects and archived out).
   const clientsWithCounts = useMemo(() => {
     if (!clients) return [];
 
     const counts = documentCounts || {};
-    return clients.map(client => ({
-      ...client,
-      documentCount: counts[client._id] || 0,
-    }));
+    return clients
+      .filter((client: any) => client.status === 'active' || client.status === 'past')
+      .map(client => ({
+        ...client,
+        documentCount: counts[client._id] || 0,
+      }));
   }, [clients, documentCounts]);
 
   // Filter clients
@@ -144,10 +149,68 @@ export default function DocsSidebar({
     transition: 'background 100ms linear, color 100ms linear',
   });
 
+  // "Apple-like cascade": once a client is selected in the client scope, the
+  // list pane collapses to a slim rail (name + expand affordance) so the
+  // folder / file panes get the room. Expanding clears the selection, which
+  // brings the full client list back.
+  const isCollapsed = activeScope === 'client' && !!selectedClientId;
+  const selectedClientName =
+    clientsWithCounts.find((c) => c._id === selectedClientId)?.name;
+
+  if (isCollapsed) {
+    return (
+      <div
+        className="flex flex-col h-full flex-shrink-0 items-center"
+        style={{
+          width: 52,
+          transition: 'width 180ms ease',
+          borderRight: `1px solid ${colors.border.default}`,
+          background: colors.bg.light,
+        }}
+      >
+        <button
+          onClick={() => onClientSelect(null)}
+          title="Back to all clients"
+          className="mt-3 flex items-center justify-center rounded-md"
+          style={{
+            width: 32,
+            height: 32,
+            color: colors.text.secondary,
+            background: 'transparent',
+            border: `1px solid ${colors.border.default}`,
+            cursor: 'pointer',
+            transition: 'background 100ms linear',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div
+          className="flex-1 min-h-0 flex items-center justify-center mt-2"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          <span
+            className="truncate text-xs font-medium"
+            style={{ color: colors.text.primary, maxHeight: '100%' }}
+            title={selectedClientName}
+          >
+            {selectedClientName}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="w-[260px] flex flex-col h-full"
-      style={{ borderRight: `1px solid ${colors.border.default}`, background: colors.bg.light }}
+      className="flex flex-col h-full flex-shrink-0"
+      style={{
+        width: 300,
+        transition: 'width 180ms ease',
+        borderRight: `1px solid ${colors.border.default}`,
+        background: colors.bg.light,
+      }}
     >
       {/* Scope Toggle */}
       <div className="px-2 py-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>

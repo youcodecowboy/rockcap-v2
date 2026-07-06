@@ -18,9 +18,11 @@ import {
   Trash2,
   ChevronRight,
   Pencil,
+  HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import FileCard from './FileCard';
+import ImportFromDriveModal from './ImportFromDriveModal';
 import DirectUploadModal from './DirectUploadModal';
 import InternalUploadModal from './InternalUploadModal';
 import LinkAsVersionModal from './LinkAsVersionModal';
@@ -90,6 +92,7 @@ export default function FileList({
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showImportDriveModal, setShowImportDriveModal] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
@@ -734,6 +737,14 @@ export default function FileList({
             </button>
           </div>
 
+          {/* Import from Drive — client scope only (Drive rows file to a client) */}
+          {scope === 'client' && clientId && clientName && (
+            <Button variant="secondary" size="sm" onClick={() => setShowImportDriveModal(true)}>
+              <HardDrive className="w-4 h-4" />
+              <span className="hidden sm:inline">Import from Drive</span>
+            </Button>
+          )}
+
           {/* Upload Button */}
           {canUpload && (
             <Button variant="primary" size="sm" onClick={() => setShowUploadModal(true)}>
@@ -846,6 +857,16 @@ export default function FileList({
           renderListView()
         )}
       </div>
+
+      {/* Import from Drive Modal - Client scope */}
+      {scope === 'client' && clientId && clientName && (
+        <ImportFromDriveModal
+          isOpen={showImportDriveModal}
+          onClose={() => setShowImportDriveModal(false)}
+          clientId={clientId}
+          clientName={clientName}
+        />
+      )}
 
       {/* Upload Modal - Client scope */}
       {canUpload && scope === 'client' && clientId && clientName && clientType && selectedFolder && (

@@ -3,6 +3,7 @@ import { paginationOptsValidator } from "convex/server";
 import {
   query,
   mutation,
+  action,
   internalAction,
   internalMutation,
   internalQuery,
@@ -375,6 +376,19 @@ export const upsertFilesInternal = internalMutation({
           }
           if (f.size !== undefined && doc.fileSize !== f.size) {
             docPatch.fileSize = f.size;
+          }
+          // documents.savedAt tracks Drive's modifiedTime so the library can
+          // show a "last updated" timestamp for Drive rows without joining
+          // driveFiles. Only stamp it alongside a real content-metadata change
+          // (name/size/link) — keeps savedAt = last-updated, not last-polled.
+          // Sort safety: FileList sorts client-side on uploadedAt/name/size,
+          // never savedAt, so refreshing savedAt never reorders the list.
+          if (
+            Object.keys(docPatch).length > 0 &&
+            f.modifiedTime &&
+            doc.savedAt !== f.modifiedTime
+          ) {
+            docPatch.savedAt = f.modifiedTime;
           }
           if (Object.keys(docPatch).length > 0) {
             await ctx.db.patch(doc._id, docPatch);
@@ -993,6 +1007,31 @@ export const backfillWalk = internalAction({
 export const startBackfill = internalAction({
   args: {},
   handler: async (ctx): Promise<{ status: string }> => {
+    const token: any = await ctx.runQuery(internal.driveTokens.getForSyncInternal, {});
+    if (!token) return { status: "no_connection" };
+    if (token.needsReconnect) return { status: "needs_reconnect" };
+    if (!token.rootFolderId) return { status: "no_root_folder" };
+    await ctx.scheduler.runAfter(0, internal.driveSync.backfillWalk, {
+      queue: [token.rootFolderId],
+      phase: "walk" as const,
+      mode: "backfill" as const,
+      walkStart: new Date().toISOString(),
+    });
+    return { status: "started" };
+  },
+});
+
+// Public, operator-triggered manual (re)seed for the settings page's "Run
+// initial sync" button (phase 4b). The internal `startBackfill` above stays
+// internal (cron / `npx convex run`); this thin authenticated wrapper is the
+// only UI entry point and simply schedules the SAME walk with the SAME args —
+// no change to the walk's behaviour. Progress surfaces in getMirrorStats /
+// lastSyncAt while it runs.
+export const startBackfillManual = action({
+  args: {},
+  handler: async (ctx): Promise<{ status: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
     const token: any = await ctx.runQuery(internal.driveTokens.getForSyncInternal, {});
     if (!token) return { status: "no_connection" };
     if (token.needsReconnect) return { status: "needs_reconnect" };

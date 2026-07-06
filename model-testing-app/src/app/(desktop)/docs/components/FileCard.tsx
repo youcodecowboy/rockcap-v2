@@ -38,6 +38,7 @@ export interface Document {
   fileType: string;
   fileSize: number;
   uploadedAt: string;
+  savedAt?: string;
   clientName?: string;
   projectName?: string;
   displayName?: string;
@@ -47,6 +48,31 @@ export interface Document {
   version?: string;
   previousVersionId?: string;
   versionNote?: string;
+  // Drive provenance (source: "drive" rows mirror a Google Drive file).
+  source?: 'upload' | 'drive' | 'generated';
+  driveFileId?: string;
+  driveWebViewLink?: string;
+  status?: string;
+}
+
+// Google Drive tri-colour triangle mark. Inline so it needs no asset request;
+// ~14px, marks a row/card as synced from Drive.
+function DriveLogo({ size = 14 }: { size?: number }) {
+  return (
+    <span
+      title="Synced from Google Drive"
+      style={{ display: 'inline-flex', flexShrink: 0, lineHeight: 0 }}
+    >
+      <svg width={size} height={size} viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg" aria-label="Synced from Google Drive">
+        <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+        <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
+        <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
+        <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+        <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+        <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+      </svg>
+    </span>
+  );
 }
 
 interface FileCardProps {
@@ -135,6 +161,16 @@ export default function FileCard({
       year: 'numeric',
     });
   };
+
+  const isDrive = document.source === 'drive';
+  const isSyncing = isDrive && document.status === 'pending';
+  // Row/card date column only fits one value, so show "Updated" (savedAt,
+  // which the Drive poller stamps to the file's Drive modifiedTime) and carry
+  // both Uploaded + Updated in the tooltip. Falls back to uploadedAt.
+  const displayDate = document.savedAt || document.uploadedAt;
+  const dateTooltip = `Uploaded ${formatDate(document.uploadedAt)}${
+    document.savedAt ? ` · Updated ${formatDate(document.savedAt)}` : ''
+  }`;
 
   // Map document category to a canon accent tone.
   const getCategoryTone = (category: string): string => {
@@ -301,9 +337,13 @@ export default function FileCard({
         {/* Name block */}
         <div className="flex-1 min-w-0 pl-2 pr-4">
           <div className="flex items-center gap-1.5 min-w-0">
+            {isDrive && <DriveLogo />}
             <span className="text-[13px] font-medium truncate" style={{ color: colors.text.primary }}>
               {document.displayName || document.documentCode || document.fileName}
             </span>
+            {isSyncing && (
+              <StatusPill label="Syncing" tone={colors.accent.orange} />
+            )}
             {document.version && (
               <span className="text-[10px] flex-shrink-0" style={{ fontFamily: 'ui-monospace, monospace', color: colors.text.dim }}>
                 {document.version}
@@ -340,9 +380,9 @@ export default function FileCard({
           <span className="text-[12px] truncate" style={{ color: colors.text.muted }}>{document.category}</span>
         </div>
 
-        {/* Date */}
-        <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }}>
-          {formatDate(document.uploadedAt)}
+        {/* Date — shows Updated (savedAt), tooltip carries Uploaded + Updated */}
+        <div className="flex-shrink-0 w-20 hidden sm:block text-[12px] tabular-nums text-right" style={{ color: colors.text.dim }} title={dateTooltip}>
+          {formatDate(displayDate)}
         </div>
 
         {/* Size */}
@@ -385,6 +425,7 @@ export default function FileCard({
         {/* Document Name */}
         <div className="mb-2">
           <div className="flex items-center gap-1 font-medium text-sm" style={{ color: colors.text.primary }}>
+            {isDrive && <DriveLogo />}
             <span className="truncate">{document.displayName || document.documentCode || document.fileName}</span>
             <FlagIndicator entityType="document" entityId={document._id} />
           </div>
@@ -397,6 +438,9 @@ export default function FileCard({
 
         {/* Badges */}
         <div className="flex flex-wrap gap-1.5 mb-3">
+          {isSyncing && (
+            <StatusPill label="Syncing" tone={colors.accent.orange} />
+          )}
           {document.version && (
             <StatusPill label={document.version} tone={colors.text.muted} />
           )}
@@ -409,9 +453,9 @@ export default function FileCard({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — Updated date (tooltip carries Uploaded + Updated) */}
         <div className="flex items-center justify-between text-xs" style={{ color: colors.text.muted }}>
-          <span>{formatDate(document.uploadedAt)}</span>
+          <span title={dateTooltip}>{formatDate(displayDate)}</span>
           <span>{formatFileSize(document.fileSize)}</span>
         </div>
       </Panel>
