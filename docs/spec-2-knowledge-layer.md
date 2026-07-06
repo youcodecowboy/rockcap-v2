@@ -408,6 +408,14 @@ Three-person firm: **no read-side ACLs** — cross-client visibility is the prod
 
 ---
 
+## 14b. Amendments (2026-07-06, post-Spec-1 live run)
+
+1. **Two-lane atomization (operator decision — cost control, mirrors the import wall).** The `ingestionEvents` API consumer (§11) handles ONLY incremental re-atomization (a changed doc ≈ cents). Mass work — initial client onboarding, backfills, the pre-Drive migration — runs through the **Claude Code harness lane**: Phase 2a must ship MCP write tools (`atoms.createBatch`, `atoms.supersede`, `atoms.linkEntity`) and an `atomize-document` skill so the harness reads `textContent` via existing tools and writes atoms via MCP at subscription cost, never API cost. Both lanes hit the same persistence gates (anchoring machine-checked server-side; the harness cannot bypass the noise rules).
+2. **Lenses, not separate graphs.** "Overarching" views (lender-wide, regional lending knowledge, people-centric) are entry points + aggregations over the ONE graph — lender nodes are already global; scope tags + predicate families (financing/people/structure/property) are the segmentation. No thematic sub-graphs are ever built or synced.
+3. **Hub fan-out rule.** Traversal tools return top-K edges by salience + aggregate counts ("edges to 27 clients — expand?"), never full neighborhoods — protects both UI and LLM context at scale.
+4. **Prospect-connection check.** When prospect-intel creates a prospect's entities, run `graph.sharedNeighbors` against the existing graph and surface hits ("shares a director with client X") in the intel brief. Wire into the prospect-intel skill contract at Phase 2b.
+5. **Operator UI (upgrades "possible later" to Phase 2b scope).** A per-client Knowledge Graph **drawer** (~80% width, own toolbar + atom side-rail + pan/zoom force canvas, click-to-expand neighborhoods), opened from the doc library / client header. Canon tokens (`src/lib/colors.ts` entityTypes). Design prototype: session artifact 2026-07-06. 2D force-directed (Obsidian-style), NOT 3D/three.js.
+
 ## 15. Phasing
 
 - **Phase 2a — Atomization + baseline retrieval.** Tables, vocabulary module, atomizer (ingestionEvents consumer), `atoms.search` hybrid retrieval, knowledgeItems Phase-A shims, **`getDeepContext` Graph section** (pulled forward — cheap, fixes a known gap).
