@@ -1153,77 +1153,97 @@ function effectiveClientOf(
 // 1. Children of a folder (undefined ⇒ the token's root folder), plus the
 //    root→here breadcrumb. Each folder row is enriched with its effective
 //    client mapping (own clientId, else inherited via ancestor walk).
+//
+// Auth-free core shared by the public query (listFolderChildren) and the MCP
+// internal variant (listFolderChildrenInternal, phase 5). Callers gate auth.
+async function computeFolderChildren(
+  ctx: any,
+  parentFolderId?: string,
+): Promise<{
+  folders: Array<{
+    driveFolderId: string;
+    name: string;
+    path: string;
+    effectiveClientId: string | null;
+    isExplicitMapping: boolean;
+    effectiveClientName: string | null;
+  }>;
+  breadcrumb: Array<{ driveFolderId: string; name: string }>;
+  notConnected: boolean;
+}> {
+  const token = await ctx.db.query("googleDriveTokens").first();
+  if (!token?.rootFolderId) {
+    return { folders: [], breadcrumb: [], notConnected: true };
+  }
+  const parentId = parentFolderId ?? token.rootFolderId;
+
+  const rows = await ctx.db.query("driveFolders").collect();
+  const foldersById = new Map<string, MirrorFolder>(
+    rows.map((r: Doc<"driveFolders">) => [
+      r.driveFolderId,
+      {
+        driveFolderId: r.driveFolderId,
+        name: r.name,
+        parentFolderId: r.parentFolderId,
+        path: r.path,
+        clientId: r.clientId as string | undefined,
+        trashed: r.trashed,
+      },
+    ]),
+  );
+
+  const children = rows
+    .filter((r: Doc<"driveFolders">) => r.parentFolderId === parentId && r.trashed !== true)
+    .sort((a: Doc<"driveFolders">, b: Doc<"driveFolders">) => a.name.localeCompare(b.name));
+
+  // Resolve client display names for the effective mappings on this page.
+  const enriched = children.map((r: Doc<"driveFolders">) => {
+    const eff = effectiveClientOf(r.driveFolderId, foldersById);
+    return {
+      driveFolderId: r.driveFolderId,
+      name: r.name,
+      path: r.path,
+      effectiveClientId: eff.clientId,
+      isExplicitMapping: eff.isExplicit,
+      effectiveClientName: null as string | null,
+    };
+  });
+  const clientIds = Array.from(
+    new Set(enriched.map((e) => e.effectiveClientId).filter(Boolean) as string[]),
+  );
+  const nameById = new Map<string, string>();
+  await Promise.all(
+    clientIds.map(async (id) => {
+      const c = await ctx.db.get(id as Id<"clients">);
+      if (c) nameById.set(id, (c as any).name ?? (c as any).companyName ?? "Client");
+    }),
+  );
+  for (const e of enriched) {
+    if (e.effectiveClientId) {
+      e.effectiveClientName = nameById.get(e.effectiveClientId) ?? null;
+    }
+  }
+
+  // Breadcrumb: root → … → parentId (walk up the map, then reverse).
+  const breadcrumb: Array<{ driveFolderId: string; name: string }> = [];
+  let cur: string | undefined = parentId;
+  for (let depth = 0; depth < 64 && cur; depth++) {
+    const row = foldersById.get(cur);
+    if (!row) break;
+    breadcrumb.unshift({ driveFolderId: row.driveFolderId, name: row.name });
+    if (cur === token.rootFolderId) break;
+    cur = row.parentFolderId;
+  }
+
+  return { folders: enriched, breadcrumb, notConnected: false };
+}
+
 export const listFolderChildren = query({
   args: { parentFolderId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUserOrNull(ctx);
     if (!user) return { folders: [], breadcrumb: [], notConnected: true as const };
-
-    const token = await ctx.db.query("googleDriveTokens").first();
-    if (!token?.rootFolderId) {
-      return { folders: [], breadcrumb: [], notConnected: true as const };
-    }
-    const parentId = args.parentFolderId ?? token.rootFolderId;
-
-    const rows = await ctx.db.query("driveFolders").collect();
-    const foldersById = new Map<string, MirrorFolder>(
-      rows.map((r) => [
-        r.driveFolderId,
-        {
-          driveFolderId: r.driveFolderId,
-          name: r.name,
-          parentFolderId: r.parentFolderId,
-          path: r.path,
-          clientId: r.clientId as string | undefined,
-          trashed: r.trashed,
-        },
-      ]),
-    );
-
-    const children = rows
-      .filter((r) => r.parentFolderId === parentId && r.trashed !== true)
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    // Resolve client display names for the effective mappings on this page.
-    const enriched = children.map((r) => {
-      const eff = effectiveClientOf(r.driveFolderId, foldersById);
-      return {
-        driveFolderId: r.driveFolderId,
-        name: r.name,
-        path: r.path,
-        effectiveClientId: eff.clientId,
-        isExplicitMapping: eff.isExplicit,
-        effectiveClientName: null as string | null,
-      };
-    });
-    const clientIds = Array.from(
-      new Set(enriched.map((e) => e.effectiveClientId).filter(Boolean) as string[]),
-    );
-    const nameById = new Map<string, string>();
-    await Promise.all(
-      clientIds.map(async (id) => {
-        const c = await ctx.db.get(id as Id<"clients">);
-        if (c) nameById.set(id, (c as any).name ?? (c as any).companyName ?? "Client");
-      }),
-    );
-    for (const e of enriched) {
-      if (e.effectiveClientId) {
-        e.effectiveClientName = nameById.get(e.effectiveClientId) ?? null;
-      }
-    }
-
-    // Breadcrumb: root → … → parentId (walk up the map, then reverse).
-    const breadcrumb: Array<{ driveFolderId: string; name: string }> = [];
-    let cur: string | undefined = parentId;
-    for (let depth = 0; depth < 64 && cur; depth++) {
-      const row = foldersById.get(cur);
-      if (!row) break;
-      breadcrumb.unshift({ driveFolderId: row.driveFolderId, name: row.name });
-      if (cur === token.rootFolderId) break;
-      cur = row.parentFolderId;
-    }
-
-    return { folders: enriched, breadcrumb, notConnected: false as const };
+    return computeFolderChildren(ctx, args.parentFolderId);
   },
 });
 
@@ -1722,5 +1742,330 @@ export const getActiveClientsForMapping = query({
     return clients
       .map((c) => ({ _id: c._id, name: c.name ?? c.companyName ?? "Client" }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+// ── Phase 5 — MCP internal variants ──────────────────────────────
+//
+// The `drive.*` MCP tool surface (convex/mcp.ts) authenticates via per-user
+// bearer token, NOT a Clerk session — so ctx.auth is empty and the public
+// queries/mutations above (which requireUser / getAuthenticatedUserOrNull)
+// would either throw or render empty. These internal* variants carry the
+// SAME behaviour with the auth gate removed; the bearer-token check upstream
+// (convex/mcp.ts) is the trust boundary. Imports have no per-user side effect
+// (importFileRows never reads the user), so the internal mutations are exact
+// behavioural twins of their public counterparts. Do NOT expose these to the
+// browser — they are internal.* by design.
+
+// drive.status — connection status (safe fields only; never the OAuth tokens)
+// + mirror stats, in one call.
+export const getStatusForMcpInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const token = await ctx.db.query("googleDriveTokens").first();
+    const connection = token
+      ? {
+          connected: true as const,
+          connectedEmail: token.connectedEmail,
+          connectedAt: token.connectedAt,
+          lastSyncAt: token.lastSyncAt,
+          needsReconnect: token.needsReconnect === true,
+          scope: token.scope,
+          rootFolderId: token.rootFolderId,
+          rootFolderName: token.rootFolderName,
+        }
+      : { connected: false as const };
+
+    const folders = await ctx.db.query("driveFolders").collect();
+    const files = await ctx.db.query("driveFiles").collect();
+    const byExtractionStatus: Record<string, number> = {
+      none: 0,
+      settling: 0,
+      processing: 0,
+      complete: 0,
+      error: 0,
+    };
+    let trashedFiles = 0;
+    let importedFiles = 0;
+    for (const f of files) {
+      byExtractionStatus[f.extractionStatus] =
+        (byExtractionStatus[f.extractionStatus] ?? 0) + 1;
+      if (f.trashed === true) trashedFiles++;
+      if (f.documentId) importedFiles++;
+    }
+    let trashedFolders = 0;
+    let mappedFolders = 0;
+    for (const f of folders) {
+      if (f.trashed === true) trashedFolders++;
+      if (f.clientId) mappedFolders++;
+    }
+
+    return {
+      connection,
+      mirror: {
+        folders: folders.length,
+        mappedFolders,
+        trashedFolders,
+        files: files.length,
+        importedFiles,
+        trashedFiles,
+        byExtractionStatus,
+      },
+    };
+  },
+});
+
+// drive.listFolders — child folders + breadcrumb + effective client mapping.
+export const listFolderChildrenInternal = internalQuery({
+  args: { parentFolderId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    return computeFolderChildren(ctx, args.parentFolderId);
+  },
+});
+
+// drive.listFiles — files under one folder (subtree=false) or its whole
+// subtree (subtree=true, listImportCandidates-style, capped at 500 with a
+// `truncated` flag). Both modes skip trashed rows and surface the import +
+// extraction state per file.
+export const listFilesForMcpInternal = internalQuery({
+  args: { folderId: v.string(), subtree: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const foldersById = await loadFolderMap(ctx);
+    if (!foldersById.has(args.folderId)) {
+      return { files: [], truncated: false, subtree: args.subtree === true };
+    }
+
+    const folderIds = args.subtree
+      ? subtreeFolderIds(args.folderId, foldersById)
+      : [args.folderId];
+
+    const files: Array<{
+      driveFileId: string;
+      name: string;
+      mimeType: string;
+      size: number | undefined;
+      modifiedTime: string;
+      imported: boolean;
+      extractionStatus: string;
+      documentId: Id<"documents"> | undefined;
+      path: string;
+    }> = [];
+    let truncated = false;
+
+    outer: for (const fid of folderIds) {
+      const rows = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .filter((q) => q.neq(q.field("trashed"), true))
+        .collect();
+      const folderPath = foldersById.get(fid)?.path ?? "/";
+      for (const f of rows) {
+        if (files.length >= 500) {
+          truncated = true;
+          break outer;
+        }
+        files.push({
+          driveFileId: f.driveFileId,
+          name: f.name,
+          mimeType: f.mimeType,
+          size: f.size,
+          modifiedTime: f.modifiedTime,
+          imported: f.documentId !== undefined,
+          extractionStatus: f.extractionStatus,
+          documentId: f.documentId,
+          path: childPath(folderPath, f.name),
+        });
+      }
+    }
+
+    return { files, truncated, subtree: args.subtree === true };
+  },
+});
+
+// drive.getFile — the full mirror row for one file + linked documentId +
+// webViewLink + effective client scope (resolved through the folder map).
+export const getFileForMcpInternal = internalQuery({
+  args: { driveFileId: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("driveFiles")
+      .withIndex("by_drive_id", (q) => q.eq("driveFileId", args.driveFileId))
+      .first();
+    if (!row) return null;
+
+    const token = await ctx.db.query("googleDriveTokens").first();
+    const foldersById = await loadFolderMap(ctx);
+    const scope =
+      row.parentFolderId && token?.rootFolderId
+        ? resolveFolderScope(row.parentFolderId, foldersById, token.rootFolderId)
+        : { inScope: false, clientId: null, mappedFolderId: null };
+
+    let clientName: string | null = null;
+    if (scope.clientId) {
+      const c: any = await ctx.db.get(scope.clientId as Id<"clients">);
+      if (c) clientName = c.name ?? c.companyName ?? "Client";
+    }
+
+    return {
+      driveFileId: row.driveFileId,
+      name: row.name,
+      mimeType: row.mimeType,
+      size: row.size,
+      modifiedTime: row.modifiedTime,
+      parentFolderId: row.parentFolderId,
+      trashed: row.trashed === true,
+      md5Checksum: row.md5Checksum,
+      webViewLink: row.webViewLink,
+      imported: row.documentId !== undefined,
+      documentId: row.documentId,
+      extractionStatus: row.extractionStatus,
+      extractionError: row.extractionError ?? null,
+      settleAfter: row.settleAfter,
+      effectiveScope: {
+        inScope: scope.inScope,
+        clientId: scope.clientId,
+        clientName,
+        mappedFolderId: scope.mappedFolderId,
+      },
+    };
+  },
+});
+
+// drive.mapFolderToClient — internal twin of mapFolderToClient (scope only).
+export const mapFolderToClientInternal = internalMutation({
+  args: { driveFolderId: v.string(), clientId: v.optional(v.id("clients")) },
+  handler: async (ctx, args) => {
+    const folder = await ctx.db
+      .query("driveFolders")
+      .withIndex("by_drive_id", (q) => q.eq("driveFolderId", args.driveFolderId))
+      .first();
+    if (!folder) throw new Error("Folder not found in the Drive mirror");
+    await ctx.db.patch(folder._id, { clientId: args.clientId });
+    return { ok: true, cleared: args.clientId === undefined };
+  },
+});
+
+// drive.importFiles — internal twin of importDriveFiles.
+export const importDriveFilesInternal = internalMutation({
+  args: { driveFileIds: v.array(v.string()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ imported: number; skipped: ImportSkip[] }> => {
+    if (args.driveFileIds.length > IMPORT_BATCH_CAP) {
+      throw new Error(
+        `Import at most ${IMPORT_BATCH_CAP} files per call (got ${args.driveFileIds.length})`,
+      );
+    }
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) throw new Error("Google Drive is not connected");
+
+    const foldersById = await loadFolderMap(ctx);
+    const skipped: ImportSkip[] = [];
+    const rows: Doc<"driveFiles">[] = [];
+    for (const id of Array.from(new Set(args.driveFileIds))) {
+      const row = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_drive_id", (q) => q.eq("driveFileId", id))
+        .first();
+      if (!row) {
+        skipped.push({ driveFileId: id, reason: "not_found" });
+        continue;
+      }
+      rows.push(row);
+    }
+
+    const res = await importFileRows(
+      ctx,
+      rows,
+      foldersById,
+      token.rootFolderId,
+      Date.now(),
+      0,
+    );
+    return { imported: res.imported, skipped: [...skipped, ...res.skipped] };
+  },
+});
+
+// drive.importFolder — internal twin of importDriveFolder (dry run without
+// confirm; chained import with confirm:true).
+export const importDriveFolderInternal = internalMutation({
+  args: { driveFolderId: v.string(), confirm: v.optional(v.boolean()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | { dryRun: true; fileCount: number; alreadyImported: number; folders: number }
+    | {
+        dryRun: false;
+        fileCount: number;
+        alreadyImported: number;
+        imported: number;
+        queuedForImport: number;
+        skipped: ImportSkip[];
+      }
+  > => {
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) throw new Error("Google Drive is not connected");
+
+    const foldersById = await loadFolderMap(ctx);
+    const folder = foldersById.get(args.driveFolderId);
+    if (!folder || folder.trashed === true) {
+      throw new Error("Folder not found in the Drive mirror");
+    }
+
+    const subtree = subtreeFolderIds(args.driveFolderId, foldersById);
+    const candidates: Doc<"driveFiles">[] = [];
+    let alreadyImported = 0;
+    for (const fid of subtree) {
+      const files = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .filter((q) => q.neq(q.field("trashed"), true))
+        .collect();
+      for (const f of files) {
+        if (f.documentId) {
+          alreadyImported++;
+        } else {
+          candidates.push(f);
+        }
+      }
+    }
+
+    if (!args.confirm) {
+      return {
+        dryRun: true as const,
+        fileCount: candidates.length,
+        alreadyImported,
+        folders: subtree.length,
+      };
+    }
+
+    const base = Date.now();
+    const first = candidates.slice(0, IMPORT_SLICE);
+    const rest = candidates.slice(IMPORT_SLICE);
+    const res = await importFileRows(
+      ctx,
+      first,
+      foldersById,
+      token.rootFolderId,
+      base,
+      0,
+    );
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.driveSync.importFolderContinuation, {
+        fileIds: rest.map((f) => f._id),
+        base,
+        startIndex: res.nextIndex,
+      });
+    }
+    return {
+      dryRun: false as const,
+      fileCount: candidates.length,
+      alreadyImported,
+      imported: res.imported,
+      queuedForImport: rest.length,
+      skipped: res.skipped,
+    };
   },
 });
