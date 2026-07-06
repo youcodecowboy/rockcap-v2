@@ -97,6 +97,7 @@ import type * as keywordLearning from "../keywordLearning.js";
 import type * as knowledge_atomizerLane from "../knowledge/atomizerLane.js";
 import type * as knowledge_atomsCore from "../knowledge/atomsCore.js";
 import type * as knowledge_facilities from "../knowledge/facilities.js";
+import type * as knowledge_graphQueries from "../knowledge/graphQueries.js";
 import type * as knowledge_vocabulary from "../knowledge/vocabulary.js";
 import type * as knowledgeBank from "../knowledgeBank.js";
 import type * as knowledgeLibrary from "../knowledgeLibrary.js";
@@ -264,6 +265,7 @@ declare const fullApi: ApiFromModules<{
   "knowledge/atomizerLane": typeof knowledge_atomizerLane;
   "knowledge/atomsCore": typeof knowledge_atomsCore;
   "knowledge/facilities": typeof knowledge_facilities;
+  "knowledge/graphQueries": typeof knowledge_graphQueries;
   "knowledge/vocabulary": typeof knowledge_vocabulary;
   knowledgeBank: typeof knowledgeBank;
   knowledgeLibrary: typeof knowledgeLibrary;

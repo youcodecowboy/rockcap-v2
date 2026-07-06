@@ -4605,6 +4605,129 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "atoms.search",
+    description:
+      "Search stored atoms by full-text over their one-sentence statements (Convex search index; the vector lane + RRF hybrid merge arrives with the 2a.2 embeddings pass). Filters: clientId (owning scope), subjectType, status (default: live atoms only — active + contested). Each hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Full-text search over atom statements." },
+        clientId: { type: "string", description: "Optional owning-client scope filter (Convex id)." },
+        subjectType: { type: "string", description: "Optional: client | project | contact | company | facility | candidate." },
+        status: { type: "string", description: "Optional: active | contested | superseded | retired. Default: live (active + contested)." },
+        limit: { type: "number", description: "Default 20, max 50." },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.atomsSearchInternal, {
+        query: args.query,
+        clientId: args.clientId,
+        subjectType: args.subjectType,
+        status: args.status,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
+  // ── graph.* — Knowledge Layer traversal (Spec 2 §9 / §14b) ───
+  // Read-side of the graph. YOU (Claude) are the query planner — there is no
+  // retrieval router: a hop is one tool call, and multi-hop reasoning is a
+  // SEQUENCE of calls with pruning between hops. Atom edges and native
+  // structural edges are federated at read time (never stored twice), every
+  // edge carries provenance inline, and fan-out is truncated per the hub
+  // rule (top-K by rank + full counts, so "27 edges — expand?" is cheap).
+  {
+    name: "graph.expandEntity",
+    description:
+      "ONE HOP of the knowledge graph: the neighborhood of an entity, federating ATOM edges (facts extracted from documents/CH/Apollo/operators, provenance-stamped) with NATIVE edges synthesized live from structural tables (projects.clientRoles → funds_project/developing, contacts → works_at, clients group SPVs → spv_of_group, CH officers/PSC → officer_of/psc_of via exact-name match only — provenance.matchQuality flags it, facilities columns → funds/lends_to/secured_on with the facility hub as the node). When both lanes assert the same edge the atom wins and its provenance notes nativeCorroboration. Claude is the query planner: multi-hop questions are a SEQUENCE of expandEntity calls with reasoning between hops — pivoting is just calling this again on a neighbor. FAN-OUT RULE: edges/nativeEdges/attributes are each ranked (contested first → confidence desc → asOf recency) and truncated to `limit` (default 30, cap 100); counts always carries the FULL totals + truncated flag, so surface 'N more — expand?' instead of re-fetching blindly. Every edge carries inline provenance {sourceType, ref (atomId or table), observationCount}. Attributes are the entity's literal facts (GDV, loan amount, rates; contested values surface FIRST — present both, never pick silently); lender clients also get current appetiteSignals federated in as has_appetite_for attributes. WORKED EXAMPLE — 'which of our clients have exposure to Hampshire Trust Bank?': (1) atoms.search({query:'Hampshire Trust Bank'}) resolves the lender entity; (2) graph.expandEntity({entityType:'client', entityId:<HTB>, direction:'out'}) → nativeEdges: funds_project → Comberton (clientRoles), funds → Facility · £3.2M; edges: lends_to → Fireside Capital (facility letter, 2 observations), holds_charge_over → Bayfield SPV (CH charge ref); (3) you map projects/facilities → borrower clients and answer with three exposures, each cited. Two calls, no router.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate" },
+        entityId: { type: "string", description: "Convex id of the entity row." },
+        predicates: { type: "array", items: { type: "string" }, description: "Optional predicate filter (vocabulary names + synthetic facility predicates funds/lends_to/secured_on)." },
+        direction: { type: "string", description: "out | in | both (default both)." },
+        includeAttributes: { type: "boolean", description: "Default true. Set false when you only need edges." },
+        limit: { type: "number", description: "Fan-out cap per list. Default 30, hard cap 100." },
+      },
+      required: ["entityType", "entityId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.expandEntityInternal, {
+        entityType: args.entityType,
+        entityId: args.entityId,
+        predicates: args.predicates,
+        direction: args.direction,
+        includeAttributes: args.includeAttributes,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.sharedNeighbors",
+    description:
+      "The 'what connects these?' primitive: expand each input entity's federated neighborhood (atom + native edges, one hop) and INTERSECT the neighbor sets — returns only nodes connected to ALL inputs, each with the per-input connections ({fromInput, predicate, direction, provenance}) that make the link auditable. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; the inputs themselves never count as shared neighbors. One hop only — for longer chains use graph.findPaths.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entities: {
+          type: "array",
+          description: "2-5 entities to intersect.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "client | project | contact | company | facility | candidate" },
+              id: { type: "string", description: "Convex id." },
+            },
+            required: ["type", "id"],
+          },
+        },
+        via: { type: "string", description: "Optional shared-node filter: people | companies | lenders | any (default any)." },
+      },
+      required: ["entities"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.sharedNeighborsInternal, {
+        entities: args.entities ?? [],
+        via: args.via,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.findPaths",
+    description:
+      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop) comes back empty and you suspect an indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: {
+          type: "object",
+          properties: { type: { type: "string" }, id: { type: "string" } },
+          required: ["type", "id"],
+        },
+        to: {
+          type: "object",
+          properties: { type: { type: "string" }, id: { type: "string" } },
+          required: ["type", "id"],
+        },
+        maxHops: { type: "number", description: "1-3 (default 3)." },
+      },
+      required: ["from", "to"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.findPathsInternal, {
+        from: args.from,
+        to: args.to,
+        maxHops: args.maxHops,
+      });
+      return asText(result);
+    },
+  },
 
   // ── Meta / introspection ─────────────────────────────────────
   // Self-describing catalogue. The skills repo lives separately from this app,
