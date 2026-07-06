@@ -40,7 +40,9 @@ const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 const LEASE_MS = 90_000; // pollChanges overlap lease (cron fires every 2 min)
-const SETTLE_MS = 15 * 60_000; // settling debounce for changed files
+// Settling debounce for changed files. Exported for driveHydration.ts (the
+// phase-3 worker re-arms this window when a file drifts mid-hydration).
+export const SETTLE_MS = 15 * 60_000;
 const MAX_PAGES_PER_TICK = 10; // changes.list pages per poll tick
 const MAX_ANCESTOR_LOOKUPS = 10; // files.get calls per change when walking scope
 const FOLDERS_PER_WALK_INVOCATION = 5;
@@ -72,8 +74,10 @@ async function driveGet(
 
 // Refresh the access token if it is expired / within 60s of expiry (same
 // pattern as gmailInbound). Returns null after flagging reconnect on a
-// refresh failure — callers stop cleanly.
-async function ensureAccessToken(ctx: any, token: any): Promise<string | null> {
+// refresh failure — callers stop cleanly. Exported for driveHydration.ts —
+// one refresh path for the whole Drive integration (all token WRITES stay
+// in driveTokens.ts).
+export async function ensureAccessToken(ctx: any, token: any): Promise<string | null> {
   let accessToken: string = token.accessToken;
   const expiresMs = new Date(token.expiresAt).getTime();
   if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
@@ -95,7 +99,8 @@ async function ensureAccessToken(ctx: any, token: any): Promise<string | null> {
 // ── Pure scope/path helpers ──────────────────────────────────────
 
 // Minimal in-memory shape of a driveFolders row (what the walks need).
-type MirrorFolder = {
+// Exported for driveHydration.ts's scope resolution.
+export type MirrorFolder = {
   driveFolderId: string;
   name: string;
   parentFolderId?: string;

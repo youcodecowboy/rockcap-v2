@@ -111,6 +111,17 @@ crons.interval(
   internal.driveSync.pollChanges,
 );
 
+// Google Drive hydration sweep. Every 5 minutes, reclaim crashed
+// "processing" rows, then pick up to 5 due settled/retryable driveFiles,
+// fetch their bytes, run them through the v4 extraction pipeline (via the
+// Next.js /api/drive/ingest route) and persist documents + ingestionEvents.
+// Self-skips when there is nothing due or no usable Drive connection.
+crons.interval(
+  "drive-hydration-sweep",
+  { minutes: 5 },
+  internal.driveHydration.hydrateSettled,
+);
+
 // Google Drive nightly reconcile. Re-walks the whole tree under the root
 // folder and trashes any live mirror row the walk didn't see — the safety
 // net for per-user changes-feed gaps on shared-with-me content. 2:30 UTC
