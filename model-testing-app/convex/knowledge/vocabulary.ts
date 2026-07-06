@@ -247,6 +247,30 @@ export const PREDICATES: Record<string, PredicateDef> = {
     family: "property",
     description: "Sales price per square foot (currency).",
   },
+  has_total_development_cost: {
+    kind: "attribute",
+    family: "financing",
+    description:
+      "Total development cost (TDC) of a scheme — all-in including fees/finance; distinct from has_construction_cost (currency).",
+  },
+  has_purchase_price: {
+    kind: "attribute",
+    family: "property",
+    description: "Site/land acquisition price paid (currency).",
+  },
+  has_overage: {
+    kind: "attribute",
+    family: "property",
+    description:
+      "Overage / clawback obligation on a site — uplift share, trigger, period, beneficiary in the statement (string).",
+  },
+  contractor_for: {
+    kind: "edge",
+    family: "property",
+    direction: "company → project",
+    description:
+      "Company is the building contractor for a scheme (distinct from advises — a delivery role, not advisory).",
+  },
   states: {
     kind: "attribute",
     family: "meta",
