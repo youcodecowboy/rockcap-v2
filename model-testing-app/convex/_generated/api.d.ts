@@ -42,6 +42,7 @@ import type * as documentGen from "../documentGen.js";
 import type * as documentNotes from "../documentNotes.js";
 import type * as documentPublish from "../documentPublish.js";
 import type * as documents from "../documents.js";
+import type * as driveSync from "../driveSync.js";
 import type * as driveTokens from "../driveTokens.js";
 import type * as emails from "../emails.js";
 import type * as enrichment from "../enrichment.js";
@@ -202,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   documentNotes: typeof documentNotes;
   documentPublish: typeof documentPublish;
   documents: typeof documents;
+  driveSync: typeof driveSync;
   driveTokens: typeof driveTokens;
   emails: typeof emails;
   enrichment: typeof enrichment;

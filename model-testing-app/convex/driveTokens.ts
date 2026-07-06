@@ -35,7 +35,9 @@ async function getAuthenticatedUser(ctx: any) {
 // The refreshed-token writer lives HERE in the tokens module rather than
 // scattered into a send/sync file. Only fetch is needed, so this runs in
 // the default Convex runtime (no "use node"), same as gmailInbound.ts.
-async function refreshAccessToken(refreshToken: string): Promise<{
+// Exported for driveSync.ts (the changes poller / walks) — one refresh
+// implementation for the whole Drive integration.
+export async function refreshAccessToken(refreshToken: string): Promise<{
   access_token: string;
   expires_in: number;
 }> {
@@ -177,6 +179,7 @@ export const getForSyncInternal = internalQuery({
       rootFolderId: row.rootFolderId,
       rootFolderName: row.rootFolderName,
       needsReconnect: row.needsReconnect === true,
+      lastPollStartedAt: row.lastPollStartedAt,
     };
   },
 });
@@ -201,6 +204,41 @@ export const updateSyncWatermark = internalMutation({
       startPageToken: args.startPageToken,
       lastSyncAt: new Date().toISOString(),
     });
+  },
+});
+
+// Overlap lease for the changes poller: stamp when a poll tick starts so a
+// slow tick isn't overlapped by the next cron fire (driveSync.pollChanges
+// checks Date.now() - lastPollStartedAt against its lease window).
+export const stampPollStarted = internalMutation({
+  args: { at: v.number() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("googleDriveTokens").first();
+    if (!row) return;
+    await ctx.db.patch(row._id, { lastPollStartedAt: args.at });
+  },
+});
+
+// Stash a fresh changes.list watermark WITHOUT touching lastSyncAt — used by
+// backfillWalk at the very start of a (re)seed so changes that land during
+// the walk are replayed afterwards rather than lost.
+export const setStartPageTokenInternal = internalMutation({
+  args: { startPageToken: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("googleDriveTokens").first();
+    if (!row) return;
+    await ctx.db.patch(row._id, { startPageToken: args.startPageToken });
+  },
+});
+
+// Stamp lastSyncAt on its own — the walks' finalize step (they don't advance
+// the changes watermark, so updateSyncWatermark is the wrong tool there).
+export const stampLastSyncAt = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const row = await ctx.db.query("googleDriveTokens").first();
+    if (!row) return;
+    await ctx.db.patch(row._id, { lastSyncAt: new Date().toISOString() });
   },
 });
 
