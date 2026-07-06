@@ -544,8 +544,11 @@ function DriveSettingsInner() {
               <p style={{ fontSize: 12, color: colors.text.muted, lineHeight: 1.5, marginBottom: 14 }}>
                 Map Drive folders to clients. A mapping establishes ownership so
                 files imported from that folder (and its subfolders) file to the
-                client. Mapping alone imports nothing — an unmapped folder costs
-                nothing. Subfolders inherit their nearest mapped ancestor.
+                client. Inside a client-mapped subtree you can additionally map a
+                subfolder to one of that client&apos;s projects — imports from it
+                then file at project level instead of the client library. Mapping
+                alone imports nothing — an unmapped folder costs nothing.
+                Subfolders inherit their nearest mapped ancestor.
               </p>
               <DriveCorpusTree activeClients={activeClients ?? []} />
             </Panel>
@@ -602,11 +605,14 @@ function DriveSettingsInner() {
   );
 }
 
-// ── Drive corpus tree + folder→client mapping ─────────────────────
+// ── Drive corpus tree + folder→client/project mapping ─────────────
 // Drill-down browser over listFolderChildren. Each folder shows its effective
 // client mapping (explicit = solid green chip with a clear affordance;
 // inherited = muted chip) and a "Map" popover that assigns/clears the mapping
-// via mapFolderToClient. This is THE operator mapping surface.
+// via mapFolderToClient. Folders whose effective scope has a client also
+// offer a project mapping (solid indigo chip = explicit, muted = inherited)
+// via mapFolderToProject — imports from that subtree then file at PROJECT
+// level. This is THE operator mapping surface.
 function DriveCorpusTree({
   activeClients,
 }: {
@@ -615,9 +621,11 @@ function DriveCorpusTree({
   const colors = useColors();
   const [folderId, setFolderId] = useState<string | undefined>(undefined);
   const [popoverFor, setPopoverFor] = useState<string | null>(null);
+  const [projectPopoverFor, setProjectPopoverFor] = useState<string | null>(null);
 
   const children = useQuery(api.driveSync.listFolderChildren, { parentFolderId: folderId });
   const mapFolder = useMutation(api.driveSync.mapFolderToClient);
+  const mapFolderProject = useMutation(api.driveSync.mapFolderToProject);
 
   const breadcrumb = children?.breadcrumb ?? [];
   const folders = children?.folders ?? [];
@@ -629,6 +637,15 @@ function DriveCorpusTree({
       /* surfaced by the reactive query re-render; keep the UI quiet */
     }
     setPopoverFor(null);
+  };
+
+  const handleMapProject = async (driveFolderId: string, projectId?: Id<"projects">) => {
+    try {
+      await mapFolderProject({ driveFolderId, projectId });
+    } catch {
+      /* validation errors (wrong client, no client scope) — query re-renders */
+    }
+    setProjectPopoverFor(null);
   };
 
   return (
@@ -710,7 +727,7 @@ function DriveCorpusTree({
                 <span style={{ fontSize: 13, color: colors.text.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
               </button>
 
-              {/* Effective mapping chip */}
+              {/* Effective mapping chips (client, then project) */}
               {f.effectiveClientId && (
                 f.isExplicitMapping ? (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -727,11 +744,30 @@ function DriveCorpusTree({
                   <StatusPill label={`↑ ${f.effectiveClientName ?? "inherited"}`} tone={colors.text.muted} />
                 )
               )}
+              {f.effectiveProjectId && (
+                f.isExplicitProjectMapping ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <StatusPill label={f.effectiveProjectName ?? "Project"} tone={colors.accent.indigo} />
+                    <button
+                      onClick={() => handleMapProject(f.driveFolderId, undefined)}
+                      title="Clear project mapping"
+                      style={{ display: "inline-flex", background: "transparent", border: "none", color: colors.text.dim, cursor: "pointer" }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ) : (
+                  <StatusPill label={`↑ ${f.effectiveProjectName ?? "inherited"}`} tone={colors.text.muted} />
+                )
+              )}
 
-              {/* Map popover trigger */}
+              {/* Map-to-client popover trigger */}
               <div style={{ position: "relative" }}>
                 <button
-                  onClick={() => setPopoverFor(popoverFor === f.driveFolderId ? null : f.driveFolderId)}
+                  onClick={() => {
+                    setProjectPopoverFor(null);
+                    setPopoverFor(popoverFor === f.driveFolderId ? null : f.driveFolderId);
+                  }}
                   style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "3px 8px", borderRadius: 3, background: colors.bg.cardAlt, border: `1px solid ${colors.border.default}`, color: colors.text.secondary, cursor: "pointer" }}
                 >
                   <Link2 size={12} />
@@ -746,6 +782,36 @@ function DriveCorpusTree({
                   />
                 )}
               </div>
+
+              {/* Map-to-project popover trigger — only inside a client scope */}
+              {f.effectiveClientId && (
+                <div style={{ position: "relative" }}>
+                  <button
+                    onClick={() => {
+                      setPopoverFor(null);
+                      setProjectPopoverFor(
+                        projectPopoverFor === f.driveFolderId ? null : f.driveFolderId,
+                      );
+                    }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "3px 8px", borderRadius: 3, background: colors.bg.cardAlt, border: `1px solid ${colors.border.default}`, color: colors.text.secondary, cursor: "pointer" }}
+                  >
+                    <Link2 size={12} />
+                    {f.isExplicitProjectMapping ? "Change project" : "Map to project"}
+                  </button>
+                  {projectPopoverFor === f.driveFolderId && (
+                    <MapToProjectPopover
+                      clientId={f.effectiveClientId as Id<"clients">}
+                      onSelect={(projectId) => handleMapProject(f.driveFolderId, projectId)}
+                      onClear={
+                        f.isExplicitProjectMapping
+                          ? () => handleMapProject(f.driveFolderId, undefined)
+                          : undefined
+                      }
+                      onClose={() => setProjectPopoverFor(null)}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -839,6 +905,111 @@ function MapToClientPopover({
           >
             <X size={12} />
             Clear mapping
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Project picker popover for folder→project mapping. Lists ONLY the effective
+// client's projects (projects.getByClient), so a mapping to another client's
+// project can't even be attempted from the UI (the mutation rejects it
+// server-side regardless).
+function MapToProjectPopover({
+  clientId,
+  onSelect,
+  onClear,
+  onClose,
+}: {
+  clientId: Id<"clients">;
+  onSelect: (projectId: Id<"projects">) => void;
+  onClear?: () => void;
+  onClose: () => void;
+}) {
+  const colors = useColors();
+  const [q, setQ] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  const projects = useQuery(api.projects.getByClient, { clientId });
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    window.addEventListener("mousedown", onDoc);
+    return () => window.removeEventListener("mousedown", onDoc);
+  }, [onClose]);
+
+  const filtered = (projects ?? []).filter((p) =>
+    p.name.toLowerCase().includes(q.toLowerCase()),
+  );
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        top: "100%",
+        right: 0,
+        marginTop: 4,
+        width: 240,
+        zIndex: 50,
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.default}`,
+        borderRadius: 4,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+        padding: 6,
+      }}
+    >
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search projects…"
+        style={{
+          width: "100%",
+          fontSize: 12,
+          padding: "6px 8px",
+          marginBottom: 6,
+          border: `1px solid ${colors.border.default}`,
+          borderRadius: 3,
+          background: colors.bg.light,
+          color: colors.text.primary,
+        }}
+      />
+      <div style={{ maxHeight: 220, overflow: "auto" }}>
+        {projects === undefined ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: 12 }}>
+            <Loader2 size={14} className="animate-spin" style={{ color: colors.text.dim }} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ fontSize: 12, color: colors.text.dim, padding: "6px 8px" }}>
+            No projects for this client
+          </div>
+        ) : (
+          filtered.map((p) => (
+            <button
+              key={p._id}
+              onClick={() => onSelect(p._id)}
+              style={{ display: "block", width: "100%", textAlign: "left", fontSize: 12, padding: "6px 8px", borderRadius: 3, background: "transparent", border: "none", color: colors.text.secondary, cursor: "pointer" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.bg.cardAlt; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {p.name}
+            </button>
+          ))
+        )}
+      </div>
+      {onClear && (
+        <>
+          <div style={{ height: 1, background: colors.border.light, margin: "6px 0" }} />
+          <button
+            onClick={onClear}
+            style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", fontSize: 12, padding: "6px 8px", borderRadius: 3, background: "transparent", border: "none", color: colors.accent.red, cursor: "pointer" }}
+          >
+            <X size={12} />
+            Clear project mapping
           </button>
         </>
       )}

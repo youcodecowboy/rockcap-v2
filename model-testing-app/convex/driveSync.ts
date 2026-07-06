@@ -12,6 +12,12 @@ import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { refreshAccessToken } from "./driveTokens";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
+// v4 placement rules (pure data + functions, no runtime deps) — the same
+// category/fileType → folder-key derivation the extraction pipeline uses.
+// Imported by the refile migration to re-resolve placement from a document's
+// STORED classification (precedent: convex/migrations/seedCodeMappings.ts
+// imports src/lib code the same way).
+import { resolvePlacement } from "../src/v4/lib/placement-rules";
 
 // Google Drive metadata mirror — the sync engine (phase 2).
 //
@@ -36,9 +42,11 @@ import { getAuthenticatedUserOrNull } from "./authHelpers";
 //
 // Scope model: there is NO stored sync mode. A folder/file is in-scope iff
 // its parent chain reaches rootFolderId; its effective hydration scope is
-// the nearest ancestor folder with clientId set (resolveFolderScope). This
-// avoids all subtree-invalidation machinery when folders move or mappings
-// change.
+// the nearest ancestor folder with clientId set (resolveFolderScope). A
+// projectId mapping (always inside a client-mapped subtree) narrows that
+// scope: the nearest ancestor with projectId set makes imports file at
+// PROJECT level. This avoids all subtree-invalidation machinery when
+// folders move or mappings change.
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -110,6 +118,7 @@ export type MirrorFolder = {
   parentFolderId?: string;
   path: string;
   clientId?: string;
+  projectId?: string;
   trashed?: boolean;
 };
 
@@ -122,25 +131,37 @@ function childPath(parentPath: string, name: string): string {
 // map. In-scope iff the chain reaches rootFolderId; hydration clientId is the
 // NEAREST ancestor (including the folder itself) with clientId set. Mapped
 // folders are by construction in the mirror (in scope), so a clientId hit
-// short-circuits.
+// short-circuits. projectId is the FIRST ancestor (or self) with projectId
+// set on the way up — nearest wins when project mappings nest — and only a
+// projectId at-or-below the clientId anchor can be seen (the walk stops at
+// the clientId folder, so a project mapping outside the client subtree never
+// leaks in).
+export type FolderScope = {
+  inScope: boolean;
+  clientId: string | null;
+  projectId: string | null;
+  mappedFolderId: string | null;
+};
 export function resolveFolderScope(
   folderId: string,
   foldersById: Map<string, MirrorFolder>,
   rootFolderId: string,
-): { inScope: boolean; clientId: string | null; mappedFolderId: string | null } {
+): FolderScope {
   let current: string | undefined = folderId;
+  let projectId: string | null = null;
   for (let depth = 0; depth < 64 && current; depth++) {
     const row = foldersById.get(current);
+    if (row?.projectId && projectId === null) projectId = row.projectId;
     if (row?.clientId) {
-      return { inScope: true, clientId: row.clientId, mappedFolderId: current };
+      return { inScope: true, clientId: row.clientId, projectId, mappedFolderId: current };
     }
     if (current === rootFolderId) {
-      return { inScope: true, clientId: null, mappedFolderId: null };
+      return { inScope: true, clientId: null, projectId, mappedFolderId: null };
     }
-    if (!row) return { inScope: false, clientId: null, mappedFolderId: null };
+    if (!row) return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
     current = row.parentFolderId;
   }
-  return { inScope: false, clientId: null, mappedFolderId: null };
+  return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
 }
 
 // ── Internal reads ───────────────────────────────────────────────
@@ -157,6 +178,7 @@ export const listAllFoldersInternal = internalQuery({
       parentFolderId: r.parentFolderId,
       path: r.path,
       clientId: r.clientId as string | undefined,
+      projectId: r.projectId as string | undefined,
       trashed: r.trashed,
     }));
   },
@@ -166,13 +188,10 @@ export const listAllFoldersInternal = internalQuery({
 // mapping UI). Walks the stored folder rows; see resolveFolderScope.
 export const getEffectiveScope = internalQuery({
   args: { folderId: v.string() },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ inScope: boolean; clientId: string | null; mappedFolderId: string | null }> => {
+  handler: async (ctx, args): Promise<FolderScope> => {
     const token = await ctx.db.query("googleDriveTokens").first();
     if (!token?.rootFolderId) {
-      return { inScope: false, clientId: null, mappedFolderId: null };
+      return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
     }
     const rows = await ctx.db.query("driveFolders").collect();
     const map = new Map<string, MirrorFolder>(
@@ -184,6 +203,7 @@ export const getEffectiveScope = internalQuery({
           parentFolderId: r.parentFolderId,
           path: r.path,
           clientId: r.clientId as string | undefined,
+          projectId: r.projectId as string | undefined,
           trashed: r.trashed,
         },
       ]),
@@ -195,8 +215,9 @@ export const getEffectiveScope = internalQuery({
 // ── Internal writes (actions can't touch the DB; the poller/walks batch
 //    their work through these, chunked to stay well under ~100 writes) ──
 
-// Upsert folder metadata by driveFolderId. clientId (operator mapping) is
-// deliberately never written here — sync must not clobber mappings.
+// Upsert folder metadata by driveFolderId. clientId/projectId (operator
+// mappings) are deliberately never written here — sync must not clobber
+// mappings.
 export const upsertFoldersInternal = internalMutation({
   args: {
     folders: v.array(
@@ -708,6 +729,7 @@ export const pollChanges = internalAction({
             parentFolderId: isRoot ? undefined : parentId,
             path: newPath,
             clientId: prev?.clientId,
+            projectId: prev?.projectId,
           });
           // Rename/move → recompute materialized paths on DESCENDANT folder
           // rows (files carry no path). BFS over the in-memory map.
@@ -946,6 +968,7 @@ export const backfillWalk = internalAction({
               parentFolderId: folderId,
               path,
               clientId: foldersById.get(f.id)?.clientId,
+              projectId: foldersById.get(f.id)?.projectId,
             });
             rest.push(f.id); // enqueue subfolder for a later invocation
           } else {
@@ -1132,27 +1155,40 @@ async function requireUser(ctx: any) {
   return user;
 }
 
-// Nearest ancestor clientId (including the folder itself), walking the map.
-// Returns the mapped clientId + whether THIS folder carries the mapping.
+// Nearest ancestor clientId + projectId (including the folder itself),
+// walking the map. Returns the mapped ids + whether THIS folder carries each
+// mapping. Same walk order as resolveFolderScope: the first projectId on the
+// way up wins, and the walk stops at the clientId anchor.
 function effectiveClientOf(
   folderId: string,
   foldersById: Map<string, MirrorFolder>,
-): { clientId: string | null; isExplicit: boolean } {
+): {
+  clientId: string | null;
+  isExplicit: boolean;
+  projectId: string | null;
+  isExplicitProject: boolean;
+} {
   const self = foldersById.get(folderId);
   const isExplicit = !!self?.clientId;
+  const isExplicitProject = !!self?.projectId;
+  let projectId: string | null = null;
   let current: string | undefined = folderId;
   for (let depth = 0; depth < 64 && current; depth++) {
     const row = foldersById.get(current);
-    if (row?.clientId) return { clientId: row.clientId, isExplicit };
+    if (row?.projectId && projectId === null) projectId = row.projectId;
+    if (row?.clientId) {
+      return { clientId: row.clientId, isExplicit, projectId, isExplicitProject };
+    }
     if (!row) break;
     current = row.parentFolderId;
   }
-  return { clientId: null, isExplicit };
+  return { clientId: null, isExplicit, projectId, isExplicitProject };
 }
 
 // 1. Children of a folder (undefined ⇒ the token's root folder), plus the
 //    root→here breadcrumb. Each folder row is enriched with its effective
-//    client mapping (own clientId, else inherited via ancestor walk).
+//    client mapping (own clientId, else inherited via ancestor walk) and its
+//    effective project mapping (same walk; nearest projectId wins).
 //
 // Auth-free core shared by the public query (listFolderChildren) and the MCP
 // internal variant (listFolderChildrenInternal, phase 5). Callers gate auth.
@@ -1167,6 +1203,9 @@ async function computeFolderChildren(
     effectiveClientId: string | null;
     isExplicitMapping: boolean;
     effectiveClientName: string | null;
+    effectiveProjectId: string | null;
+    isExplicitProjectMapping: boolean;
+    effectiveProjectName: string | null;
   }>;
   breadcrumb: Array<{ driveFolderId: string; name: string }>;
   notConnected: boolean;
@@ -1187,6 +1226,7 @@ async function computeFolderChildren(
         parentFolderId: r.parentFolderId,
         path: r.path,
         clientId: r.clientId as string | undefined,
+        projectId: r.projectId as string | undefined,
         trashed: r.trashed,
       },
     ]),
@@ -1196,7 +1236,7 @@ async function computeFolderChildren(
     .filter((r: Doc<"driveFolders">) => r.parentFolderId === parentId && r.trashed !== true)
     .sort((a: Doc<"driveFolders">, b: Doc<"driveFolders">) => a.name.localeCompare(b.name));
 
-  // Resolve client display names for the effective mappings on this page.
+  // Resolve client/project display names for the effective mappings on this page.
   const enriched = children.map((r: Doc<"driveFolders">) => {
     const eff = effectiveClientOf(r.driveFolderId, foldersById);
     return {
@@ -1206,21 +1246,35 @@ async function computeFolderChildren(
       effectiveClientId: eff.clientId,
       isExplicitMapping: eff.isExplicit,
       effectiveClientName: null as string | null,
+      effectiveProjectId: eff.projectId,
+      isExplicitProjectMapping: eff.isExplicitProject,
+      effectiveProjectName: null as string | null,
     };
   });
   const clientIds = Array.from(
     new Set(enriched.map((e) => e.effectiveClientId).filter(Boolean) as string[]),
   );
+  const projectIds = Array.from(
+    new Set(enriched.map((e) => e.effectiveProjectId).filter(Boolean) as string[]),
+  );
   const nameById = new Map<string, string>();
-  await Promise.all(
-    clientIds.map(async (id) => {
+  const projectNameById = new Map<string, string>();
+  await Promise.all([
+    ...clientIds.map(async (id) => {
       const c = await ctx.db.get(id as Id<"clients">);
       if (c) nameById.set(id, (c as any).name ?? (c as any).companyName ?? "Client");
     }),
-  );
+    ...projectIds.map(async (id) => {
+      const p = await ctx.db.get(id as Id<"projects">);
+      if (p) projectNameById.set(id, (p as any).name ?? "Project");
+    }),
+  ]);
   for (const e of enriched) {
     if (e.effectiveClientId) {
       e.effectiveClientName = nameById.get(e.effectiveClientId) ?? null;
+    }
+    if (e.effectiveProjectId) {
+      e.effectiveProjectName = projectNameById.get(e.effectiveProjectId) ?? null;
     }
   }
 
@@ -1305,6 +1359,68 @@ export const mapFolderToClient = mutation({
   },
 });
 
+// 3½. Map (or clear) a folder's PROJECT mapping — the project-level analogue
+//     of mapFolderToClient, with one extra law: the folder must already sit
+//     inside a client-mapped subtree, and the project must belong to that
+//     same client (clientRoles). Scope only, exactly like the client
+//     mapping: nothing is imported, nothing is extracted, no documents rows
+//     are created. Imports from the subtree then stamp projectId/projectName
+//     and file at PROJECT level (see importFileRows +
+//     driveHydration.applyExtraction).
+//
+// Auth-free core shared by the public mutation and the MCP internal twin
+// (same posture as computeFolderChildren). Callers gate auth.
+async function mapFolderToProjectCore(
+  ctx: any,
+  args: { driveFolderId: string; projectId?: Id<"projects"> },
+): Promise<{ ok: boolean; cleared: boolean }> {
+  const folder = await ctx.db
+    .query("driveFolders")
+    .withIndex("by_drive_id", (q: any) => q.eq("driveFolderId", args.driveFolderId))
+    .first();
+  if (!folder) throw new Error("Folder not found in the Drive mirror");
+
+  if (args.projectId !== undefined) {
+    const project: any = await ctx.db.get(args.projectId);
+    if (!project || project.isDeleted === true) {
+      throw new Error("Project not found");
+    }
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) throw new Error("Google Drive is not connected");
+    const foldersById = await loadFolderMap(ctx);
+    const scope = resolveFolderScope(args.driveFolderId, foldersById, token.rootFolderId);
+    if (!scope.clientId) {
+      throw new Error(
+        "This folder has no effective client mapping. Map the client's top folder first (mapFolderToClient) — a project mapping must sit inside a client-mapped subtree.",
+      );
+    }
+    const belongsToClient = (project.clientRoles ?? []).some(
+      (cr: any) => cr.clientId === scope.clientId,
+    );
+    if (!belongsToClient) {
+      throw new Error(
+        `Project "${project.name}" does not belong to this folder's effective client — map the folder to a project of the same client, or fix the client mapping first.`,
+      );
+    }
+  }
+
+  // patch with undefined clears the field (Convex removes it).
+  await ctx.db.patch(folder._id, { projectId: args.projectId });
+
+  return { ok: true, cleared: args.projectId === undefined };
+}
+
+export const mapFolderToProject = mutation({
+  args: {
+    driveFolderId: v.string(),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    return mapFolderToProjectCore(ctx, args);
+  },
+});
+
 // ── Import — the purposeful act that puts Drive files in the library ──
 //
 // Importing creates a METADATA-FIRST documents row per file immediately
@@ -1313,7 +1429,8 @@ export const mapFolderToClient = mutation({
 // queues this file for (re-)extraction whenever its content changes —
 // driveFiles.documentId presence IS the imported flag. First successful
 // extraction fills in the analysis fields and auto-files the document into
-// the client's folder taxonomy (driveHydration.applyExtraction); after that
+// the client's folder taxonomy — or the PROJECT's, when the file sits under
+// a projectId-mapped folder (driveHydration.applyExtraction); after that
 // folderId is app-owned and re-extraction never touches it.
 
 const STAGGER_MS = 90_000; // settleAfter spacing across an import batch
@@ -1336,10 +1453,55 @@ async function loadFolderMap(ctx: any): Promise<Map<string, MirrorFolder>> {
         parentFolderId: r.parentFolderId,
         path: r.path,
         clientId: r.clientId as string | undefined,
+        projectId: r.projectId as string | undefined,
         trashed: r.trashed,
       },
     ]),
   );
+}
+
+// Resolve a v4 target-folder key against a PROJECT's real folder taxonomy.
+// Mirrors bulkUpload.fileItem's project-scope branch exactly, including the
+// fallback order: exact key → "unfiled" → "background" → first project
+// folder. Returns undefined when the project has no folders at all (callers
+// leave the doc where it is / unfiled). Shared by driveHydration's
+// first-extraction placement and the refile migration below.
+export async function resolveProjectFolderKey(
+  ctx: any,
+  projectId: Id<"projects">,
+  targetFolder: string | undefined,
+): Promise<string | undefined> {
+  const matchExact = targetFolder
+    ? await ctx.db
+        .query("projectFolders")
+        .withIndex("by_project_type", (q: any) =>
+          q.eq("projectId", projectId).eq("folderType", targetFolder),
+        )
+        .first()
+    : null;
+  if (matchExact) return targetFolder;
+  const unfiled = await ctx.db
+    .query("projectFolders")
+    .withIndex("by_project_type", (q: any) =>
+      q.eq("projectId", projectId).eq("folderType", "unfiled"),
+    )
+    .first();
+  const background = unfiled
+    ? null
+    : await ctx.db
+        .query("projectFolders")
+        .withIndex("by_project_type", (q: any) =>
+          q.eq("projectId", projectId).eq("folderType", "background"),
+        )
+        .first();
+  const anyFolder =
+    unfiled || background
+      ? null
+      : await ctx.db
+          .query("projectFolders")
+          .withIndex("by_project", (q: any) => q.eq("projectId", projectId))
+          .first();
+  return (unfiled ?? background ?? anyFolder)?.folderType;
 }
 
 // Full descendant-folder set of a Drive folder (the folder itself included),
@@ -1391,6 +1553,7 @@ async function importFileRows(
 ): Promise<{ imported: number; skipped: ImportSkip[]; nextIndex: number }> {
   const nowIso = new Date().toISOString();
   const clientNames = new Map<string, string | undefined>();
+  const projectNames = new Map<string, string | undefined>();
   const skipped: ImportSkip[] = [];
   let imported = 0;
   let index = startIndex;
@@ -1404,9 +1567,9 @@ async function importFileRows(
       skipped.push({ driveFileId: row.driveFileId, reason: "already_imported" });
       continue;
     }
-    const scope = row.parentFolderId
+    const scope: FolderScope = row.parentFolderId
       ? resolveFolderScope(row.parentFolderId, foldersById, rootFolderId)
-      : { inScope: false, clientId: null, mappedFolderId: null };
+      : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
     if (!scope.clientId) {
       skipped.push({ driveFileId: row.driveFileId, reason: "no_client_mapping" });
       continue;
@@ -1418,6 +1581,22 @@ async function importFileRows(
         clientId,
         client ? (client.name ?? client.companyName ?? undefined) : undefined,
       );
+    }
+    // Project scope (nearest projectId-mapped ancestor): stamp projectId +
+    // projectName so the doc belongs to the project from birth and first
+    // extraction files it into the PROJECT taxonomy (applyExtraction). A
+    // dangling mapping (project deleted since) degrades to client-only.
+    let projectId: Id<"projects"> | undefined;
+    let projectName: string | undefined;
+    if (scope.projectId) {
+      if (!projectNames.has(scope.projectId)) {
+        const project: any = await ctx.db.get(scope.projectId as Id<"projects">);
+        projectNames.set(scope.projectId, project ? project.name : undefined);
+      }
+      projectName = projectNames.get(scope.projectId);
+      if (projectName !== undefined) {
+        projectId = scope.projectId as Id<"projects">;
+      }
     }
 
     const isGoogleNative = row.md5Checksum === undefined;
@@ -1437,6 +1616,8 @@ async function importFileRows(
       tokensUsed: 0,
       clientId,
       clientName: clientNames.get(clientId),
+      projectId,
+      projectName,
       scope: "client",
       // Google-native files are links with a Drive preview — terminal state.
       status: isGoogleNative ? "completed" : "pending",
@@ -1895,15 +2076,20 @@ export const getFileForMcpInternal = internalQuery({
 
     const token = await ctx.db.query("googleDriveTokens").first();
     const foldersById = await loadFolderMap(ctx);
-    const scope =
+    const scope: FolderScope =
       row.parentFolderId && token?.rootFolderId
         ? resolveFolderScope(row.parentFolderId, foldersById, token.rootFolderId)
-        : { inScope: false, clientId: null, mappedFolderId: null };
+        : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
 
     let clientName: string | null = null;
     if (scope.clientId) {
       const c: any = await ctx.db.get(scope.clientId as Id<"clients">);
       if (c) clientName = c.name ?? c.companyName ?? "Client";
+    }
+    let projectName: string | null = null;
+    if (scope.projectId) {
+      const p: any = await ctx.db.get(scope.projectId as Id<"projects">);
+      if (p) projectName = p.name ?? "Project";
     }
 
     return {
@@ -1925,6 +2111,8 @@ export const getFileForMcpInternal = internalQuery({
         inScope: scope.inScope,
         clientId: scope.clientId,
         clientName,
+        projectId: scope.projectId,
+        projectName,
         mappedFolderId: scope.mappedFolderId,
       },
     };
@@ -1942,6 +2130,15 @@ export const mapFolderToClientInternal = internalMutation({
     if (!folder) throw new Error("Folder not found in the Drive mirror");
     await ctx.db.patch(folder._id, { clientId: args.clientId });
     return { ok: true, cleared: args.clientId === undefined };
+  },
+});
+
+// drive.mapFolderToProject — internal twin of mapFolderToProject (scope
+// only; same client-subtree validation via the shared core).
+export const mapFolderToProjectInternal = internalMutation({
+  args: { driveFolderId: v.string(), projectId: v.optional(v.id("projects")) },
+  handler: async (ctx, args) => {
+    return mapFolderToProjectCore(ctx, args);
   },
 });
 
@@ -2066,6 +2263,151 @@ export const importDriveFolderInternal = internalMutation({
       imported: res.imported,
       queuedForImport: rest.length,
       skipped: res.skipped,
+    };
+  },
+});
+
+// ── One-off refile migration — repair project docs misfiled at client level ──
+//
+// Before project mappings existed, every import filed at CLIENT level, so a
+// client's Drive subtree that is really one project polluted the client
+// library. This migration re-homes an already-imported subtree: for every
+// driveFiles row under driveFolderId with a documentId, it stamps projectId/
+// projectName on the documents row and re-resolves placement from the doc's
+// STORED classification (category/fileTypeDetected through the same v4
+// placement rules the pipeline uses) against the PROJECT taxonomy — with the
+// same fallback order as driveHydration.applyExtraction / bulkUpload.fileItem
+// (exact key → unfiled → background → any project folder).
+//
+// This is the ONE path allowed to overwrite an already-set folderId/
+// folderType — it exists precisely to move misfiled documents. Re-running is
+// idempotent (same inputs → same patch). Deliberately does NOT set the
+// folder mapping itself; run mapFolderToProjectInternal first so future
+// imports land right, then this to fix the past. Single mutation — fine up
+// to a few thousand docs (Convex read/write limits), which is the realistic
+// size of one project subtree. Run via:
+//   npx convex run driveSync:refileSubtreeToProject '{"driveFolderId": "...", "projectId": "..."}'
+export const refileSubtreeToProject = internalMutation({
+  args: { driveFolderId: v.string(), projectId: v.id("projects") },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    foldersInSubtree: number;
+    documentsStamped: number;
+    refiled: number;
+    leftForFirstExtraction: number;
+    placementUnresolved: number;
+    skippedNoDocument: number;
+    skippedClientMismatch: number;
+  }> => {
+    const project: any = await ctx.db.get(args.projectId);
+    if (!project || project.isDeleted === true) {
+      throw new Error("Project not found");
+    }
+    const projectClientIds = new Set<string>(
+      (project.clientRoles ?? []).map((cr: any) => cr.clientId as string),
+    );
+    const foldersById = await loadFolderMap(ctx);
+    if (!foldersById.has(args.driveFolderId)) {
+      throw new Error("Folder not found in the Drive mirror");
+    }
+
+    const subtree = subtreeFolderIds(args.driveFolderId, foldersById);
+    let documentsStamped = 0;
+    let refiled = 0;
+    let leftForFirstExtraction = 0;
+    let placementUnresolved = 0;
+    let skippedNoDocument = 0;
+    let skippedClientMismatch = 0;
+
+    for (const fid of subtree) {
+      const files = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .collect();
+      for (const f of files) {
+        if (!f.documentId) {
+          skippedNoDocument++;
+          continue;
+        }
+        const doc = await ctx.db.get(f.documentId);
+        if (!doc) {
+          skippedNoDocument++; // dangling documentId — nothing to refile
+          continue;
+        }
+        // Safety: a doc operator-reassigned to ANOTHER client since import
+        // must not be dragged into this project (clientId X + projectId of
+        // client Y would be corrupt). The project's own clients pass.
+        if (doc.clientId && !projectClientIds.has(doc.clientId)) {
+          skippedClientMismatch++;
+          continue;
+        }
+
+        // Docs whose first extraction hasn't run yet (contentChecksum is
+        // only ever stamped by applyExtraction) get projectId/projectName
+        // ONLY — leaving folderId unset lets the first extraction place
+        // them into the project taxonomy; stamping a key now would suppress
+        // that placement forever (first-extraction-only rule).
+        if (doc.contentChecksum === undefined) {
+          await ctx.db.patch(doc._id, {
+            projectId: args.projectId,
+            projectName: project.name,
+          });
+          documentsStamped++;
+          leftForFirstExtraction++;
+          continue;
+        }
+
+        // Re-derive the v4 target-folder key from the STORED classification
+        // (the original mapped.targetFolder is not persisted on documents).
+        // resolvePlacement is the pipeline's own rule table; targetLevel
+        // "project" makes its no-rule fallback "unfiled", which is right
+        // here — everything in this subtree IS project material.
+        const placement = resolvePlacement(
+          {
+            classification: {
+              fileType: doc.fileTypeDetected ?? "",
+              category: doc.category ?? "",
+              suggestedFolder: "",
+              targetLevel: "project",
+            },
+          } as any,
+          {} as any,
+        );
+        const resolvedKey = await resolveProjectFolderKey(
+          ctx,
+          args.projectId,
+          placement.folderKey,
+        );
+
+        await ctx.db.patch(doc._id, {
+          projectId: args.projectId,
+          projectName: project.name,
+          // Overwrite placement ONLY when the project taxonomy resolves a
+          // folder; a project with no folders keeps the doc's old placement
+          // (still reachable) rather than stranding it on a dead folderId.
+          ...(resolvedKey
+            ? { folderId: resolvedKey, folderType: "project" as const }
+            : {}),
+        });
+        documentsStamped++;
+        if (resolvedKey) {
+          refiled++;
+        } else {
+          placementUnresolved++;
+        }
+      }
+    }
+
+    return {
+      foldersInSubtree: subtree.length,
+      documentsStamped,
+      refiled,
+      leftForFirstExtraction,
+      placementUnresolved,
+      skippedNoDocument,
+      skippedClientMismatch,
     };
   },
 });

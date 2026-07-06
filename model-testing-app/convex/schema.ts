@@ -4350,13 +4350,16 @@ export default defineSchema({
   // driveSync.backfillWalk at any time. There is NO stored sync mode: the
   // effective hydration scope of any folder/file is the nearest ancestor
   // folder (walking parentFolderId up to the root) with clientId set —
-  // see driveSync.resolveFolderScope.
+  // see driveSync.resolveFolderScope. projectId narrows the scope further:
+  // the nearest ancestor with projectId set (must sit inside a client-mapped
+  // subtree) makes imports from that subtree file at PROJECT level.
   driveFolders: defineTable({
     driveFolderId: v.string(),
     name: v.string(),
     parentFolderId: v.optional(v.string()),   // absent = the root folder itself
     path: v.string(),                          // materialized, e.g. "/ClientCo/Deals/2026" ("/" for root)
     clientId: v.optional(v.id("clients")),     // operator mapping — set ONLY on explicitly mapped folders
+    projectId: v.optional(v.id("projects")),   // operator mapping — project-level scope inside a client subtree
     trashed: v.optional(v.boolean()),
     lastSyncedAt: v.string(),
   })

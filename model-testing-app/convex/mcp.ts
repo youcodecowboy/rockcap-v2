@@ -4169,7 +4169,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.listFolders",
     description:
-      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping: effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient; nothing is imported by listing.",
+      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping — effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder) — plus its effective PROJECT mapping: effectiveProjectId/effectiveProjectName and isExplicitProjectMapping (same nearest-ancestor semantics; a project mapping makes imports from that subtree file at PROJECT level). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient / drive.mapFolderToProject; nothing is imported by listing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4249,9 +4249,32 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "drive.mapFolderToProject",
+    description:
+      "Map a Drive subfolder to an in-app project — or omit projectId to clear the mapping — so imports from that subtree file at PROJECT level (documents get projectId/projectName stamped and land in the project's folder taxonomy instead of polluting the client library). The folder MUST already sit inside a client-mapped subtree, and the project must belong to that same client — rejected otherwise. Like drive.mapFolderToClient this sets SCOPE ONLY: nothing is imported or extracted, no documents rows are created, no work is queued. Inherited by descendant folders (nearest projectId-mapped ancestor wins). Typical onboarding: map the client's top folder (drive.mapFolderToClient) → map each project subfolder with this → import per project (drive.importFolder). Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id (must be inside a client-mapped subtree)" },
+        projectId: {
+          type: "string",
+          description: "Convex projects id to map to (must belong to the folder's effective client). Omit to clear the mapping.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.mapFolderToProjectInternal, {
+        driveFolderId: args.driveFolderId,
+        projectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "drive.importFiles",
     description:
-      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first).",
+      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Files under a project-mapped folder (drive.mapFolderToProject) are additionally stamped with projectId/projectName and file into the PROJECT's folder taxonomy on extraction. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -4273,7 +4296,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.importFolder",
     description:
-      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient.",
+      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files under a project-mapped folder (drive.mapFolderToProject) are stamped with projectId/projectName and file into the PROJECT's folder taxonomy — map project subfolders BEFORE importing so project documents don't pollute the client library. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient.",
     inputSchema: {
       type: "object",
       properties: {

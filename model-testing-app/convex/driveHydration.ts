@@ -9,7 +9,9 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   ensureAccessToken,
   resolveFolderScope,
+  resolveProjectFolderKey,
   SETTLE_MS,
+  type FolderScope,
   type MirrorFolder,
 } from "./driveSync";
 
@@ -352,49 +354,70 @@ export const applyExtraction = internalMutation({
 
     // ── PLACEMENT: on FIRST successful extraction only (folderId not yet
     // set), resolve the v4 placement (mapped.targetFolder — a folder key)
-    // against the client's real folder taxonomy and stamp folderId/
-    // folderType. Same resolution order as bulkUpload.fileItem's
+    // against the real folder taxonomy and stamp folderId/folderType.
+    // PROJECT documents (projectId stamped at import — the folder was
+    // project-mapped) resolve against the PROJECT taxonomy, mirroring
+    // bulkUpload.fileItem's project-scope path: exact key → "unfiled" →
+    // "background" → any project folder. Client documents keep the
     // client-scope path: exact key → "miscellaneous" → any client folder.
-    // Once folderId is set it is APP-OWNED: operators move documents freely
-    // and re-extraction must never touch it (this block is skipped).
-    let placementPatch: { folderId: string; folderType: "client" } | undefined;
-    if (!existingDoc.folderId && effectiveClientId) {
+    // The gate is the DOCUMENT's own projectId (not the hydration-time folder
+    // scope): folderType "project" with no projectId on the row would make
+    // the doc invisible in both libraries. Once folderId is set it is
+    // APP-OWNED: operators move documents freely and re-extraction must
+    // never touch it (this block is skipped).
+    let placementPatch:
+      | { folderId: string; folderType: "client" | "project" }
+      | undefined;
+    if (!existingDoc.folderId) {
       const targetFolder: string | undefined =
         typeof m.targetFolder === "string" && m.targetFolder
           ? m.targetFolder
           : undefined;
-      const matchExact = targetFolder
-        ? await ctx.db
+      if (existingDoc.projectId) {
+        // A project with no folders at all leaves the doc unfiled — the next
+        // (re-)extraction retries placement because folderId is still unset.
+        const resolvedKey = await resolveProjectFolderKey(
+          ctx,
+          existingDoc.projectId,
+          targetFolder,
+        );
+        if (resolvedKey) {
+          placementPatch = { folderId: resolvedKey, folderType: "project" };
+        }
+      } else if (effectiveClientId) {
+        const matchExact = targetFolder
+          ? await ctx.db
+              .query("clientFolders")
+              .withIndex("by_client_type", (q: any) =>
+                q.eq("clientId", effectiveClientId).eq("folderType", targetFolder),
+              )
+              .first()
+          : null;
+        let resolvedKey: string | undefined = matchExact
+          ? targetFolder
+          : undefined;
+        if (!resolvedKey) {
+          const misc = await ctx.db
             .query("clientFolders")
             .withIndex("by_client_type", (q: any) =>
-              q.eq("clientId", effectiveClientId).eq("folderType", targetFolder),
+              q.eq("clientId", effectiveClientId).eq("folderType", "miscellaneous"),
             )
-            .first()
-        : null;
-      let resolvedKey: string | undefined = matchExact
-        ? targetFolder
-        : undefined;
-      if (!resolvedKey) {
-        const misc = await ctx.db
-          .query("clientFolders")
-          .withIndex("by_client_type", (q: any) =>
-            q.eq("clientId", effectiveClientId).eq("folderType", "miscellaneous"),
-          )
-          .first();
-        const anyFolder = misc
-          ? null
-          : await ctx.db
-              .query("clientFolders")
-              .withIndex("by_client", (q: any) =>
-                q.eq("clientId", effectiveClientId),
-              )
-              .first();
-        resolvedKey = (misc ?? anyFolder)?.folderType;
-      }
-      // A client with no folders at all leaves the doc unfiled — the next
-      // (re-)extraction retries placement because folderId is still unset.
-      if (resolvedKey) {
-        placementPatch = { folderId: resolvedKey, folderType: "client" };
+            .first();
+          const anyFolder = misc
+            ? null
+            : await ctx.db
+                .query("clientFolders")
+                .withIndex("by_client", (q: any) =>
+                  q.eq("clientId", effectiveClientId),
+                )
+                .first();
+          resolvedKey = (misc ?? anyFolder)?.folderType;
+        }
+        // A client with no folders at all leaves the doc unfiled — the next
+        // (re-)extraction retries placement because folderId is still unset.
+        if (resolvedKey) {
+          placementPatch = { folderId: resolvedKey, folderType: "client" };
+        }
       }
     }
 
@@ -717,14 +740,14 @@ export const hydrateSettled = internalAction({
       }
 
       try {
-        // a. Effective scope — nearest ancestor folder with a clientId.
-        // Advisory only under the import-gated model: the documents row's
-        // own clientId (stamped at import) wins inside applyExtraction, so
-        // an unmapped-since-import folder does NOT stop an imported file
-        // from syncing.
-        const scope = file.parentFolderId
+        // a. Effective scope — nearest ancestor folder with a clientId (+
+        // nearest projectId mapping). Advisory only under the import-gated
+        // model: the documents row's own clientId/projectId (stamped at
+        // import) win inside applyExtraction, so an unmapped-since-import
+        // folder does NOT stop an imported file from syncing.
+        const scope: FolderScope = file.parentFolderId
           ? resolveFolderScope(file.parentFolderId, foldersById, rootFolderId)
-          : { inScope: false, clientId: null, mappedFolderId: null };
+          : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
 
         // b. Token — re-read per file (a refresh earlier in the tick
         // persisted a new accessToken). A refresh failure flags reconnect
@@ -823,6 +846,7 @@ export const hydrateSettled = internalAction({
           checksumAtFetch,
           storageId,
           clientId: (scope.clientId ?? undefined) as Id<"clients"> | undefined,
+          projectId: (scope.projectId ?? undefined) as Id<"projects"> | undefined,
           mapped: payload.mapped,
         });
         processed++;
