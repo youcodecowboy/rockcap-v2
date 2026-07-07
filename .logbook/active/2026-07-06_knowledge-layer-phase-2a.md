@@ -28,3 +28,4 @@ Spec IS the plan. Branch: work on `main` per drive-build precedent (Convex dev I
 
 - 2026-07-06 — Spec locked + amended (da4e1ea, 428fdd9 explorer); drawer UI concept locked via artifact iteration; 2a.1 launched.
 - 2026-07-06 eve — 2a.1 + 2a.3 built/deployed; first harness run complete (above); 2a.4 (graph read tools) building; 2b.2 (drawer + nav from doc-library client header) queued next; operator away — autonomous sequential build+deploy authorized.
+- 2026-07-07 eve — Drawer interaction arc COMPLETE (commits 838f736→375673e, all deployed): Obsidian-style leaf physics w/ link lines, family filters as true views, pin-where-you-drop, readable hover cards, contested adjudication (resolveContested + rail section + MCP tool). Spec 14c source expansion (notes/transcripts/emails) design-locked, build queued. Voyage key still pending (2a.2).
