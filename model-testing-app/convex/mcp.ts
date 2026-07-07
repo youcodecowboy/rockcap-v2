@@ -3873,6 +3873,82 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Harness classification, Claude-side (2026-07-07) ─────────
+  // The two halves that make bulk document classification runnable through
+  // Claude Code (subscription cost) instead of the v4 API pipeline. The
+  // server parses and persists deterministically; the AGENT is the
+  // classifier. The API pipeline (driveHydration cron → /api/drive/ingest)
+  // stays untouched as the automatic lane for changed-file re-processing.
+  {
+    name: "document.extractText",
+    description:
+      "Harness classification step 1 — SERVER-SIDE PARSE ONLY, ZERO LLM: returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (≤120K chars, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string", description: "The documents row to parse." },
+      },
+      required: ["documentId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(
+        internal.knowledge.harnessClassify.extractText,
+        { documentId: args.documentId },
+      );
+      return asText(result);
+    },
+  },
+  {
+    name: "document.applyClassification",
+    description:
+      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. The server resolves the target folder from your category/fileTypeDetected through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. This persists at zero API cost — you already did the classification.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        contentChecksum: { type: "string", description: "The fetch-time checksum document.extractText returned. REQUIRED for Drive-mirrored docs." },
+        fileTypeDetected: { type: "string", description: "Specific document type, e.g. 'RedBook Valuation', 'Facility Letter', 'Meeting Minutes'." },
+        category: { type: "string", description: "One of the 13 canonical categories (see tool description)." },
+        summary: { type: "string", description: "≤1200 chars. What the document is, who it concerns, the headline figures/dates." },
+        confidence: { type: "number", description: "0..1 (clamped server-side)." },
+        reasoning: { type: "string", description: "Why you classified it this way — audit trail." },
+        keyDates: { type: "array", items: { type: "string" }, description: "Notable dates, e.g. '2027-09-30 (maturity)'." },
+        keyAmounts: { type: "array", items: { type: "string" }, description: "Notable amounts, e.g. '£3.2M senior facility'." },
+        keyEntities: {
+          type: "object",
+          description: "People/companies/locations/projects named in the document.",
+          properties: {
+            people: { type: "array", items: { type: "string" } },
+            companies: { type: "array", items: { type: "string" } },
+            locations: { type: "array", items: { type: "string" } },
+            projects: { type: "array", items: { type: "string" } },
+          },
+        },
+        textContent: { type: "string", description: "Optional (≤900K chars): the parsed text, persisted on the doc for future re-analysis." },
+      },
+      required: ["documentId", "fileTypeDetected", "category", "summary", "confidence"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(
+        internal.knowledge.harnessClassify.applyClassification,
+        {
+          documentId: args.documentId,
+          contentChecksum: args.contentChecksum,
+          fileTypeDetected: args.fileTypeDetected,
+          category: args.category,
+          summary: args.summary,
+          confidence: args.confidence,
+          reasoning: args.reasoning,
+          keyDates: args.keyDates,
+          keyAmounts: args.keyAmounts,
+          keyEntities: args.keyEntities,
+          textContent: args.textContent,
+        },
+      );
+      return asText(result);
+    },
+  },
+
   // ── Spreadsheet extraction, Claude-side (2026-06-01) ─────────
   // The server hands over the cells; the agent does the extraction. getSheetData
   // turns a stored xlsx/csv into structured cells so the model can reason out the

@@ -69,6 +69,23 @@ Before atomizing, count the documents in scope. **If more than 60 documents are 
 7. **Chunk narrative documents.** For prose-heavy documents (legal opinions, professional reports), `atoms.upsertChunks({documentId, contentChecksum, chunks})` with ~800-token sections. **Skip fact-dense spreadsheets** (spec §3.4 — atoms win there; chunks would be noise).
 8. **Close the run.** `skillRun.complete` with `status` (`complete` or `complete_with_gaps`), a two-paragraph `brief` (documents atomized, atom/observation counts, notable facilities minted, coverage gaps), and the `gaps` array (every unresolvable mention from step 6, every skipped document, every parse failure).
 
+## Full onboarding (classify + atomize in one pass)
+
+Bulk document processing runs through the harness, not the API pipeline (operator decision 2026-07-07). When the documents in scope are **unclassified** (fresh Drive imports still showing `fileTypeDetected: "Unclassified"`, or an upload backlog), fuse classification into this skill's pass — you already have the text open, so classify and atomize from ONE read. **You are the classifier**; the server only parses and persists.
+
+Per document:
+
+1. **`document.extractText({documentId})`** — server-side parse only, zero LLM. Returns `{text (≤120K, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}`. Branch on the flags:
+   - `alreadyClassified: true` and `alreadyAtomized: true` → skip the doc entirely.
+   - `alreadyClassified: true`, `alreadyAtomized: false` → skip classification, atomize only (steps 4–7 of the main workflow). Do NOT re-classify unless the operator asked; a re-classification never moves the doc's folder anyway (first-classification-only placement).
+   - both false → full pass below.
+2. **Classify the text yourself.** Restraint over flourish: pick `category` from the 13 canonical categories — Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs — and a specific `fileTypeDetected` matching existing vocabulary (`document.listByClient` on a mature client shows real values: 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes', …). Write a ≤1200-char evidence-first summary and an honest confidence.
+3. **`document.applyClassification({documentId, contentChecksum, fileTypeDetected, category, summary, confidence, reasoning, keyDates?, keyAmounts?, keyEntities?, textContent})`** — pass the `contentChecksum` from step 1 (required for Drive docs) and the parsed text as `textContent` so future re-analysis and the API-lane re-atomizer have it. Folder placement is resolved SERVER-SIDE from your category/fileTypeDetected (project taxonomy when the doc has a projectId, client taxonomy otherwise) — you never choose folders. Side effects (knowledge-bank entry, meeting-job heuristics, context-cache invalidation, ingestionEvents row, Drive mirror-row completion) match the v4 pipeline exactly.
+4. **Atomize the SAME text** — steps 4–7 of the main workflow (`atoms.createBatch` with the step-1 `contentChecksum` on every observation, `atoms.upsertChunks` for narrative docs). One read, both outputs.
+5. **One `skillRun` covers both** — the run's brief reports documents classified AND atomized; classification-only failures (parse errors, unresolvable category) go in the `gaps` array like any other gap.
+
+Pipeline-pause convention for bulk: `extractText` on a pending Drive doc claims its mirror row (`processing`), which pauses the automatic pipeline for that file; complete `applyClassification` within ~30 minutes per document (work doc-by-doc, never extract a big batch up front) or the claim is reclaimed, its settle timer re-arms, and the API pipeline processes it at API cost. Re-processing when a Drive file CHANGES stays fully automated (hydration cron → `/api/drive/ingest` → API-lane re-atomizer) — do not re-run this pass for edits.
+
 ## The extraction instruction block (apply verbatim — spec §6.1)
 
 > Extract atomic facts from this document. An atomic fact is ONE self-contained sentence that would remain true and meaningful if read with no surrounding context, attached to ONE subject entity from the roster above (or a new person/company you can identify precisely).
@@ -124,6 +141,7 @@ MCP tools:
 - `atoms.upsertChunks` — narrative dual index (step 7).
 - `client.getDeepContext`, `lender.list` — roster (step 1).
 - `document.listByClient`, `document.get` — enumerate + read documents (steps 3–4).
+- `document.extractText` / `document.applyClassification` — the fused classify+atomize pass ("Full onboarding" above): server-side parse in, agent classification out.
 - `skillRun.start` / `skillRun.complete` — runtime contract.
 
 Claude Code native tools: `Read` for any local artefacts; no `WebSearch`/`WebFetch` needed (atomization is corpus-only).
