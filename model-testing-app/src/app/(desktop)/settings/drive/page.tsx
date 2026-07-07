@@ -30,6 +30,7 @@ import {
   Loader2,
   X,
   Link2,
+  Zap,
 } from "lucide-react";
 
 // Google Drive settings page.
@@ -548,7 +549,12 @@ function DriveSettingsInner() {
                 subfolder to one of that client&apos;s projects — imports from it
                 then file at project level instead of the client library. Mapping
                 alone imports nothing — an unmapped folder costs nothing.
-                Subfolders inherit their nearest mapped ancestor.
+                Subfolders inherit their nearest mapped ancestor. Folders inside
+                a client scope also offer &quot;Auto-import&quot;: new files
+                dropped in that subtree import (and classify) automatically,
+                capped at 20/day per folder — beyond the cap files stay mirrored
+                and the folder is badged until you run a manual import or a
+                harness wave.
               </p>
               <DriveCorpusTree activeClients={activeClients ?? []} />
             </Panel>
@@ -626,6 +632,12 @@ function DriveCorpusTree({
   const children = useQuery(api.driveSync.listFolderChildren, { parentFolderId: folderId });
   const mapFolder = useMutation(api.driveSync.mapFolderToClient);
   const mapFolderProject = useMutation(api.driveSync.mapFolderToProject);
+  const setAutoImport = useMutation(api.driveSync.setFolderAutoImport);
+
+  // Auto-import cap badge: a cap-hit stamp from today means files arrived
+  // beyond the 20/day wide net and are waiting on a manual import / harness
+  // wave. UTC day boundary — matches the server's cap accounting.
+  const dayStartMs = new Date().setUTCHours(0, 0, 0, 0);
 
   const breadcrumb = children?.breadcrumb ?? [];
   const folders = children?.folders ?? [];
@@ -646,6 +658,14 @@ function DriveCorpusTree({
       /* validation errors (wrong client, no client scope) — query re-renders */
     }
     setProjectPopoverFor(null);
+  };
+
+  const handleAutoImport = async (driveFolderId: string, enabled: boolean) => {
+    try {
+      await setAutoImport({ driveFolderId, enabled });
+    } catch {
+      /* surfaced by the reactive query re-render; keep the UI quiet */
+    }
   };
 
   return (
@@ -811,6 +831,49 @@ function DriveCorpusTree({
                     />
                   )}
                 </div>
+              )}
+
+              {/* Wide-net auto-import toggle — only meaningful inside a
+                  client scope (the flag is inert without one). Toggling
+                  writes an EXPLICIT true/false on THIS folder, so "off" on a
+                  subfolder carves it out of a flagged parent. */}
+              {f.effectiveClientId && (
+                <>
+                  {f.autoImportCapHit !== null && f.autoImportCapHit >= dayStartMs && (
+                    <StatusPill
+                      label="cap hit — run a harness wave"
+                      tone={colors.accent.orange}
+                    />
+                  )}
+                  <button
+                    onClick={() => handleAutoImport(f.driveFolderId, !f.effectiveAutoImport)}
+                    title={
+                      f.effectiveAutoImport
+                        ? `Auto-import is ON${f.isExplicitAutoImport ? "" : " (inherited)"} — new files dropped in this subtree import automatically (capped at 20/day; beyond that they wait for a manual import / harness wave). Click to turn off.`
+                        : "Auto-import new files dropped in this subtree (capped at 20/day). Existing files are not imported retroactively."
+                    }
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: 11,
+                      padding: "3px 8px",
+                      borderRadius: 3,
+                      background: f.effectiveAutoImport
+                        ? `${colors.accent.green}15`
+                        : colors.bg.cardAlt,
+                      border: `1px solid ${
+                        f.effectiveAutoImport ? `${colors.accent.green}60` : colors.border.default
+                      }`,
+                      color: f.effectiveAutoImport ? colors.accent.green : colors.text.secondary,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <Zap size={12} />
+                    {f.effectiveAutoImport ? "Auto-import on" : "Auto-import"}
+                  </button>
+                </>
               )}
             </div>
           ))

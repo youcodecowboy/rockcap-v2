@@ -3901,7 +3901,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.applyClassification",
     description:
-      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. The server resolves the target folder from your category/fileTypeDetected through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. This persists at zero API cost — you already did the classification.",
+      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. The server resolves the target folder from your category/fileTypeDetected through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. CLASSIFICATION IDENTITY IS IMMUTABLE: if the doc already has a real classification (extractText returned alreadyClassified:true), your fileTypeDetected/category/confidence are IGNORED — only contents refresh (summary/documentAnalysis/textContent/checksum) and the result carries identityLocked:true; reclassification is a future explicit operator tool. This persists at zero API cost — you already did the classification.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4246,7 +4246,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.listFolders",
     description:
-      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping — effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder) — plus its effective PROJECT mapping: effectiveProjectId/effectiveProjectName and isExplicitProjectMapping (same nearest-ancestor semantics; a project mapping makes imports from that subtree file at PROJECT level). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient / drive.mapFolderToProject; nothing is imported by listing.",
+      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping — effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder) — plus its effective PROJECT mapping: effectiveProjectId/effectiveProjectName and isExplicitProjectMapping (same nearest-ancestor semantics; a project mapping makes imports from that subtree file at PROJECT level) — plus its wide-net auto-import state: effectiveAutoImport/isExplicitAutoImport (see drive.setAutoImport) and autoImportCapHit (ms — the folder tripped the 20/day auto-import cap; a stamp from today means files are waiting on a manual import / harness wave). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient / drive.mapFolderToProject; nothing is imported by listing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4344,6 +4344,26 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.driveSync.mapFolderToProjectInternal, {
         driveFolderId: args.driveFolderId,
         projectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.setAutoImport",
+    description:
+      "Arm (or disarm) WIDE-NET auto-import on a Drive folder — a STANDING AUTHORIZATION: from now on, NEW files dropped anywhere in this subtree are automatically imported on the poll tick that mirrors them (metadata-first document immediately, then classified through the v4 API pipeline at a few cents per file). The folder's effective scope must have a client mapping (drive.mapFolderToClient first) — the flag is inert outside a client scope. Inherits like the project mapping: nearest ancestor-or-self with the flag EXPLICITLY set wins, so enabled:false on a subfolder carves it out of a flagged parent. GUARD RAILS: capped at 20 auto-imports/day per flagged folder. A bulk drop beyond the cap stays mirrored but UNIMPORTED, the folder is flagged (autoImportCapHit — badged in the /settings/drive tree), and cap-skipped files do NOT retro-import the next day (they are no longer 'new' to the mirror) — run drive.importFolder / a harness classification wave for the remainder. Atomization stays a harness-lane act regardless. Arming imports nothing retroactively — existing files still need an explicit import. Returns {ok, enabled}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id (should sit inside a client-mapped subtree — the flag has no effect outside one)" },
+        enabled: { type: "boolean", description: "true to arm auto-import for the subtree; false to disarm (or to carve a subfolder out of a flagged parent)" },
+      },
+      required: ["driveFolderId", "enabled"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.setFolderAutoImportInternal, {
+        driveFolderId: args.driveFolderId,
+        enabled: args.enabled,
       });
       return asText(result);
     },
@@ -4720,7 +4740,7 @@ const TOOLS: McpTool[] = [
   {
     name: "graph.expandEntity",
     description:
-      "ONE HOP of the knowledge graph: the neighborhood of an entity, federating ATOM edges (facts extracted from documents/CH/Apollo/operators, provenance-stamped) with NATIVE edges synthesized live from structural tables (projects.clientRoles → funds_project/developing, contacts → works_at, clients group SPVs → spv_of_group, CH officers/PSC → officer_of/psc_of via exact-name match only — provenance.matchQuality flags it, facilities columns → funds/lends_to/secured_on with the facility hub as the node). When both lanes assert the same edge the atom wins and its provenance notes nativeCorroboration. Claude is the query planner: multi-hop questions are a SEQUENCE of expandEntity calls with reasoning between hops — pivoting is just calling this again on a neighbor. FAN-OUT RULE: edges/nativeEdges/attributes are each ranked (contested first → confidence desc → asOf recency) and truncated to `limit` (default 30, cap 100); counts always carries the FULL totals + truncated flag, so surface 'N more — expand?' instead of re-fetching blindly. Every edge carries inline provenance {sourceType, ref (atomId or table), observationCount}. Attributes are the entity's literal facts (GDV, loan amount, rates; contested values surface FIRST — present both, never pick silently); lender clients also get current appetiteSignals federated in as has_appetite_for attributes. WORKED EXAMPLE — 'which of our clients have exposure to Hampshire Trust Bank?': (1) atoms.search({query:'Hampshire Trust Bank'}) resolves the lender entity; (2) graph.expandEntity({entityType:'client', entityId:<HTB>, direction:'out'}) → nativeEdges: funds_project → Comberton (clientRoles), funds → Facility · £3.2M; edges: lends_to → Fireside Capital (facility letter, 2 observations), holds_charge_over → Bayfield SPV (CH charge ref); (3) you map projects/facilities → borrower clients and answer with three exposures, each cited. Two calls, no router. interEdges = edges among the returned ring — render them; they're what makes clusters visible.",
+      "ONE HOP of the knowledge graph: the neighborhood of an entity, federating ATOM edges (facts extracted from documents/CH/Apollo/operators, provenance-stamped) with NATIVE edges synthesized live from structural tables (projects.clientRoles → funds_project/developing, contacts → works_at, clients group SPVs → spv_of_group, CH officers/PSC → officer_of/psc_of via exact-name match only — provenance.matchQuality flags it, facilities columns → funds/lends_to/secured_on with the facility hub as the node). When both lanes assert the same edge the atom wins and its provenance notes nativeCorroboration. Claude is the query planner: multi-hop questions are a SEQUENCE of expandEntity calls with reasoning between hops — pivoting is just calling this again on a neighbor. FAN-OUT RULE: edges/nativeEdges/attributes are each ranked (contested first → confidence desc → asOf recency) and truncated to `limit` (default 30, cap 100); counts always carries the FULL totals + truncated flag, so surface 'N more — expand?' instead of re-fetching blindly. Every edge carries inline provenance {sourceType, ref (atomId or table), observationCount}. Attributes are the entity's literal facts (GDV, loan amount, rates; contested values surface FIRST — present both, never pick silently); lender clients also get current appetiteSignals federated in as has_appetite_for attributes. WORKED EXAMPLE — 'which of our clients have exposure to Hampshire Trust Bank?': (1) atoms.search({query:'Hampshire Trust Bank'}) resolves the lender entity; (2) graph.expandEntity({entityType:'client', entityId:<HTB>, direction:'out'}) → nativeEdges: funds_project → Comberton (clientRoles), funds → Facility · £3.2M; edges: lends_to → Fireside Capital (facility letter, 2 observations), holds_charge_over → Bayfield SPV (CH charge ref); (3) you map projects/facilities → borrower clients and answer with three exposures, each cited. Two calls, no router. interEdges = edges among the returned ring — render them; they're what makes clusters visible. Set includeRingAttributes:true to also get ringAttributes — each ring member's own literal facts (a project's GDV/planning/cost), keyed by `${type}:${id}`, capped 12/member — so a ring member's knowledge is visible without a second expand.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4731,6 +4751,7 @@ const TOOLS: McpTool[] = [
         includeAttributes: { type: "boolean", description: "Default true. Set false when you only need edges." },
         limit: { type: "number", description: "Fan-out cap per list. Default 30, hard cap 100." },
         includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide ATOM-lane items (edges/attributes/interEdges) whose owning clientId is a prospect-status clients row; native edges are public record and always exempt. counts.prospectScopedHidden reports how many were hidden." },
+        includeRingAttributes: { type: "boolean", description: "Default false. When true, also return ringAttributes: each ring member's ATTRIBUTE atoms (its literal facts) keyed by `${type}:${id}`, capped 12/member (overflow in ringAttributeTruncated), so ring knowledge is visible without a second expand. Atom lane only; respects includeProspectScoped." },
       },
       required: ["entityType", "entityId"],
     },
@@ -4743,6 +4764,7 @@ const TOOLS: McpTool[] = [
         includeAttributes: args.includeAttributes,
         limit: args.limit,
         includeProspectScoped: args.includeProspectScoped,
+        includeRingAttributes: args.includeRingAttributes,
       });
       return asText(result);
     },

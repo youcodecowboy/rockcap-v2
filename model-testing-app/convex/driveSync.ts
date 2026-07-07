@@ -119,6 +119,7 @@ export type MirrorFolder = {
   path: string;
   clientId?: string;
   projectId?: string;
+  autoImport?: boolean; // wide-net flag — explicit true/false only where set
   trashed?: boolean;
 };
 
@@ -135,12 +136,20 @@ function childPath(parentPath: string, name: string): string {
 // set on the way up — nearest wins when project mappings nest — and only a
 // projectId at-or-below the clientId anchor can be seen (the walk stops at
 // the clientId folder, so a project mapping outside the client subtree never
-// leaks in).
+// leaks in). autoImport inherits EXACTLY like projectId: the nearest
+// ancestor-or-self with the flag EXPLICITLY set (true OR false — false
+// carves a subfolder out of a flagged parent) wins, and only flags
+// at-or-below the clientId anchor are visible. autoImportFolderId is the
+// folder that provided the winning true flag — the daily-cap anchor.
+// A flag outside any client mapping resolves but is inert: the poll gate
+// (autoImportFromPoll) requires clientId AND autoImport together.
 export type FolderScope = {
   inScope: boolean;
   clientId: string | null;
   projectId: string | null;
   mappedFolderId: string | null;
+  autoImport: boolean;
+  autoImportFolderId: string | null;
 };
 export function resolveFolderScope(
   folderId: string,
@@ -149,19 +158,39 @@ export function resolveFolderScope(
 ): FolderScope {
   let current: string | undefined = folderId;
   let projectId: string | null = null;
+  let autoImport: boolean | null = null;
+  let autoImportFolderId: string | null = null;
   for (let depth = 0; depth < 64 && current; depth++) {
     const row = foldersById.get(current);
     if (row?.projectId && projectId === null) projectId = row.projectId;
+    if (row?.autoImport !== undefined && autoImport === null) {
+      autoImport = row.autoImport;
+      autoImportFolderId = row.autoImport ? current : null;
+    }
     if (row?.clientId) {
-      return { inScope: true, clientId: row.clientId, projectId, mappedFolderId: current };
+      return {
+        inScope: true,
+        clientId: row.clientId,
+        projectId,
+        mappedFolderId: current,
+        autoImport: autoImport === true,
+        autoImportFolderId,
+      };
     }
     if (current === rootFolderId) {
-      return { inScope: true, clientId: null, projectId, mappedFolderId: null };
+      return {
+        inScope: true,
+        clientId: null,
+        projectId,
+        mappedFolderId: null,
+        autoImport: autoImport === true,
+        autoImportFolderId,
+      };
     }
-    if (!row) return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+    if (!row) return { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
     current = row.parentFolderId;
   }
-  return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+  return { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
 }
 
 // ── Internal reads ───────────────────────────────────────────────
@@ -179,6 +208,7 @@ export const listAllFoldersInternal = internalQuery({
       path: r.path,
       clientId: r.clientId as string | undefined,
       projectId: r.projectId as string | undefined,
+      autoImport: r.autoImport,
       trashed: r.trashed,
     }));
   },
@@ -191,7 +221,7 @@ export const getEffectiveScope = internalQuery({
   handler: async (ctx, args): Promise<FolderScope> => {
     const token = await ctx.db.query("googleDriveTokens").first();
     if (!token?.rootFolderId) {
-      return { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+      return { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
     }
     const rows = await ctx.db.query("driveFolders").collect();
     const map = new Map<string, MirrorFolder>(
@@ -204,6 +234,7 @@ export const getEffectiveScope = internalQuery({
           path: r.path,
           clientId: r.clientId as string | undefined,
           projectId: r.projectId as string | undefined,
+          autoImport: r.autoImport,
           trashed: r.trashed,
         },
       ]),
@@ -343,6 +374,43 @@ export const upsertFilesInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+
+    // ── Wide-net auto-import candidates (poll / reconcile-diff lane only —
+    // queueSettling=false is the backfill seed, which must never
+    // mass-auto-import). A file that is NEW to the mirror, or re-appearing
+    // from trash WITHOUT ever having been imported, and whose effective
+    // scope resolves BOTH a clientId and autoImport, is handed to the
+    // capped autoImportFromPoll wrapper via the scheduler — the import
+    // writes run in their own mutation so this batch mutation's write
+    // budget stays flat. The wrapper re-validates everything (idempotent).
+    const autoImportCandidates: string[] = [];
+    let scopeCtx:
+      | { foldersById: Map<string, MirrorFolder>; rootFolderId: string }
+      | null
+      | undefined = undefined;
+    const considerAutoImport = async (
+      driveFileId: string,
+      parentFolderId: string | undefined,
+    ) => {
+      if (!args.queueSettling || !parentFolderId) return;
+      if (scopeCtx === undefined) {
+        // Lazy: only pay for the folder map when a candidate actually shows up.
+        const token = await ctx.db.query("googleDriveTokens").first();
+        scopeCtx = token?.rootFolderId
+          ? { foldersById: await loadFolderMap(ctx), rootFolderId: token.rootFolderId }
+          : null;
+      }
+      if (!scopeCtx) return;
+      const scope = resolveFolderScope(
+        parentFolderId,
+        scopeCtx.foldersById,
+        scopeCtx.rootFolderId,
+      );
+      if (scope.clientId && scope.autoImport) {
+        autoImportCandidates.push(driveFileId);
+      }
+    };
+
     for (const f of args.files) {
       const meta = {
         name: f.name,
@@ -366,7 +434,14 @@ export const upsertFilesInternal = internalMutation({
           ...meta,
           extractionStatus: "none",
         });
+        await considerAutoImport(f.driveFileId, f.parentFolderId); // new to the mirror
         continue;
+      }
+      if (existing.trashed === true && !existing.documentId) {
+        // Newly un-trashed and never imported → counts as "new" for the
+        // wide net. A previously IMPORTED file (documentId set) is only
+        // un-soft-deleted below — never double-imported.
+        await considerAutoImport(f.driveFileId, f.parentFolderId);
       }
       const checksumChanged = existing.md5Checksum !== f.md5Checksum;
       const dirty =
@@ -420,6 +495,12 @@ export const upsertFilesInternal = internalMutation({
           }
         }
       }
+    }
+
+    if (autoImportCandidates.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.driveSync.autoImportFromPoll, {
+        driveFileIds: autoImportCandidates,
+      });
     }
   },
 });
@@ -730,6 +811,7 @@ export const pollChanges = internalAction({
             path: newPath,
             clientId: prev?.clientId,
             projectId: prev?.projectId,
+            autoImport: prev?.autoImport,
           });
           // Rename/move → recompute materialized paths on DESCENDANT folder
           // rows (files carry no path). BFS over the in-memory map.
@@ -969,6 +1051,7 @@ export const backfillWalk = internalAction({
               path,
               clientId: foldersById.get(f.id)?.clientId,
               projectId: foldersById.get(f.id)?.projectId,
+              autoImport: foldersById.get(f.id)?.autoImport,
             });
             rest.push(f.id); // enqueue subfolder for a later invocation
           } else {
@@ -1155,10 +1238,11 @@ async function requireUser(ctx: any) {
   return user;
 }
 
-// Nearest ancestor clientId + projectId (including the folder itself),
-// walking the map. Returns the mapped ids + whether THIS folder carries each
-// mapping. Same walk order as resolveFolderScope: the first projectId on the
-// way up wins, and the walk stops at the clientId anchor.
+// Nearest ancestor clientId + projectId + autoImport (including the folder
+// itself), walking the map. Returns the mapped ids + whether THIS folder
+// carries each mapping. Same walk order as resolveFolderScope: the first
+// projectId / explicitly-set autoImport on the way up wins, and the walk
+// stops at the clientId anchor.
 function effectiveClientOf(
   folderId: string,
   foldersById: Map<string, MirrorFolder>,
@@ -1167,22 +1251,43 @@ function effectiveClientOf(
   isExplicit: boolean;
   projectId: string | null;
   isExplicitProject: boolean;
+  autoImport: boolean;
+  isExplicitAutoImport: boolean;
 } {
   const self = foldersById.get(folderId);
   const isExplicit = !!self?.clientId;
   const isExplicitProject = !!self?.projectId;
+  const isExplicitAutoImport = self?.autoImport !== undefined;
   let projectId: string | null = null;
+  let autoImport: boolean | null = null;
   let current: string | undefined = folderId;
   for (let depth = 0; depth < 64 && current; depth++) {
     const row = foldersById.get(current);
     if (row?.projectId && projectId === null) projectId = row.projectId;
+    if (row?.autoImport !== undefined && autoImport === null) {
+      autoImport = row.autoImport;
+    }
     if (row?.clientId) {
-      return { clientId: row.clientId, isExplicit, projectId, isExplicitProject };
+      return {
+        clientId: row.clientId,
+        isExplicit,
+        projectId,
+        isExplicitProject,
+        autoImport: autoImport === true,
+        isExplicitAutoImport,
+      };
     }
     if (!row) break;
     current = row.parentFolderId;
   }
-  return { clientId: null, isExplicit, projectId, isExplicitProject };
+  return {
+    clientId: null,
+    isExplicit,
+    projectId,
+    isExplicitProject,
+    autoImport: autoImport === true,
+    isExplicitAutoImport,
+  };
 }
 
 // 1. Children of a folder (undefined ⇒ the token's root folder), plus the
@@ -1206,6 +1311,13 @@ async function computeFolderChildren(
     effectiveProjectId: string | null;
     isExplicitProjectMapping: boolean;
     effectiveProjectName: string | null;
+    // Wide-net auto-import: effective flag (nearest explicitly-set
+    // ancestor-or-self, within the client anchor), whether THIS folder
+    // carries the explicit setting, and this folder's own cap-hit stamp
+    // (ms; UI badges it when it falls on the current day).
+    effectiveAutoImport: boolean;
+    isExplicitAutoImport: boolean;
+    autoImportCapHit: number | null;
   }>;
   breadcrumb: Array<{ driveFolderId: string; name: string }>;
   notConnected: boolean;
@@ -1227,6 +1339,7 @@ async function computeFolderChildren(
         path: r.path,
         clientId: r.clientId as string | undefined,
         projectId: r.projectId as string | undefined,
+        autoImport: r.autoImport,
         trashed: r.trashed,
       },
     ]),
@@ -1249,6 +1362,9 @@ async function computeFolderChildren(
       effectiveProjectId: eff.projectId,
       isExplicitProjectMapping: eff.isExplicitProject,
       effectiveProjectName: null as string | null,
+      effectiveAutoImport: eff.autoImport,
+      isExplicitAutoImport: eff.isExplicitAutoImport,
+      autoImportCapHit: (r.autoImportCapHit ?? null) as number | null,
     };
   });
   const clientIds = Array.from(
@@ -1454,6 +1570,7 @@ async function loadFolderMap(ctx: any): Promise<Map<string, MirrorFolder>> {
         path: r.path,
         clientId: r.clientId as string | undefined,
         projectId: r.projectId as string | undefined,
+        autoImport: r.autoImport,
         trashed: r.trashed,
       },
     ]),
@@ -1569,7 +1686,7 @@ async function importFileRows(
     }
     const scope: FolderScope = row.parentFolderId
       ? resolveFolderScope(row.parentFolderId, foldersById, rootFolderId)
-      : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+      : { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
     if (!scope.clientId) {
       skipped.push({ driveFileId: row.driveFileId, reason: "no_client_mapping" });
       continue;
@@ -1814,6 +1931,167 @@ export const importFolderContinuation = internalMutation({
         startIndex: res.nextIndex,
       });
     }
+  },
+});
+
+// ── Wide-net auto-import (operator decision 2026-07-07) ──────────
+//
+// driveFolders.autoImport is a STANDING AUTHORIZATION: a NEW file dropped
+// anywhere in the flagged subtree auto-imports on the poll tick that first
+// mirrors it — same metadata-first documents row + settling queue as an
+// explicit import (importFileRows is reused verbatim), so classification
+// follows through the v4 API pipeline at API cost. Guard rails:
+//
+//   - Effective scope must resolve BOTH clientId and autoImport. The flag
+//     inherits like projectId (nearest ancestor-or-self with it EXPLICITLY
+//     set wins; only flags at-or-below the clientId anchor are visible); a
+//     flag outside any client mapping is inert — this gate enforces it.
+//   - Daily cap: at most AUTO_IMPORT_DAILY_CAP auto-imports/day per
+//     flag-anchor folder, counted via driveFiles.autoImportedAt (indexed)
+//     within the anchor's subtree. Beyond the cap the file stays mirrored
+//     (extractionStatus "none", zero cost) and the anchor folder is stamped
+//     autoImportCapHit so the settings tree badges it. Cap-skipped files do
+//     NOT retro-import when the day rolls over — they are no longer "new"
+//     to the mirror — so the remainder needs an explicit drive.importFolder
+//     / harness wave; the badge is the operator's cue.
+//   - Only the changes poll / reconcile DIFF feeds this (queueSettling
+//     lane in upsertFilesInternal); the backfill seed never auto-imports.
+//   - Idempotent: rows already imported (documentId), trashed, or vanished
+//     are skipped, so a re-scheduled/raced candidate can't double-import.
+const AUTO_IMPORT_DAILY_CAP = 20;
+const AUTO_IMPORT_SLICE = 25; // per scheduled mutation — ~3 writes/file keeps the budget flat
+const AUTO_IMPORT_COUNT_SCAN_CAP = 500; // by_auto_imported_at rows read per call
+
+export const autoImportFromPoll = internalMutation({
+  args: { driveFileIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<void> => {
+    const token = await ctx.db.query("googleDriveTokens").first();
+    if (!token?.rootFolderId) return;
+    const foldersById = await loadFolderMap(ctx);
+
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const dayStartMs = dayStart.getTime();
+
+    const slice = args.driveFileIds.slice(0, AUTO_IMPORT_SLICE);
+    const rest = args.driveFileIds.slice(AUTO_IMPORT_SLICE);
+
+    // Today's auto-import count per flag-anchor folder: seeded lazily from
+    // the by_auto_imported_at index (cheap — only files auto-imported TODAY
+    // carry the field in range, at most ~cap per anchor), then incremented
+    // in-memory as this slice imports so the cap holds within one batch.
+    const countsByAnchor = new Map<string, number>();
+    let todaysRows: Doc<"driveFiles">[] | null = null;
+
+    for (const driveFileId of slice) {
+      const row = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_drive_id", (q) => q.eq("driveFileId", driveFileId))
+        .first();
+      if (!row || row.trashed === true || row.documentId) continue;
+
+      // The poll gate: auto-import requires client scope AND the flag.
+      const scope: FolderScope = row.parentFolderId
+        ? resolveFolderScope(row.parentFolderId, foldersById, token.rootFolderId)
+        : { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
+      if (!scope.clientId || !scope.autoImport || !scope.autoImportFolderId) {
+        continue;
+      }
+      const anchor = scope.autoImportFolderId;
+
+      if (!countsByAnchor.has(anchor)) {
+        if (todaysRows === null) {
+          todaysRows = await ctx.db
+            .query("driveFiles")
+            .withIndex("by_auto_imported_at", (q) =>
+              q.gte("autoImportedAt", dayStartMs),
+            )
+            .take(AUTO_IMPORT_COUNT_SCAN_CAP);
+        }
+        const subtree = new Set(subtreeFolderIds(anchor, foldersById));
+        countsByAnchor.set(
+          anchor,
+          todaysRows.filter(
+            (r) => r.parentFolderId !== undefined && subtree.has(r.parentFolderId),
+          ).length,
+        );
+      }
+      const count = countsByAnchor.get(anchor)!;
+
+      if (count >= AUTO_IMPORT_DAILY_CAP) {
+        console.log(
+          `[driveSync] AUTO-IMPORT CAP REACHED (${AUTO_IMPORT_DAILY_CAP}/day) under folder ${anchor} — ` +
+            `"${row.name}" (${row.driveFileId}) mirrored but NOT imported. ` +
+            `Cap-skipped files will not retro-import tomorrow — run a harness wave / drive.importFolder for the remainder.`,
+        );
+        const anchorRow = await ctx.db
+          .query("driveFolders")
+          .withIndex("by_drive_id", (q) => q.eq("driveFolderId", anchor))
+          .first();
+        if (
+          anchorRow &&
+          (anchorRow.autoImportCapHit === undefined ||
+            anchorRow.autoImportCapHit < dayStartMs)
+        ) {
+          await ctx.db.patch(anchorRow._id, { autoImportCapHit: Date.now() });
+        }
+        continue;
+      }
+
+      const res = await importFileRows(
+        ctx,
+        [row],
+        foldersById,
+        token.rootFolderId,
+        Date.now(),
+        0,
+      );
+      if (res.imported === 1) {
+        await ctx.db.patch(row._id, { autoImportedAt: Date.now() });
+        countsByAnchor.set(anchor, count + 1);
+        console.log(
+          `[driveSync] auto-imported "${row.name}" (${row.driveFileId}) under autoImport folder ${anchor}`,
+        );
+      }
+    }
+
+    if (rest.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.driveSync.autoImportFromPoll, {
+        driveFileIds: rest,
+      });
+    }
+  },
+});
+
+// 3¾. Toggle a folder's wide-net auto-import flag (see autoImportFromPoll).
+// Arming the flag imports NOTHING retroactively — it only arms the poll
+// lane for files that arrive later; existing files still need an explicit
+// import. Stores an explicit true/false (false on a subfolder carves it out
+// of a flagged ancestor); only effective where the folder's scope resolves
+// a clientId (the poll gate enforces that). Auth-free core shared by the
+// public mutation and the MCP internal twin.
+async function setFolderAutoImportCore(
+  ctx: any,
+  args: { driveFolderId: string; enabled: boolean },
+): Promise<{ ok: boolean; enabled: boolean }> {
+  const folder = await ctx.db
+    .query("driveFolders")
+    .withIndex("by_drive_id", (q: any) => q.eq("driveFolderId", args.driveFolderId))
+    .first();
+  if (!folder) throw new Error("Folder not found in the Drive mirror");
+  await ctx.db.patch(folder._id, {
+    autoImport: args.enabled,
+    // Disarming clears a stale cap badge.
+    ...(args.enabled ? {} : { autoImportCapHit: undefined }),
+  });
+  return { ok: true, enabled: args.enabled };
+}
+
+export const setFolderAutoImport = mutation({
+  args: { driveFolderId: v.string(), enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    return setFolderAutoImportCore(ctx, args);
   },
 });
 
@@ -2079,7 +2357,7 @@ export const getFileForMcpInternal = internalQuery({
     const scope: FolderScope =
       row.parentFolderId && token?.rootFolderId
         ? resolveFolderScope(row.parentFolderId, foldersById, token.rootFolderId)
-        : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+        : { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
 
     let clientName: string | null = null;
     if (scope.clientId) {
@@ -2139,6 +2417,15 @@ export const mapFolderToProjectInternal = internalMutation({
   args: { driveFolderId: v.string(), projectId: v.optional(v.id("projects")) },
   handler: async (ctx, args) => {
     return mapFolderToProjectCore(ctx, args);
+  },
+});
+
+// drive.setAutoImport — internal twin of setFolderAutoImport (the wide-net
+// standing authorization; see autoImportFromPoll).
+export const setFolderAutoImportInternal = internalMutation({
+  args: { driveFolderId: v.string(), enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    return setFolderAutoImportCore(ctx, args);
   },
 });
 

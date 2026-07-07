@@ -12,7 +12,7 @@ import AtomRail from "./AtomRail";
 import NodeDetailCard from "./NodeDetailCard";
 import { FAMILIES, colorForType, familyFor } from "./graphVocab";
 import type { GraphEntityType, GraphFamily } from "./graphVocab";
-import type { AtomLineVM, Crumb, GraphEdgeVM, GraphNodeVM } from "./types";
+import type { AtomLineVM, Crumb, GraphEdgeVM, GraphNodeVM, SatelliteVM } from "./types";
 
 interface KnowledgeGraphDrawerProps {
   entryEntityType: GraphEntityType;
@@ -53,6 +53,12 @@ interface RawAttr {
   status: "active" | "contested";
   confidence: number;
   native?: string;
+}
+/** ringAttributes entry — a ring member's attribute atom (the satellite lane):
+ * the attribute shape plus its owning subject ref and the atom id. */
+interface RawRingAttr extends RawAttr {
+  atomId: string;
+  subject: { id: string; type: GraphEntityType; name: string; sub?: string };
 }
 
 function formatAttrValue(a: RawAttr): string {
@@ -132,11 +138,21 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     entityId: center.id,
     // Prospect entry ⇒ always unfiltered; client entry ⇒ the toggle decides.
     includeProspectScoped: entryIsProspect || showProspectIntel,
+    // Satellites: always pull each ring member's attribute atoms so a ring
+    // member's knowledge (a project's GDV/planning/cost) is visible in place.
+    includeRingAttributes: true,
   });
 
   // ── derive view-models from the expandEntity result ──
-  const { nodes, edges, atoms } = useMemo(() => {
-    if (!data) return { nodes: [] as GraphNodeVM[], edges: [] as GraphEdgeVM[], atoms: [] as AtomLineVM[] };
+  const { nodes, edges, atoms, satellites, satelliteTruncation } = useMemo(() => {
+    if (!data)
+      return {
+        nodes: [] as GraphNodeVM[],
+        edges: [] as GraphEdgeVM[],
+        atoms: [] as AtomLineVM[],
+        satellites: [] as SatelliteVM[],
+        satelliteTruncation: {} as Record<string, number>,
+      };
     const entity = data.entity as { id: string; type: GraphEntityType; name: string; sub?: string };
     const rawEdges = [...(data.edges as RawEdge[]), ...(data.nativeEdges as RawEdge[])];
     const rawAttrs = data.attributes as RawAttr[];
@@ -145,6 +161,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     const nodeMap = new Map<string, GraphNodeVM>([[entity.id, centerNode]]);
     const edgeVMs: GraphEdgeVM[] = [];
     const atomVMs: AtomLineVM[] = [];
+    const satelliteVMs: SatelliteVM[] = [];
 
     rawEdges.forEach((e, i) => {
       if (e.other.id === entity.id) return; // skip degenerate self edges
@@ -194,20 +211,53 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
       });
     });
 
+    // Center attributes — rail rows AND satellites orbiting the center node.
     rawAttrs.forEach((a, i) => {
+      const id = `a${i}`;
+      const family = familyFor(a.predicate);
+      const value = formatAttrValue(a);
       atomVMs.push({
-        id: `a${i}`,
-        family: familyFor(a.predicate),
+        id,
+        family,
         predicate: a.predicate,
-        line: formatAttrValue(a),
+        line: value,
         qualifier: a.qualifier,
         status: a.status,
         provenance: attrProvenance(a),
         nodeIds: [entity.id],
       });
+      satelliteVMs.push({ id, hostId: entity.id, family, label: a.predicate, valueSnippet: value, status: a.status });
     });
 
-    return { nodes: [...nodeMap.values()], edges: edgeVMs, atoms: atomVMs };
+    // Ring-member attributes (satellite lane). Each becomes a rail row filed
+    // under its host (nodeIds=[hostId], reusing the node-click filter + the
+    // satellite-click selection path) AND a satellite orbiting that host.
+    const rawRingAttrs = (data.ringAttributes ?? {}) as Record<string, RawRingAttr[]>;
+    const rawRingTrunc = (data.ringAttributeTruncated ?? {}) as Record<string, number>;
+    const satelliteTrunc: Record<string, number> = {};
+    for (const [key, rows] of Object.entries(rawRingAttrs)) {
+      // entityKey is `${type}:${id}`; the node VM is keyed by the raw id.
+      const hostId = key.slice(key.indexOf(":") + 1);
+      if (!nodeMap.has(hostId)) continue; // host not on canvas — skip its satellites
+      if (rawRingTrunc[key]) satelliteTrunc[hostId] = rawRingTrunc[key];
+      rows.forEach((a) => {
+        const family = familyFor(a.predicate);
+        const value = formatAttrValue(a);
+        atomVMs.push({
+          id: a.atomId,
+          family,
+          predicate: a.predicate,
+          line: value,
+          qualifier: a.qualifier,
+          status: a.status,
+          provenance: attrProvenance(a),
+          nodeIds: [hostId],
+        });
+        satelliteVMs.push({ id: a.atomId, hostId, family, label: a.predicate, valueSnippet: value, status: a.status });
+      });
+    }
+
+    return { nodes: [...nodeMap.values()], edges: edgeVMs, atoms: atomVMs, satellites: satelliteVMs, satelliteTruncation: satelliteTrunc };
   }, [data]);
 
   const truncatedMore = useMemo(() => {
@@ -246,6 +296,17 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     return s;
   }, [atoms, searchLc]);
 
+  // Satellites glow on a search hit over their predicate + value (their own
+  // ids, matched independently of the node-id set above).
+  const satelliteMatchIds = useMemo(() => {
+    const s = new Set<string>();
+    if (!searchLc) return s;
+    for (const sat of satellites) {
+      if (`${sat.label} ${sat.valueSnippet}`.toLowerCase().includes(searchLc)) s.add(sat.id);
+    }
+    return s;
+  }, [satellites, searchLc]);
+
   const selectedNode = selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null;
   const detailAtoms = useMemo(
     () => (selectedNode ? atoms.filter((a) => a.nodeIds.includes(selectedNode.id)) : []),
@@ -268,6 +329,13 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     const target = atom.nodeIds[atom.nodeIds.length - 1];
     setSelectedNodeId(target);
     setSelectedAtomId(atom.id);
+  }, []);
+
+  // Satellite click → select its host node (so the rail/detail filters to it)
+  // and highlight the atom's row (same path as an atom-rail click).
+  const handleSatelliteSelect = useCallback((sat: SatelliteVM) => {
+    setSelectedNodeId(sat.hostId);
+    setSelectedAtomId(sat.id);
   }, []);
 
   const handleExplore = useCallback((node: GraphNodeVM) => {
@@ -498,8 +566,8 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
           )}
           <span style={{ marginLeft: "auto", color: colors.text.dim, fontSize: 11.5, fontFamily: "ui-monospace, Menlo, monospace" }}>
             {clientTotals
-              ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${nodes.length} entities · ${atoms.length} in view`
-              : `${nodes.length} entities · ${atoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}`}
+              ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${nodes.length} entities · ${atoms.length} in view${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`
+              : `${nodes.length} entities · ${atoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`}
           </span>
         </div>
 
@@ -530,13 +598,18 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
               <GraphCanvas
                 nodes={nodes}
                 edges={edges}
+                satellites={satellites}
+                satelliteTruncation={satelliteTruncation}
+                satelliteMatchIds={satelliteMatchIds}
                 centerId={center.id}
                 selectedId={selectedNodeId}
+                selectedAtomId={selectedAtomId}
                 searchMatchIds={searchMatchNodeIds}
                 activeFamily={activeFamily}
                 reducedMotion={reducedMotion}
                 truncatedMore={truncatedMore}
                 onSelect={handleSelectNode}
+                onSatelliteSelect={handleSatelliteSelect}
               />
               {selectedNode && (
                 <NodeDetailCard

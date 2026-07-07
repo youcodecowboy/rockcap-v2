@@ -87,6 +87,10 @@ const HARD_CAP = 100;
  * pass operates on the RETURNED (post-truncation) edge endpoints, top-ranked
  * first, so S = {center} ∪ ring stays ≤ 41 entities per call. */
 const INTER_RING_CAP = 40;
+/** Ring-attribute pass ("knowledge satellites"): max ATTRIBUTE atoms surfaced
+ * per ring member. Ranked contested-first, capped so a data-rich project can't
+ * flood the canvas; the overflow rides along as a per-member truncatedCount. */
+const RING_ATTR_CAP = 12;
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
@@ -422,9 +426,16 @@ async function collectAtomEdges(
   return edges;
 }
 
-/** GraphAttribute plus the atom's owning clientId — internal only, for the
- * prospect-scope filter; stripped before the attribute leaves the module. */
-type AttrWithOwner = GraphAttribute & { ownerClientId?: string };
+/** GraphAttribute plus the atom's owning clientId (for the prospect-scope
+ * filter) and the atom id — both internal. The clientId is stripped before
+ * the attribute leaves the module; the atomId is kept on ring-attribute rows
+ * (the satellite handle) and stripped from the center's attributes so their
+ * public shape is unchanged. */
+type AttrWithOwner = GraphAttribute & { ownerClientId?: string; atomId: string };
+
+/** A ring member's ATTRIBUTE atom, resolved for the satellite lane: the
+ * standard attribute shape plus its owning subject ref and the atom id. */
+export type AttributeRow = GraphAttribute & { subject: EntityRef; atomId: string };
 
 async function collectAtomAttributes(
   ctx: QueryCtx,
@@ -451,6 +462,7 @@ async function collectAtomAttributes(
         status: atom.status as "active" | "contested",
         confidence: atom.confidence,
         ownerClientId: atom.clientId as string | undefined,
+        atomId: atom._id as string,
       });
     }
   }
@@ -988,6 +1000,12 @@ export type ExpandEntityArgs = {
    * ATOM-lane items whose owning clientId is a prospect-status clients row.
    * Native edges are public/structural record and always exempt. */
   includeProspectScoped?: boolean;
+  /** Satellite lane. When true, also return `ringAttributes`: the ATTRIBUTE
+   * atoms of each ring member in the SAME capped set S the inter-ring pass
+   * uses (≤ INTER_RING_CAP). Lets the drawer render a ring member's knowledge
+   * (a project's GDV / planning / cost, etc.) without pivoting onto it.
+   * Atom lane only; respects the prospect-scope filter when active. */
+  includeRingAttributes?: boolean;
 };
 
 export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
@@ -1019,8 +1037,9 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
     if (prospectFilter) {
       attrsWithOwner = await prospectFilter.filter(attrsWithOwner);
     }
-    // Strip the internal ownerClientId before the attribute leaves the module.
-    attributes = attrsWithOwner.map(({ ownerClientId: _owner, ...attr }) => attr);
+    // Strip the internal ownerClientId + atomId before the CENTER attribute
+    // leaves the module — its public shape is unchanged (GraphAttribute).
+    attributes = attrsWithOwner.map(({ ownerClientId: _owner, atomId: _atomId, ...attr }) => attr);
     if (args.entityType === "client") {
       attributes.push(...(await nativeAttributesForClient(ctx, args.entityId)));
     }
@@ -1109,6 +1128,35 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
     });
   }
 
+  // ── Ring-attribute pass (satellites — see module header §14b.5) ──
+  // For each ring member in S (the SAME capped set the inter-ring pass used),
+  // collect its ATTRIBUTE atoms so the drawer can render them as "knowledge
+  // satellites" attached to the member — a project's GDV / planning / cost
+  // become visible without pivoting onto it. Atom lane only; respects the
+  // prospect-scope filter when active. Capped at RING_ATTR_CAP per member by
+  // the attribute ranking (contested first), overflow as truncatedCount.
+  const ringAttributes: Record<string, AttributeRow[]> = {};
+  const ringAttributeTruncated: Record<string, number> = {};
+  let ringAttributesTotal = 0;
+  if (args.includeRingAttributes) {
+    for (const member of ringMembers) {
+      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id);
+      if (prospectFilter) memberAttrs = await prospectFilter.filter(memberAttrs);
+      if (memberAttrs.length === 0) continue;
+      memberAttrs.sort(rankAttributes);
+      const memberRef = await names.ref(member.type, member.id);
+      const key = `${member.type}:${member.id}`;
+      const capped = memberAttrs.slice(0, RING_ATTR_CAP);
+      ringAttributes[key] = capped.map(
+        ({ ownerClientId: _owner, atomId, ...attr }) => ({ ...attr, atomId, subject: memberRef }),
+      );
+      if (memberAttrs.length > RING_ATTR_CAP) {
+        ringAttributeTruncated[key] = memberAttrs.length - RING_ATTR_CAP;
+      }
+      ringAttributesTotal += capped.length;
+    }
+  }
+
   const truncated =
     atomEdges.length > limit ||
     nativeEdges.length > limit ||
@@ -1121,11 +1169,15 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
     nativeEdges: await resolveEdges(names, returnedNativeEdges),
     interEdges,
     attributes: attributes.slice(0, limit),
+    // Satellite lane — keyed by `${type}:${id}`; empty unless includeRingAttributes.
+    ringAttributes,
+    ringAttributeTruncated,
     counts: {
       edges: atomEdges.length,
       nativeEdges: nativeEdges.length,
       interEdges: interTotal,
       attributes: attributes.length,
+      ringAttributes: ringAttributesTotal,
       truncated,
       // Post-filter semantics: the counts above reflect what survived the
       // prospect-scope filter; this is how many atom-lane items it hid
@@ -1517,6 +1569,9 @@ const expandArgs = {
   // Spec §14b.6a — undefined/true = unfiltered (default), false = hide
   // prospect-scoped atom-lane items. Native edges always exempt.
   includeProspectScoped: v.optional(v.boolean()),
+  // Satellite lane — when true, also return each ring member's ATTRIBUTE atoms
+  // (ringAttributes), so the drawer can show ring knowledge without pivoting.
+  includeRingAttributes: v.optional(v.boolean()),
 };
 
 const sharedNeighborsArgs = {

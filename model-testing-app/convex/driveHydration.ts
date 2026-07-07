@@ -43,6 +43,19 @@ import {
 //
 // The Convex→Next callback copies hubspotSync/recurringSync.ts exactly:
 // POST ${NEXT_APP_URL}/api/drive/ingest with header x-cron-secret.
+//
+// CLASSIFICATION IDENTITY IS IMMUTABLE (operator decision 2026-07-07): once
+// a documents row carries a real classification (fileTypeDetected set and
+// not "Unclassified"), re-extraction refreshes CONTENTS — summary /
+// textContent / documentAnalysis / extractedData / extractedIntelligence /
+// contentChecksum / bytes — but NEVER overwrites fileTypeDetected /
+// category / documentCode / the identity confidence. "An appraisal never
+// stops being an appraisal; edits change contents, never identity."
+// (Folders were already immutable after first placement.) Upgrading an
+// "Unclassified" placeholder is the FIRST real classification, not a
+// change, and still lands normally. Reclassification is an explicit
+// operator action only — a future `document.reclassify` tool, deliberately
+// NOT built yet. Same rule in knowledge/harnessClassify.applyClassification.
 
 const MAX_FILES_PER_TICK = 5;
 const PROCESSING_RECLAIM_MS = 30 * 60_000; // stuck-"processing" reclaim window
@@ -323,22 +336,47 @@ export const applyExtraction = internalMutation({
     const category: string =
       typeof m.category === "string" && m.category ? m.category : "Uncategorized";
     const reasoning: string = typeof m.reasoning === "string" ? m.reasoning : "";
-    const analysisFields = {
+
+    // ── IDENTITY IMMUTABILITY (see module header). A row that already
+    // carries a real classification keeps its identity fields on every
+    // re-extraction: fileTypeDetected / category / reasoning / confidence /
+    // documentCode never change once set. "Unclassified" is the
+    // metadata-first placeholder — upgrading it is the FIRST real
+    // classification, not a change. The fresh run's analysis confidence
+    // still rides inside documentAnalysis (confidenceInAnalysis).
+    const identityLocked =
+      typeof existingDoc.fileTypeDetected === "string" &&
+      existingDoc.fileTypeDetected !== "" &&
+      existingDoc.fileTypeDetected !== "Unclassified";
+    const effectiveFileTypeDetected: string = identityLocked
+      ? existingDoc.fileTypeDetected
+      : fileTypeDetected;
+    const effectiveCategory: string = identityLocked
+      ? (existingDoc.category ?? category)
+      : category;
+
+    // Content fields — refreshed on first extraction AND every re-extract.
+    const contentFields = {
       summary,
-      fileTypeDetected,
-      category,
-      reasoning,
-      confidence: typeof m.confidence === "number" ? m.confidence : 0,
       tokensUsed: typeof m.tokensUsed === "number" ? m.tokensUsed : 0,
       extractedData: m.extractedData ?? undefined,
       extractedIntelligence: m.extractedIntelligence ?? undefined,
       documentAnalysis: m.documentAnalysis ?? undefined,
-      classificationReasoning: reasoning || undefined,
       textContent:
         typeof m.textContent === "string" && m.textContent
           ? m.textContent
           : undefined,
     };
+    // Identity fields — stamped only while the doc is still unclassified.
+    const identityFields = identityLocked
+      ? {}
+      : {
+          fileTypeDetected,
+          category,
+          reasoning,
+          confidence: typeof m.confidence === "number" ? m.confidence : 0,
+          classificationReasoning: reasoning || undefined,
+        };
 
     // First extraction = the metadata-first row has never had content
     // applied. Distinguished by contentChecksum (only ever stamped here) so
@@ -424,9 +462,11 @@ export const applyExtraction = internalMutation({
     // Document code — stamped once, on first extraction (the metadata-first
     // row has none). Collision probe is a full filter scan (documents has no
     // by_documentCode index) but runs once per imported file, matching
-    // documents.create's own cost.
+    // documents.create's own cost. Identity-locked docs never get a code
+    // from re-extraction (the code derives from a classification we are
+    // deliberately not applying).
     let documentCode: string | undefined;
-    if (firstExtraction && !existingDoc.documentCode) {
+    if (firstExtraction && !existingDoc.documentCode && !identityLocked) {
       documentCode =
         typeof m.documentCode === "string" && m.documentCode
           ? m.documentCode
@@ -443,9 +483,11 @@ export const applyExtraction = internalMutation({
     // ── PATCH the import-created row in place (first extraction and every
     // re-extraction alike). Drive revisions are the upstream history — no
     // version-chain rows. folderId/folderType only via placementPatch (first
-    // extraction); clientId/projectId are never touched here.
+    // extraction); clientId/projectId are never touched here; identity
+    // fields (fileTypeDetected/category/…) only while still unclassified.
     await ctx.db.patch(documentId, {
-      ...analysisFields,
+      ...contentFields,
+      ...identityFields,
       fileStorageId: args.storageId,
       fileSize: row.size ?? existingDoc.fileSize,
       contentChecksum: args.checksumAtFetch,
@@ -477,7 +519,7 @@ export const applyExtraction = internalMutation({
           | "document_summary"
           | "project_status"
           | "general" = "document_summary";
-        const categoryLower = category.toLowerCase();
+        const categoryLower = effectiveCategory.toLowerCase();
         const fileNameLower = row.name.toLowerCase();
         if (
           categoryLower.includes("deal") ||
@@ -509,7 +551,7 @@ export const applyExtraction = internalMutation({
           .map((line) => line.trim());
 
         const metadata: Record<string, unknown> = {};
-        const extracted = analysisFields.extractedData as any;
+        const extracted = contentFields.extractedData as any;
         if (extracted) {
           if (extracted.loanAmount) metadata.loanAmount = extracted.loanAmount;
           if (extracted.interestRate) metadata.interestRate = extracted.interestRate;
@@ -518,7 +560,7 @@ export const applyExtraction = internalMutation({
           if (extracted.detectedCurrency) metadata.currency = extracted.detectedCurrency;
         }
 
-        const tags: string[] = [category, fileTypeDetected];
+        const tags: string[] = [effectiveCategory, effectiveFileTypeDetected];
         if (effectiveProjectId) tags.push("project-related");
 
         await ctx.db.insert("knowledgeBankEntries", {
@@ -527,7 +569,7 @@ export const applyExtraction = internalMutation({
           sourceType: "document",
           sourceId: documentId,
           entryType,
-          title: `${row.name} - ${category}`,
+          title: `${row.name} - ${effectiveCategory}`,
           content: summary,
           keyPoints,
           metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
@@ -544,7 +586,7 @@ export const applyExtraction = internalMutation({
       // only on FIRST extraction, so this documentId can't already have a
       // job; the existing-job probe there is skipped here.
       const meetingTypes = ["Meeting Minutes", "Meeting Notes", "Minutes"];
-      const fileTypeLower = fileTypeDetected.toLowerCase();
+      const fileTypeLower = effectiveFileTypeDetected.toLowerCase();
       const fileNameLower = row.name.toLowerCase();
       const isMeetingDocument =
         meetingTypes.some((t) => t.toLowerCase() === fileTypeLower) ||
@@ -747,7 +789,7 @@ export const hydrateSettled = internalAction({
         // folder does NOT stop an imported file from syncing.
         const scope: FolderScope = file.parentFolderId
           ? resolveFolderScope(file.parentFolderId, foldersById, rootFolderId)
-          : { inScope: false, clientId: null, projectId: null, mappedFolderId: null };
+          : { inScope: false, clientId: null, projectId: null, mappedFolderId: null, autoImport: false, autoImportFolderId: null };
 
         // b. Token — re-read per file (a refresh earlier in the tick
         // persisted a new accessToken). A refresh failure flags reconnect

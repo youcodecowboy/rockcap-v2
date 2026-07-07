@@ -4360,6 +4360,17 @@ export default defineSchema({
     path: v.string(),                          // materialized, e.g. "/ClientCo/Deals/2026" ("/" for root)
     clientId: v.optional(v.id("clients")),     // operator mapping — set ONLY on explicitly mapped folders
     projectId: v.optional(v.id("projects")),   // operator mapping — project-level scope inside a client subtree
+    // Wide-net auto-import (operator decision 2026-07-07): standing
+    // authorization — NEW files arriving in this subtree auto-import on the
+    // poll tick that mirrors them. Inherits like projectId (nearest
+    // ancestor-or-self with the flag EXPLICITLY set wins, so false carves a
+    // subfolder out of a flagged parent); inert outside a client-mapped
+    // scope. See driveSync.autoImportFromPoll.
+    autoImport: v.optional(v.boolean()),
+    // ms epoch — stamped when the 20/day auto-import cap first trips that
+    // day under this (flag-anchor) folder; the settings tree badges it.
+    // Stale values are ignored once the day rolls over.
+    autoImportCapHit: v.optional(v.number()),
     trashed: v.optional(v.boolean()),
     lastSyncedAt: v.string(),
   })
@@ -4397,12 +4408,17 @@ export default defineSchema({
     firstDirtyAt: v.optional(v.number()),      // ms epoch — starvation guard, never pushed out
     processingStartedAt: v.optional(v.number()),
     documentId: v.optional(v.id("documents")),
+    // ms epoch — set when the poll's wide-net lane auto-imported this file
+    // (driveSync.autoImportFromPoll). Daily-cap accounting only; explicit
+    // operator/MCP imports never stamp it.
+    autoImportedAt: v.optional(v.number()),
     lastSyncedAt: v.string(),
   })
     .index("by_drive_id", ["driveFileId"])
     .index("by_parent", ["parentFolderId"])
     .index("by_extraction_status", ["extractionStatus"])
-    .index("by_document", ["documentId"]),
+    .index("by_document", ["documentId"])
+    .index("by_auto_imported_at", ["autoImportedAt"]),
 
   // ingestionEvents - durable post-extraction feed (Spec 2's hook). Every
   // document that enters the corpus (Drive extraction, direct upload, ...)

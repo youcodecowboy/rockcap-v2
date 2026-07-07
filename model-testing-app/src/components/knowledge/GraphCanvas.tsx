@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useColors } from "@/lib/useColors";
-import { NODE_RADIUS, colorForType } from "./graphVocab";
-import type { GraphEdgeVM, GraphNodeVM } from "./types";
+import { NODE_RADIUS, colorForType, colorForFamily } from "./graphVocab";
+import type { GraphEdgeVM, GraphNodeVM, SatelliteVM } from "./types";
 import type { GraphFamily } from "./graphVocab";
 
 interface Sim {
@@ -18,14 +18,40 @@ interface Sim {
 interface GraphCanvasProps {
   nodes: GraphNodeVM[];
   edges: GraphEdgeVM[];
+  /** Attribute atoms of the center + ring members, rendered as small dots. */
+  satellites: SatelliteVM[];
+  /** hostId → attributes the server capped away (per-member overflow). */
+  satelliteTruncation: Record<string, number>;
+  /** Satellite ids whose predicate+value match the current search (glow). */
+  satelliteMatchIds: Set<string>;
   centerId: string;
   selectedId: string | null;
+  /** Selected atom id — highlights the matching satellite with a ring. */
+  selectedAtomId: string | null;
   searchMatchIds: Set<string>;
   activeFamily: GraphFamily | "all";
   reducedMotion: boolean;
   /** counts.truncated fan-out overflow — rendered as a "+N more" badge on the center. */
   truncatedMore: number;
   onSelect: (id: string | null) => void;
+  /** Satellite click → select its host + highlight the atom row. */
+  onSatelliteSelect: (sat: SatelliteVM) => void;
+}
+
+/** Satellite render dot radius. */
+const SAT_RADIUS = 4.5;
+/** Short, jittered rest radii (px) — satellites fan out in a tight halo. */
+const SAT_REST_MIN = 34;
+const SAT_REST_MAX = 46;
+/** Above this many total satellites, aggregate beyond SAT_PER_HOST_CAP/host. */
+const SAT_DENSITY_LIMIT = 120;
+const SAT_PER_HOST_CAP = 8;
+
+/** Stable non-negative hash — deterministic per-satellite slot/phase seeding. */
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
 }
 
 // Ported physics constants (mmh-knowledge-graph.html prototype). The graph
@@ -61,13 +87,18 @@ const AUTOFIT_PADDING = 60;
 export default function GraphCanvas({
   nodes,
   edges,
+  satellites,
+  satelliteTruncation,
+  satelliteMatchIds,
   centerId,
   selectedId,
+  selectedAtomId,
   searchMatchIds,
   activeFamily,
   reducedMotion,
   truncatedMore,
   onSelect,
+  onSatelliteSelect,
 }: GraphCanvasProps) {
   const colors = useColors();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -81,6 +112,14 @@ export default function GraphCanvas({
   const labelElRef = useRef<Map<string, SVGTextElement | null>>(new Map());
   const alphaRef = useRef(1);
   const dragIdRef = useRef<string | null>(null);
+
+  // Satellites: element refs + per-host expansion + hover (positions are
+  // kinematic — computed relative to the host each frame, no force solve).
+  const satElRef = useRef<Map<string, SVGGElement | null>>(new Map());
+  const badgeElRef = useRef<Map<string, SVGGElement | null>>(new Map());
+  const satHoverRef = useRef<SVGGElement | null>(null);
+  const [expandedHosts, setExpandedHosts] = useState<Set<string>>(new Set());
+  const [hoverSatId, setHoverSatId] = useState<string | null>(null);
 
   // Viewport transform.
   const viewRef = useRef({ vw: 0, vh: 0, tx: 0, ty: 0, k: 1 });
@@ -112,6 +151,72 @@ export default function GraphCanvas({
     },
     [edges],
   );
+
+  // Satellites grouped by host. `aggregate` trips the density guard.
+  const satsByHost = useMemo(() => {
+    const m = new Map<string, SatelliteVM[]>();
+    for (const s of satellites) {
+      const arr = m.get(s.hostId);
+      if (arr) arr.push(s);
+      else m.set(s.hostId, [s]);
+    }
+    return m;
+  }, [satellites]);
+  const aggregate = satellites.length > SAT_DENSITY_LIMIT;
+
+  // Reset per-host expansion when the satellite set changes (pivot / refilter).
+  const satSig = useMemo(() => satellites.map((s) => s.id).join(","), [satellites]);
+  useEffect(() => {
+    setExpandedHosts(new Set());
+    setHoverSatId(null);
+  }, [satSig]);
+
+  // Which satellites actually render (density guard + per-host expansion), the
+  // "+N" aggregate badges, and each satellite's kinematic slot (angle + rest).
+  const { renderedSats, satMeta, badges } = useMemo(() => {
+    const rendered: SatelliteVM[] = [];
+    const meta = new Map<string, { angle: number; rest: number; ph: number; ph2: number; hostId: string }>();
+    const badgeList: Array<{ hostId: string; count: number; angle: number; rest: number; expandable: boolean }> = [];
+    for (const [hostId, sats] of satsByHost) {
+      const expanded = expandedHosts.has(hostId);
+      const cap = aggregate && !expanded ? SAT_PER_HOST_CAP : sats.length;
+      const shown = sats.slice(0, cap);
+      const base = ((hashStr(hostId) % 360) * Math.PI) / 180;
+      // Slot count leaves room for a badge slot when anything is hidden.
+      const clientHidden = sats.length - shown.length;
+      const serverTrunc = satelliteTruncation[hostId] ?? 0;
+      const hidden = clientHidden + serverTrunc;
+      const slots = shown.length + (hidden > 0 ? 1 : 0);
+      shown.forEach((sat, i) => {
+        const angle = base + ((i + 0.5) / Math.max(slots, 1)) * Math.PI * 2;
+        const rest = SAT_REST_MIN + ((hashStr(sat.id) % 100) / 100) * (SAT_REST_MAX - SAT_REST_MIN);
+        meta.set(sat.id, {
+          angle,
+          rest,
+          ph: (hashStr(sat.id) % 628) / 100,
+          ph2: (hashStr(`${sat.id}b`) % 628) / 100,
+          hostId,
+        });
+        rendered.push(sat);
+      });
+      if (hidden > 0) {
+        const angle = base + ((shown.length + 0.5) / Math.max(slots, 1)) * Math.PI * 2;
+        badgeList.push({ hostId, count: hidden, angle, rest: SAT_REST_MAX + 7, expandable: clientHidden > 0 });
+      }
+    }
+    return { renderedSats: rendered, satMeta: meta, badges: badgeList };
+  }, [satsByHost, aggregate, expandedHosts, satelliteTruncation]);
+
+  // Mirror the satellite render data into refs so the rAF draw loop reads live
+  // values without being torn down/recreated on every hover or expand.
+  const renderedSatsRef = useRef(renderedSats);
+  const satMetaRef = useRef(satMeta);
+  const badgesRef = useRef(badges);
+  const hoverSatIdRef = useRef(hoverSatId);
+  useEffect(() => { renderedSatsRef.current = renderedSats; }, [renderedSats]);
+  useEffect(() => { satMetaRef.current = satMeta; }, [satMeta]);
+  useEffect(() => { badgesRef.current = badges; }, [badges]);
+  useEffect(() => { hoverSatIdRef.current = hoverSatId; }, [hoverSatId]);
 
   const applyView = useCallback(() => {
     const { tx, ty, k } = viewRef.current;
@@ -303,6 +408,47 @@ export default function GraphCanvas({
           label.setAttribute("y", String((pa[1] + pb[1]) / 2 - 4));
         }
       }
+      // Satellites — kinematically pinned to their host at their slot (angle,
+      // rest) so host motion carries them; a tiny ambient wobble keeps them
+      // alive. No per-satellite force solve: O(rendered satellites) per frame.
+      const meta = satMetaRef.current;
+      for (const sat of renderedSatsRef.current) {
+        const el = satElRef.current.get(sat.id);
+        const m = meta.get(sat.id);
+        if (!el || !m) continue;
+        const hp = P[m.hostId];
+        if (!hp) continue;
+        let x = hp[0] + Math.cos(m.angle) * m.rest;
+        let y = hp[1] + Math.sin(m.angle) * m.rest;
+        if (ambient) {
+          x += Math.sin(t * 0.0009 + m.ph) * 1.6;
+          y += Math.cos(t * 0.0008 + m.ph2) * 1.6;
+        }
+        el.setAttribute("transform", `translate(${x},${y})`);
+      }
+      for (const b of badgesRef.current) {
+        const el = badgeElRef.current.get(b.hostId);
+        if (!el) continue;
+        const hp = P[b.hostId];
+        if (!hp) continue;
+        el.setAttribute(
+          "transform",
+          `translate(${hp[0] + Math.cos(b.angle) * b.rest},${hp[1] + Math.sin(b.angle) * b.rest})`,
+        );
+      }
+      // Hover label follows the hovered satellite.
+      const hov = hoverSatIdRef.current;
+      const hoverEl = satHoverRef.current;
+      if (hoverEl && hov) {
+        const m = meta.get(hov);
+        const hp = m && P[m.hostId];
+        if (m && hp) {
+          hoverEl.setAttribute(
+            "transform",
+            `translate(${hp[0] + Math.cos(m.angle) * m.rest},${hp[1] + Math.sin(m.angle) * m.rest - 10})`,
+          );
+        }
+      }
     };
 
     const loop = () => {
@@ -403,6 +549,10 @@ export default function GraphCanvas({
   // ── highlight state (React-driven className/style; positions stay on refs) ──
   const activeId = hoverId ?? selectedId;
   const activeNeighbors = useMemo(() => (activeId ? neighbors(activeId) : null), [activeId, neighbors]);
+  const hoverSat = hoverSatId ? renderedSats.find((s) => s.id === hoverSatId) ?? null : null;
+  const hoverSatLabel = hoverSat
+    ? `${hoverSat.label}: ${hoverSat.valueSnippet.length > 42 ? `${hoverSat.valueSnippet.slice(0, 42)}…` : hoverSat.valueSnippet}`
+    : "";
 
   const btn: React.CSSProperties = {
     width: 30,
@@ -486,6 +636,79 @@ export default function GraphCanvas({
                 >
                   {e.predicate}
                   {e.qualifier ? <tspan style={{ fill: colors.text.dim }}>{`  ·  ${e.qualifier}`}</tspan> : null}
+                </text>
+              </g>
+            );
+          })}
+          {/* satellites — small family-colored dots orbiting their host */}
+          {renderedSats.map((sat) => {
+            const familyDim = activeFamily !== "all" && sat.family !== activeFamily;
+            const hostActive = activeId === sat.hostId;
+            const hostDim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
+            const dim = familyDim || hostDim;
+            const match = satelliteMatchIds.has(sat.id);
+            const isSelAtom = sat.id === selectedAtomId;
+            const fill = colorForFamily(colors, sat.family);
+            const contested = sat.status === "contested";
+            return (
+              <g
+                key={sat.id}
+                ref={(el) => {
+                  satElRef.current.set(sat.id, el);
+                }}
+                style={{ cursor: "pointer", opacity: dim ? 0.12 : 1, color: fill }}
+                onPointerEnter={() => setHoverSatId(sat.id)}
+                onPointerLeave={() => setHoverSatId((h) => (h === sat.id ? null : h))}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onSatelliteSelect(sat);
+                }}
+              >
+                {isSelAtom && <circle r={SAT_RADIUS + 3.5} fill="none" stroke={fill} strokeWidth={1.4} />}
+                {contested && <circle r={SAT_RADIUS + 2} fill="none" stroke={colors.accent.red} strokeWidth={1.2} />}
+                <circle
+                  r={SAT_RADIUS}
+                  fill={fill}
+                  stroke={colors.bg.base}
+                  strokeWidth={1}
+                  style={{ filter: match ? "drop-shadow(0 0 5px currentColor)" : undefined }}
+                />
+              </g>
+            );
+          })}
+          {/* per-host aggregate badges ("+N") — density guard / server overflow */}
+          {badges.map((b) => {
+            const expanded = expandedHosts.has(b.hostId);
+            return (
+              <g
+                key={`sat-badge-${b.hostId}`}
+                ref={(el) => {
+                  badgeElRef.current.set(b.hostId, el);
+                }}
+                style={{ cursor: b.expandable ? "pointer" : "default" }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (!b.expandable) return;
+                  setExpandedHosts((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(b.hostId)) next.delete(b.hostId);
+                    else next.add(b.hostId);
+                    return next;
+                  });
+                }}
+              >
+                <title>
+                  {b.expandable
+                    ? `${b.count} more knowledge point${b.count === 1 ? "" : "s"} — click to ${expanded ? "collapse" : "expand"}`
+                    : `${b.count} more knowledge point${b.count === 1 ? "" : "s"} (capped)`}
+                </title>
+                <circle r={8} fill={colors.bg.card} stroke={colors.border.mid} strokeWidth={1} />
+                <text
+                  textAnchor="middle"
+                  y={3}
+                  style={{ fontSize: 8.5, fontWeight: 700, fill: colors.text.secondary, pointerEvents: "none" }}
+                >
+                  {expanded ? "−" : `+${b.count}`}
                 </text>
               </g>
             );
@@ -578,6 +801,25 @@ export default function GraphCanvas({
               </g>
             );
           })}
+          {/* satellite hover label — position driven by the draw loop */}
+          {hoverSat && (
+            <g ref={satHoverRef} style={{ pointerEvents: "none" }}>
+              <rect
+                x={-5}
+                y={-11}
+                width={hoverSatLabel.length * 5.6 + 10}
+                height={16}
+                rx={3}
+                fill={colors.bg.card}
+                stroke={colors.border.default}
+                strokeWidth={1}
+                opacity={0.96}
+              />
+              <text x={0} y={0} style={{ fontSize: 10, fill: colors.text.primary }}>
+                {hoverSatLabel}
+              </text>
+            </g>
+          )}
         </g>
       </svg>
 

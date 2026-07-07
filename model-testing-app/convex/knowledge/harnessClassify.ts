@@ -50,6 +50,18 @@ import { resolvePlacement } from "../../src/v4/lib/placement-rules";
 // applyClassification stamps exactly that value as extractedChecksum, so a
 // file edited mid-classification re-enters "settling" instead of
 // "complete" and the automatic lane re-extracts it.
+//
+// CLASSIFICATION IDENTITY IS IMMUTABLE (operator decision 2026-07-07): once
+// a documents row carries a real classification (fileTypeDetected set and
+// not "Unclassified"), re-classification through this lane refreshes
+// CONTENTS — summary / textContent / documentAnalysis / contentChecksum —
+// but NEVER overwrites fileTypeDetected / category / the identity
+// confidence. "An appraisal never stops being an appraisal; edits change
+// contents, never identity." (Folders were already immutable after first
+// placement.) Upgrading an "Unclassified" placeholder is the FIRST real
+// classification and lands normally. Reclassification is an explicit
+// operator action only — a future `document.reclassify` tool, deliberately
+// NOT built yet. Same rule in driveHydration.applyExtraction.
 
 const MAX_BYTES = 100 * 1024 * 1024; // fileProcessor's 100MB cap (validateFile)
 const TEXT_RETURN_CAP = 120_000; // chars returned to the agent context
@@ -409,11 +421,13 @@ export const applyClassification = internalMutation({
     error?: string;
     documentId?: Id<"documents">;
     firstClassification?: boolean;
+    identityLocked?: boolean;
     folderId?: string;
     folderType?: "client" | "project";
     ingestionKind?: "created" | "reextracted";
     driveFileCompleted?: boolean;
     drifted?: boolean;
+    note?: string;
   }> => {
     // ── Validation.
     const fileTypeDetected = args.fileTypeDetected.trim();
@@ -431,6 +445,22 @@ export const applyClassification = internalMutation({
     const existingDoc = await ctx.db.get(args.documentId);
     if (!existingDoc) return { applied: false, error: "document_not_found" };
     const doc = existingDoc as any;
+
+    // ── IDENTITY IMMUTABILITY (see module header). A doc that already has
+    // a real classification keeps fileTypeDetected / category / reasoning /
+    // confidence on every subsequent write through this lane — only content
+    // fields refresh. Placement + side effects below therefore derive from
+    // the EFFECTIVE (kept) identity, not the agent's rejected re-verdict.
+    const identityLocked =
+      typeof doc.fileTypeDetected === "string" &&
+      doc.fileTypeDetected !== "" &&
+      doc.fileTypeDetected !== "Unclassified";
+    const effectiveFileTypeDetected: string = identityLocked
+      ? doc.fileTypeDetected
+      : fileTypeDetected;
+    const effectiveCategory: string = identityLocked
+      ? (doc.category ?? category)
+      : category;
 
     const driveRow = await ctx.db
       .query("driveFiles")
@@ -472,8 +502,10 @@ export const applyClassification = internalMutation({
       const placement = resolvePlacement(
         {
           classification: {
-            fileType: fileTypeDetected,
-            category,
+            // Effective identity: a locked doc files by its ORIGINAL
+            // classification, never the rejected re-verdict.
+            fileType: effectiveFileTypeDetected,
+            category: effectiveCategory,
             suggestedFolder: "",
             targetLevel: projectId ? "project" : "client",
           },
@@ -528,9 +560,12 @@ export const applyClassification = internalMutation({
     // applyExtraction persists from the v4 Stage-1 output).
     let documentAnalysis: any;
     if (args.keyDates || args.keyAmounts || args.keyEntities) {
-      const catLower = category.toLowerCase();
+      // Effective identity in the analysis block; the fresh run's
+      // confidence is allowed here (confidenceInAnalysis) even when the
+      // identity confidence stays frozen.
+      const catLower = effectiveCategory.toLowerCase();
       documentAnalysis = {
-        documentDescription: `${fileTypeDetected} — ${doc.fileName}`,
+        documentDescription: `${effectiveFileTypeDetected} — ${doc.fileName}`,
         documentPurpose: reasoning || summary.slice(0, 200),
         entities: {
           people: args.keyEntities?.people ?? [],
@@ -564,16 +599,22 @@ export const applyClassification = internalMutation({
 
     // ── PATCH the documents row in place (first classification and every
     // re-classification alike). clientId/projectId are never touched;
-    // folderId/folderType only via placementPatch (first classification).
+    // folderId/folderType only via placementPatch (first classification);
+    // identity fields (fileTypeDetected/category/…) only while the doc is
+    // still unclassified (identity immutability — module header).
     const effectiveStorageId: Id<"_storage"> | undefined =
       doc.fileStorageId ?? driveRow?.cachedStorageId ?? undefined;
     await ctx.db.patch(args.documentId, {
       summary,
-      fileTypeDetected,
-      category,
-      reasoning,
-      confidence,
-      classificationReasoning: reasoning || undefined,
+      ...(identityLocked
+        ? {}
+        : {
+            fileTypeDetected,
+            category,
+            reasoning,
+            confidence,
+            classificationReasoning: reasoning || undefined,
+          }),
       ...(documentAnalysis ? { documentAnalysis } : {}),
       ...(args.textContent
         ? { textContent: args.textContent.slice(0, MAX_TEXT_CONTENT_CHARS) }
@@ -622,7 +663,7 @@ export const applyClassification = internalMutation({
             | "document_summary"
             | "project_status"
             | "general" = "document_summary";
-          const categoryLower = category.toLowerCase();
+          const categoryLower = effectiveCategory.toLowerCase();
           if (
             categoryLower.includes("deal") ||
             categoryLower.includes("loan") ||
@@ -652,7 +693,7 @@ export const applyClassification = internalMutation({
             .slice(0, 5)
             .map((line) => line.trim());
 
-          const tags: string[] = [category, fileTypeDetected];
+          const tags: string[] = [effectiveCategory, effectiveFileTypeDetected];
           if (projectId) tags.push("project-related");
 
           await ctx.db.insert("knowledgeBankEntries", {
@@ -661,7 +702,7 @@ export const applyClassification = internalMutation({
             sourceType: "document",
             sourceId: args.documentId,
             entryType,
-            title: `${doc.fileName} - ${category}`,
+            title: `${doc.fileName} - ${effectiveCategory}`,
             content: summary,
             keyPoints,
             metadata: undefined,
@@ -679,7 +720,7 @@ export const applyClassification = internalMutation({
       // applyExtraction, plus an existing-job probe (legacy docs may
       // already carry one). Needs stored bytes.
       const meetingTypes = ["Meeting Minutes", "Meeting Notes", "Minutes"];
-      const fileTypeLower = fileTypeDetected.toLowerCase();
+      const fileTypeLower = effectiveFileTypeDetected.toLowerCase();
       const isMeetingDocument =
         meetingTypes.some((t) => t.toLowerCase() === fileTypeLower) ||
         (fileNameLower.includes("meeting") &&
@@ -767,10 +808,16 @@ export const applyClassification = internalMutation({
       applied: true,
       documentId: args.documentId,
       firstClassification: firstExtraction,
+      identityLocked,
       ...(placementPatch ?? {}),
       ingestionKind,
       driveFileCompleted: !!driveRow && !drifted,
       drifted,
+      ...(identityLocked
+        ? {
+            note: "Classification identity is immutable: the document already had a real fileTypeDetected/category, so only contents (summary/documentAnalysis/textContent/checksum) were refreshed. Reclassification is a future explicit operator action.",
+          }
+        : {}),
     };
   },
 });

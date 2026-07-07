@@ -42,6 +42,24 @@ export interface AtomLineVM {
   nodeIds: string[];
 }
 
+/** One "knowledge satellite" — an ATTRIBUTE atom rendered as a small dot
+ * attached to its host node (the center, or a ring member via ringAttributes).
+ * Hover-labeled only; click selects the host + highlights the atom's rail row. */
+export interface SatelliteVM {
+  /** atomId for a ring attribute; the center attribute's rail-VM id otherwise.
+   * Always matches the corresponding AtomLineVM.id so selection reuses the
+   * existing atom-select path. */
+  id: string;
+  /** Node id this satellite orbits (raw entity id, matches a GraphNodeVM.id). */
+  hostId: string;
+  family: GraphFamily;
+  /** Predicate — the hover label's key half. */
+  label: string;
+  /** Formatted value — the hover label's value half. */
+  valueSnippet: string;
+  status: "active" | "contested";
+}
+
 /** A breadcrumb hop — the pivot stack the explorer pushes/pops. */
 export interface Crumb {
   type: GraphEntityType;

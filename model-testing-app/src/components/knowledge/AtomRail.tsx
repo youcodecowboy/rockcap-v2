@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useColors } from "@/lib/useColors";
 import { FAMILIES, colorForFamily } from "./graphVocab";
 import type { GraphFamily } from "./graphVocab";
@@ -26,6 +27,15 @@ export default function AtomRail({
   onAtomSelect,
 }: AtomRailProps) {
   const colors = useColors();
+
+  // Scroll the selected atom's row into view — e.g. after a satellite click on
+  // the canvas selects an atom that may be far down the rail.
+  const selRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selectedAtomId && selRef.current) {
+      selRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedAtomId]);
 
   return (
     <nav
@@ -90,6 +100,7 @@ export default function AtomRail({
               return (
                 <button
                   key={a.id}
+                  ref={sel ? selRef : undefined}
                   onClick={() => onAtomSelect(a)}
                   style={{
                     display: "block",
