@@ -624,10 +624,12 @@ export const executeApprovedSend = internalAction({
   },
 });
 
-// client_communication approvals with kind === "email_reply" — the drafted
-// reply staged by outreach.draftReply (MCP) or the web inbox composer. The
-// recipient isn't in the payload; resolve it from the related contact's
-// email. Threads via the stored Gmail thread/message ids.
+// client_communication approvals with kind === "email_reply" (the drafted
+// reply staged by outreach.draftReply / the web inbox composer) or
+// kind === "email_fresh" (operator-initiated new outreach staged by
+// outreach.draftFreshEmail). The recipient isn't in the payload; resolve it
+// from the related contact's email. Replies thread via the stored Gmail
+// thread/message ids; fresh outreach starts a new conversation.
 export const executeClientCommunication = internalAction({
   args: { approvalId: v.id("approvals") },
   handler: async (ctx, args): Promise<{
@@ -644,8 +646,8 @@ export const executeClientCommunication = internalAction({
       throw new Error(`Expected client_communication approval, got ${approval.entityType}`);
     }
     const p: any = approval.draftPayload ?? {};
-    if (p.kind !== "email_reply") {
-      throw new Error("client_communication payload is not an email_reply");
+    if (p.kind !== "email_reply" && p.kind !== "email_fresh") {
+      throw new Error("client_communication payload is not a sendable email (email_reply | email_fresh)");
     }
 
     // Resolve the recipient: explicit payload.to wins, else the related
@@ -680,7 +682,8 @@ export const executeClientCommunication = internalAction({
     // "reply needs response" needs-action flag. Tied to the actual send (not the
     // UI handler) so both MCP-approve and UI-approve paths clear it. Best-effort:
     // the send already succeeded, so never throw on a flag-clear failure.
-    if (approval.relatedClientId) {
+    // Fresh outreach isn't answering a reply, so it has no flag to clear.
+    if (p.kind === "email_reply" && approval.relatedClientId) {
       try {
         await ctx.runMutation(internal.clients.clearNeedsActionFlagInternal, {
           clientId: approval.relatedClientId,

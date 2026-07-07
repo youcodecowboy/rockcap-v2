@@ -467,12 +467,15 @@ export default function ApprovalsPage() {
               {counts.executionFailed > 0 && (
                 <StatusPill label={`${counts.executionFailed} failed`} tone={colors.accent.red} />
               )}
+              {counts.expired > 0 && (
+                <StatusPill label={`${counts.expired} expired`} tone={colors.text.dim} />
+              )}
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["pending", "executed", "execution_failed", "rejected", "cancelled", "all"] as const).map((s) => {
+          {(["pending", "executed", "execution_failed", "rejected", "expired", "cancelled", "all"] as const).map((s) => {
             const active = filter === s;
             return (
               <button

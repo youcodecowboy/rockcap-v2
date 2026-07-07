@@ -141,6 +141,16 @@ crons.daily(
   internal.skillRuns.sweepStaleRunningRunsInternal,
 );
 
+// Approval expiry sweep (spec-3 F6). Nightly, mark pending approvals past
+// their expiresAt (default 14d from requestedAt) as expired so the queue
+// can't silently re-accumulate stale rows. 3:00 UTC sits clear of the
+// other daily jobs (2:30 / 3:15 / 3:30 / 3:45 / 4:00 / 5:00).
+crons.daily(
+  "approval-expiry-sweep",
+  { hourUTC: 3, minuteUTC: 0 },
+  internal.approvals.expireStale,
+);
+
 // Knowledge-layer atomization sweep (Spec 2 §11 + §14b.1). Every 10 minutes,
 // tail the ingestionEvents feed for changed documents whose client is already
 // knowledge-enabled (has ≥1 atom) and whose (documentId, contentChecksum) has

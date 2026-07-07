@@ -169,27 +169,32 @@ export const get = query({
   },
 });
 
+// Badge counts saturate at this cap rather than walking the whole status
+// partition — approval rows carry full draft bodies, and an unbounded
+// .collect() over a re-accumulated backlog is how countUnrouted blew the
+// 16MB read limit in production (spec-3 F5).
+const COUNT_CAP = 200;
+
+async function countByStatus(ctx: any, status: string): Promise<number> {
+  const rows = await ctx.db
+    .query("approvals")
+    .withIndex("by_status", (q: any) => q.eq("status", status))
+    .take(COUNT_CAP);
+  return rows.length;
+}
+
 export const getCounts = query({
   args: {},
   handler: async (ctx) => {
     // Tolerate the cold-load pre-auth window (Clerk token not yet at
     // Convex): return an empty default instead of crashing useQuery callers.
     if (!(await getAuthenticatedUserOrNull(ctx))) {
-      return { pending: 0, executionFailed: 0 };
+      return { pending: 0, executionFailed: 0, expired: 0 };
     }
-    // Cheap counts via index walks. For larger volumes this would
-    // become a separate denormalised counter; today the volume is zero.
-    const pending = await ctx.db
-      .query("approvals")
-      .withIndex("by_status", (q: any) => q.eq("status", "pending"))
-      .collect();
-    const failed = await ctx.db
-      .query("approvals")
-      .withIndex("by_status", (q: any) => q.eq("status", "execution_failed"))
-      .collect();
     return {
-      pending: pending.length,
-      executionFailed: failed.length,
+      pending: await countByStatus(ctx, "pending"),
+      executionFailed: await countByStatus(ctx, "execution_failed"),
+      expired: await countByStatus(ctx, "expired"),
     };
   },
 });
@@ -481,6 +486,108 @@ export const retry = mutation({
   },
 });
 
+// ── Expiry sweep (spec-3 F6, nightly cron) ───────────────────
+//
+// Pending approvals used to live forever: "expired" + expiresAt existed in
+// the schema with zero enforcement, and the queue re-accumulated stale rows
+// (227 bulk-rejected 2026-06-06). Nightly, mark pending rows past their
+// expiresAt — or past a 14-day default from requestedAt when unset — as
+// expired. Bounded take: expired rows leave "pending", so a backlog larger
+// than one batch drains across consecutive runs.
+const DEFAULT_APPROVAL_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+export const expireStale = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<{ scanned: number; expired: number }> => {
+    const now = Date.now();
+    const pending = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q: any) => q.eq("status", "pending"))
+      .take(500);
+    let expired = 0;
+    for (const row of pending) {
+      const deadline = row.expiresAt
+        ? new Date(row.expiresAt).getTime()
+        : new Date(row.requestedAt).getTime() + DEFAULT_APPROVAL_TTL_MS;
+      if (Number.isFinite(deadline) && deadline < now) {
+        await ctx.db.patch(row._id, { status: "expired" });
+        expired++;
+      }
+    }
+    return { scanned: pending.length, expired };
+  },
+});
+
+// ── W0-F1 audit (2026-07-07) ─────────────────────────────────
+//
+// Before the email_fresh executor was wired, approved fresh-outreach
+// approvals fell through client_communication's stub branch and were
+// marked "executed" WITHOUT any mail leaving (spec-3 F1). These two
+// functions let the operator audit that history and selectively re-send.
+// Run from the Convex dashboard / CLI:
+//   npx convex run approvals:listStubbedEmailFresh
+//   npx convex run approvals:resendStubbedEmailFresh '{"approvalId": "..."}'
+
+export const listStubbedEmailFresh = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q: any) => q.eq("status", "executed"))
+      .order("desc")
+      .take(args.limit ?? 500);
+    return rows
+      .filter((r) => {
+        const p: any = r.draftPayload;
+        return (
+          r.entityType === "client_communication" &&
+          p?.kind === "email_fresh" &&
+          (r.executionResult as any)?.stub === true
+        );
+      })
+      .map((r) => ({
+        approvalId: r._id,
+        summary: r.summary,
+        subject: (r.draftPayload as any)?.subject,
+        requestedAt: r.requestedAt,
+        executedAt: r.executedAt,
+        relatedClientId: r.relatedClientId,
+        relatedContactId: r.relatedContactId,
+      }));
+  },
+});
+
+// Re-queue one stub-executed email_fresh approval for a REAL send. The
+// operator already approved this exact content; "executed" was recorded
+// without a send. Same re-queue shape as retry, gated to exactly the rows
+// the audit above surfaces. The kill switches still gate at execute time,
+// and staleness is the operator's call — they review the audit list first.
+export const resendStubbedEmailFresh = internalMutation({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args) => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    const p: any = approval.draftPayload;
+    if (
+      approval.status !== "executed" ||
+      approval.entityType !== "client_communication" ||
+      p?.kind !== "email_fresh" ||
+      (approval.executionResult as any)?.stub !== true
+    ) {
+      throw new Error("Not a stub-executed email_fresh approval");
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      executionResult: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
 // ── Inline draft editing ─────────────────────────────────────
 //
 // Generic partial patch of a pending approval's draftPayload. The operator
@@ -626,13 +733,15 @@ export const executeApproval = internalAction({
           });
           break;
         case "client_communication": {
-          // client_communication covers BOTH drafted email replies
+          // client_communication covers drafted email replies
           // (kind === "email_reply", from outreach.draftReply / the web
-          // inbox composer) AND non-sendable operator-review markers (the
-          // reply router's createOperatorReviewApproval). Only the former
-          // sends; the latter just advances the lifecycle.
+          // inbox composer), fresh operator-initiated outreach
+          // (kind === "email_fresh", from outreach.draftFreshEmail) AND
+          // non-sendable operator-review markers (the reply router's
+          // createOperatorReviewApproval). The first two send; the marker
+          // just advances the lifecycle.
           const p: any = approval.draftPayload;
-          if (p && p.kind === "email_reply") {
+          if (p && (p.kind === "email_reply" || p.kind === "email_fresh")) {
             result = await ctx.runAction(executeClientCommunicationRef, {
               approvalId: args.approvalId,
             });

@@ -291,15 +291,23 @@ export const listUnrouted = query({
   },
 });
 
-// Count of unrouted replies — for the home-page badge.
+// Count of unrouted replies — for the home-page badge. Bounded: a full
+// .collect() here blew Convex's 16MB read limit in production once the
+// operator_review backlog re-accumulated (each row carries a reply body).
+// A badge doesn't need an exact large number, so count up to a cap and
+// report saturation via `capped` — render "100+" instead of a crash.
+const UNROUTED_COUNT_CAP = 100;
 export const countUnrouted = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<{ count: number; capped: boolean }> => {
     const rows = await ctx.db
       .query("replyEvents")
       .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
-      .collect();
-    return rows.length;
+      .take(UNROUTED_COUNT_CAP + 1);
+    return {
+      count: Math.min(rows.length, UNROUTED_COUNT_CAP),
+      capped: rows.length > UNROUTED_COUNT_CAP,
+    };
   },
 });
 
