@@ -15,6 +15,19 @@ interface Sim {
   ph2: number;
 }
 
+/** A satellite (leaf) force-sim particle. Unlike the old kinematic slots,
+ * every satellite carries its own persistent position + velocity and is a
+ * real participant in the simulation (spring to host, leaf↔leaf and
+ * leaf↔foreign-node repulsion). */
+interface SatSim {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  ph: number;
+  ph2: number;
+}
+
 interface GraphCanvasProps {
   nodes: GraphNodeVM[];
   edges: GraphEdgeVM[];
@@ -42,29 +55,69 @@ interface GraphCanvasProps {
 
 /** Satellite render dot radius. */
 const SAT_RADIUS = 4.5;
-// ── Phyllotaxis (sunflower) satellite discs ──
-// Every atom of a host is placed on a phyllotaxis spiral: satellite i sits at
-// angle i × 137.5° (the golden angle) and radius r0 + c·√i. This packs an
-// arbitrary count into a near-uniform-density disc — no aggregation, no
-// hidden atoms — and the disc grows as √count so it stays compact.
+// ── Phyllotaxis (sunflower) SEED slots ──
+// Satellites are now real force-sim particles (see SatSim + the satellite pass
+// in step()). But we still SEED each new leaf on its host's phyllotaxis spiral:
+// satellite i at angle i × 137.5° (golden angle), radius r0 + c·√i. Seeding on
+// the spiral means a freshly-appearing cluster starts pre-spread (no initial
+// explosion) and the force sim only has to relax it, not build it from a point.
 /** Golden angle (≈137.5°) — the phyllotaxis divergence angle. */
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-/** Inner offset (px): the first satellite sits this far off the host center. */
+/** Inner offset (px): the first seeded satellite sits this far off the host. */
 const PHYLLO_R0 = 30;
-/** Spiral growth coefficient. Tuned so ~48 satellites fill a disc of radius
- * ~85: r0 + c·√47 ≈ 30 + 8·6.86 ≈ 85. */
+/** Spiral growth coefficient for the seed layout. */
 const PHYLLO_C = 8;
 
-/** Radius (px) of the satellite disc a host with `count` atoms occupies —
- * the outermost satellite's center distance plus its own dot radius. Drives
- * each node's effectiveRadius so hosts claim canvas room for their knowledge. */
-function satDiscRadius(count: number): number {
-  if (count <= 0) return 0;
-  return PHYLLO_R0 + PHYLLO_C * Math.sqrt(count - 1) + SAT_RADIUS;
+// ── Satellite (leaf) force-sim constants — the Obsidian dandelion model ──
+// Each leaf springs to its host on a short rest length, weakly repels other
+// leaves and foreign nodes, damps, and has NO center gravity. Hubs with many
+// leaves bloom into clusters; cluster-vs-cluster spacing is handled entirely by
+// the hosts' effectiveRadius node repulsion (unchanged), so clusters stay
+// coherent and do not interleave.
+/** Leaf→host spring stiffness. */
+const SAT_SPRING_K = 0.08;
+/** Leaf→host rest length grows slowly with sibling count so a heavy host blooms
+ * into a bigger dandelion rather than an impossibly dense knot. */
+function satRest(siblingCount: number): number {
+  return 26 + 3 * Math.sqrt(Math.max(0, siblingCount));
 }
-/** Extra breathing gap (px) between two nodes' satellite discs. */
+/** Leaf↔leaf repulsion: force ≈ SAT_REPULSE / d² within SAT_REPULSE_RANGE,
+ * clamped so two near-coincident leaves don't explode. */
+const SAT_REPULSE = 900;
+const SAT_REPULSE_RANGE = 48;
+const SAT_REPULSE_RANGE2 = SAT_REPULSE_RANGE * SAT_REPULSE_RANGE;
+const SAT_REPULSE_CLAMP = 40;
+/** Spatial-hash cell size for the leaf↔leaf pass. Matched to the repulsion
+ * range so a leaf's 3×3 neighbourhood covers everything that can push it —
+ * keeps the pass O(S·localDensity) instead of O(S²) at 150+ leaves. */
+const SAT_GRID = 48;
+/** Leaf↔foreign-node repulsion — keeps a host's leaves out of OTHER hubs.
+ * force ≈ SAT_NODE_REPULSE / d² within SAT_NODE_RANGE of a non-host node. */
+const SAT_NODE_REPULSE = 2000;
+const SAT_NODE_RANGE = 60;
+const SAT_NODE_CLAMP = 60;
+/** Leaf velocity damping (same feel as the node DAMP). */
+const SAT_DAMP = 0.86;
+
+/** Radius (px) the settled leaf cluster of a host with `count` leaves occupies.
+ * An estimate (not the live positions) used for node effectiveRadius / spring
+ * rests / auto-fit fallback so hubs claim canvas room before the leaves settle.
+ * Derived from the spring rest plus a √count disc-fill term (leaves repel into
+ * a filled disc when the ring at `rest` gets crowded). */
+function clusterRadius(count: number): number {
+  if (count <= 0) return 0;
+  return satRest(count) + 0.9 * SAT_RADIUS * Math.sqrt(count) + SAT_RADIUS;
+}
+
+/** Host circle prominence bump (px): knowledge-heavy nodes read bigger, an
+ * Obsidian-style degree-scaling cue. Capped so a mega-hub doesn't dwarf all. */
+function hostRadiusBump(count: number): number {
+  return count > 0 ? Math.min(7, 1.5 * Math.sqrt(count)) : 0;
+}
+
+/** Extra breathing gap (px) between two nodes' leaf clusters. */
 const SAT_DISC_GAP = 24;
-/** Soft separation stiffness — pushes overlapping discs apart each step. */
+/** Soft separation stiffness — pushes overlapping clusters apart each step. */
 const SEP_K = 0.5;
 
 /** Stable non-negative hash — deterministic per-satellite slot/phase seeding. */
@@ -133,9 +186,12 @@ export default function GraphCanvas({
   const alphaRef = useRef(1);
   const dragIdRef = useRef<string | null>(null);
 
-  // Satellites: element refs + hover (positions are kinematic — computed
-  // relative to the host each frame from a phyllotaxis slot, no force solve).
+  // Satellites: element refs + a persistent force-sim particle store (leaves
+  // are real sim participants now, not kinematic slots). satLineElRef holds the
+  // thin host→leaf link lines.
   const satElRef = useRef<Map<string, SVGGElement | null>>(new Map());
+  const satLineElRef = useRef<Map<string, SVGLineElement | null>>(new Map());
+  const satSimRef = useRef<Map<string, SatSim>>(new Map());
   const satHoverRef = useRef<SVGGElement | null>(null);
   const [hoverSatId, setHoverSatId] = useState<string | null>(null);
 
@@ -187,39 +243,49 @@ export default function GraphCanvas({
     setHoverSatId(null);
   }, [satSig]);
 
-  // Phyllotaxis layout: EVERY satellite gets a slot (angle + radius) on its
-  // host's sunflower spiral, plus each host's disc radius (its knowledge
-  // footprint). Nothing is aggregated or hidden.
-  const { renderedSats, satMeta, hostDiscRadius } = useMemo(() => {
+  // Per-satellite sim metadata: a phyllotaxis SEED slot (angle + slotRad) used
+  // only to place a freshly-appearing leaf pre-spread, plus its spring rest
+  // (shared across a host's leaves), ambient-wobble phases, and hostId. The
+  // live position lives in satSimRef; this is the static per-leaf recipe.
+  const { renderedSats, satMeta, hostSatCount } = useMemo(() => {
     const rendered: SatelliteVM[] = [];
-    const meta = new Map<string, { angle: number; rad: number; ph: number; ph2: number; hostId: string }>();
-    const disc = new Map<string, number>();
+    const meta = new Map<
+      string,
+      { angle: number; slotRad: number; rest: number; ph: number; ph2: number; hostId: string }
+    >();
+    const counts = new Map<string, number>();
     for (const [hostId, sats] of satsByHost) {
-      // Per-host phase offset (host id hash) so neighboring discs don't align.
+      // Per-host phase offset (host id hash) so neighboring clusters don't align.
       const phase = ((hashStr(hostId) % 360) * Math.PI) / 180;
+      const rest = satRest(sats.length);
       sats.forEach((sat, i) => {
         meta.set(sat.id, {
           angle: phase + i * GOLDEN_ANGLE,
-          rad: PHYLLO_R0 + PHYLLO_C * Math.sqrt(i),
+          slotRad: PHYLLO_R0 + PHYLLO_C * Math.sqrt(i),
+          rest,
           ph: (hashStr(sat.id) % 628) / 100,
           ph2: (hashStr(`${sat.id}b`) % 628) / 100,
           hostId,
         });
         rendered.push(sat);
       });
-      disc.set(hostId, satDiscRadius(sats.length));
+      counts.set(hostId, sats.length);
     }
-    return { renderedSats: rendered, satMeta: meta, hostDiscRadius: disc };
+    return { renderedSats: rendered, satMeta: meta, hostSatCount: counts };
   }, [satsByHost]);
 
-  // effectiveRadius = node radius + its satellite disc radius. Hosts with heavy
-  // knowledge discs claim more canvas: this feeds repulsion, spring rests, and
-  // auto-fit. Kept in a ref so the rAF sim loop reads live values.
+  // effectiveRadius = scaled node radius (prominence bump) + its estimated leaf
+  // cluster radius. Hosts with heavy knowledge clusters claim more canvas: this
+  // feeds node repulsion, spring rests, and auto-fit fallback. Kept in a ref so
+  // the rAF sim loop reads live values.
   const effRadius = useMemo(() => {
     const m = new Map<string, number>();
-    for (const n of nodes) m.set(n.id, NODE_RADIUS[n.type] + (hostDiscRadius.get(n.id) ?? 0));
+    for (const n of nodes) {
+      const count = hostSatCount.get(n.id) ?? 0;
+      m.set(n.id, NODE_RADIUS[n.type] + hostRadiusBump(count) + clusterRadius(count));
+    }
     return m;
-  }, [nodes, hostDiscRadius]);
+  }, [nodes, hostSatCount]);
 
   // Mirror the satellite render data into refs so the rAF draw loop reads live
   // values without being torn down/recreated on every hover.
@@ -231,6 +297,17 @@ export default function GraphCanvas({
   useEffect(() => { satMetaRef.current = satMeta; }, [satMeta]);
   useEffect(() => { effRadiusRef.current = effRadius; }, [effRadius]);
   useEffect(() => { hoverSatIdRef.current = hoverSatId; }, [hoverSatId]);
+
+  // When the satellite set changes (pivot / refilter): drop sim particles for
+  // leaves that no longer exist (bounded memory) and wake the sim so new/removed
+  // leaves re-settle. New leaves are lazily seeded on their phyllotaxis slot the
+  // first time the step loop sees them (host position is known by then).
+  useEffect(() => {
+    const valid = new Set(satellites.map((s) => s.id));
+    const store = satSimRef.current;
+    for (const k of Array.from(store.keys())) if (!valid.has(k)) store.delete(k);
+    alphaRef.current = Math.max(alphaRef.current, 0.7);
+  }, [satellites]);
 
   const applyView = useCallback(() => {
     const { tx, ty, k } = viewRef.current;
@@ -284,10 +361,11 @@ export default function GraphCanvas({
     simStartRef.current = performance.now();
   }, [nodeSig, centerId, nodes]);
 
-  /** Fit the node bounding box into the viewport with AUTOFIT_PADDING. Used
-   * by the one-shot auto-fit and the "fit" HUD button. The box uses each
-   * node's effectiveRadius (node + satellite disc) so the initial fit zooms
-   * out far enough to show every satellite. */
+  /** Fit the content bounding box into the viewport with AUTOFIT_PADDING. Used
+   * by the one-shot auto-fit and the "fit" HUD button. The box unions each
+   * node's slot (effectiveRadius + label allowance — the fallback before the
+   * leaves settle) with the ACTUAL settled leaf positions, so a bloomed cluster
+   * that reaches past its estimate is still fully framed. */
   const fitToContent = useCallback(() => {
     const v = viewRef.current;
     if (!v.vw || !v.vh) return;
@@ -297,13 +375,25 @@ export default function GraphCanvas({
     for (const n of nodes) {
       const s = sim.get(n.id);
       if (!s) continue;
-      // effectiveRadius (node + its satellite disc) + label allowance.
+      // effectiveRadius (scaled node + estimated leaf cluster) + label allowance.
       const pad = (effRadiusRef.current.get(n.id) ?? NODE_RADIUS[n.type]) + 36;
       minX = Math.min(minX, s.x - pad);
       maxX = Math.max(maxX, s.x + pad);
       minY = Math.min(minY, s.y - pad);
       maxY = Math.max(maxY, s.y + pad);
       count++;
+    }
+    // Union with the live leaf particle positions (falls back cleanly to the
+    // node estimate above when the store is empty / pre-first-settle).
+    const satSim = satSimRef.current;
+    for (const sat of renderedSatsRef.current) {
+      const p = satSim.get(sat.id);
+      if (!p) continue;
+      const pad = SAT_RADIUS + 6;
+      minX = Math.min(minX, p.x - pad);
+      maxX = Math.max(maxX, p.x + pad);
+      minY = Math.min(minY, p.y - pad);
+      maxY = Math.max(maxY, p.y + pad);
     }
     if (count === 0) return;
     const bw = Math.max(maxX - minX, 1);
@@ -408,6 +498,115 @@ export default function GraphCanvas({
         s.x += s.vx * alpha;
         s.y += s.vy * alpha;
       }
+
+      // ── Satellite (leaf) force pass ──────────────────────────────────────
+      // Every leaf is a real particle: spring to host + leaf↔leaf repulsion
+      // (via a 48px spatial-hash grid) + leaf↔foreign-node repulsion. No center
+      // gravity. Damped and integrated with the SAME alpha as the nodes, so
+      // leaves sleep when the graph sleeps.
+      //
+      // Cost model at S leaves, N nodes: the grid keeps leaf↔leaf linear —
+      // each leaf scans only its 3×3 cell neighbourhood (~local density k, i.e.
+      // its own cluster's leaves within 144px), so ≈ O(S·k). leaf↔node is
+      // O(S·N) with N≈31 a small constant. At S≈150, N≈31: ≈ a few thousand
+      // leaf-pair checks + ~4.6k leaf-node checks per step — well inside frame.
+      const satSim = satSimRef.current;
+      const meta = satMetaRef.current;
+      const rendered = renderedSatsRef.current;
+      if (rendered.length) {
+        // Lazily seed any new leaf on its host's phyllotaxis slot (pre-spread,
+        // no explosion) the first time we see it — host position is known now.
+        for (const sat of rendered) {
+          if (satSim.has(sat.id)) continue;
+          const m = meta.get(sat.id);
+          if (!m) continue;
+          const host = sim.get(m.hostId);
+          if (!host) continue;
+          satSim.set(sat.id, {
+            x: host.x + Math.cos(m.angle) * m.slotRad,
+            y: host.y + Math.sin(m.angle) * m.slotRad,
+            vx: 0,
+            vy: 0,
+            ph: (hashStr(sat.id) % 628) / 100,
+            ph2: (hashStr(`${sat.id}c`) % 628) / 100,
+          });
+        }
+        // Build the leaf spatial-hash grid for this step.
+        const grid = new Map<string, string[]>();
+        for (const sat of rendered) {
+          const p = satSim.get(sat.id);
+          if (!p) continue;
+          const key = `${Math.floor(p.x / SAT_GRID)},${Math.floor(p.y / SAT_GRID)}`;
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(sat.id);
+          else grid.set(key, [sat.id]);
+        }
+        // Accumulate forces per leaf.
+        for (const sat of rendered) {
+          const p = satSim.get(sat.id);
+          const m = meta.get(sat.id);
+          if (!p || !m) continue;
+          const host = sim.get(m.hostId);
+          if (!host) continue;
+          // Spring to host (short rest, no center gravity).
+          let dx = host.x - p.x;
+          let dy = host.y - p.y;
+          const dh = Math.sqrt(dx * dx + dy * dy) || 1;
+          const fs = (dh - m.rest) * SAT_SPRING_K;
+          p.vx += (dx / dh) * fs;
+          p.vy += (dy / dh) * fs;
+          // Leaf↔leaf repulsion over the 3×3 neighbourhood (both directions are
+          // applied naturally: each leaf pushes itself off its neighbours).
+          const cx = Math.floor(p.x / SAT_GRID);
+          const cy = Math.floor(p.y / SAT_GRID);
+          for (let gx = cx - 1; gx <= cx + 1; gx++) {
+            for (let gy = cy - 1; gy <= cy + 1; gy++) {
+              const bucket = grid.get(`${gx},${gy}`);
+              if (!bucket) continue;
+              for (const otherId of bucket) {
+                if (otherId === sat.id) continue;
+                const q = satSim.get(otherId);
+                if (!q) continue;
+                const rx = p.x - q.x;
+                const ry = p.y - q.y;
+                const r2 = rx * rx + ry * ry;
+                if (r2 > 0 && r2 < SAT_REPULSE_RANGE2) {
+                  const rd = Math.sqrt(r2);
+                  let force = SAT_REPULSE / r2;
+                  if (force > SAT_REPULSE_CLAMP) force = SAT_REPULSE_CLAMP;
+                  p.vx += (rx / rd) * force;
+                  p.vy += (ry / rd) * force;
+                }
+              }
+            }
+          }
+          // Leaf↔foreign-node repulsion — keeps a host's leaves out of OTHER
+          // hubs (N is small, iterate directly).
+          for (const { n, s } of act) {
+            if (n.id === m.hostId) continue;
+            const rx = p.x - s.x;
+            const ry = p.y - s.y;
+            const r2 = rx * rx + ry * ry;
+            if (r2 > 0 && r2 < SAT_NODE_RANGE * SAT_NODE_RANGE) {
+              const rd = Math.sqrt(r2);
+              let force = SAT_NODE_REPULSE / r2;
+              if (force > SAT_NODE_CLAMP) force = SAT_NODE_CLAMP;
+              p.vx += (rx / rd) * force;
+              p.vy += (ry / rd) * force;
+            }
+          }
+        }
+        // Integrate leaves with the shared alpha (sleep when the graph sleeps).
+        for (const sat of rendered) {
+          const p = satSim.get(sat.id);
+          if (!p) continue;
+          p.vx *= SAT_DAMP;
+          p.vy *= SAT_DAMP;
+          p.x += p.vx * alpha;
+          p.y += p.vy * alpha;
+        }
+      }
+
       alphaRef.current = Math.max(0, alpha - ALPHA_DECAY);
     };
 
@@ -444,36 +643,38 @@ export default function GraphCanvas({
           label.setAttribute("y", String((pa[1] + pb[1]) / 2 - 4));
         }
       }
-      // Satellites — kinematically pinned to their host at their slot (angle,
-      // rest) so host motion carries them; a tiny ambient wobble keeps them
-      // alive. No per-satellite force solve: O(rendered satellites) per frame.
+      // Satellites — drawn at their live force-sim positions, with a tiny
+      // render-time ambient wobble for life (static under reduced-motion). Each
+      // leaf also gets a thin link line back to its host (host uses the drifted
+      // node position P so the line meets the node where it's drawn).
       const meta = satMetaRef.current;
+      const satSim = satSimRef.current;
       for (const sat of renderedSatsRef.current) {
-        const el = satElRef.current.get(sat.id);
         const m = meta.get(sat.id);
-        if (!el || !m) continue;
-        const hp = P[m.hostId];
-        if (!hp) continue;
-        let x = hp[0] + Math.cos(m.angle) * m.rad;
-        let y = hp[1] + Math.sin(m.angle) * m.rad;
+        const p = m && satSim.get(sat.id);
+        if (!m || !p) continue;
+        let x = p.x;
+        let y = p.y;
         if (ambient) {
-          x += Math.sin(t * 0.0009 + m.ph) * 1.6;
-          y += Math.cos(t * 0.0008 + m.ph2) * 1.6;
+          x += Math.sin(t * 0.0009 + p.ph) * 1.6;
+          y += Math.cos(t * 0.0008 + p.ph2) * 1.6;
         }
-        el.setAttribute("transform", `translate(${x},${y})`);
+        satElRef.current.get(sat.id)?.setAttribute("transform", `translate(${x},${y})`);
+        const line = satLineElRef.current.get(sat.id);
+        const hp = P[m.hostId];
+        if (line && hp) {
+          line.setAttribute("x1", String(hp[0]));
+          line.setAttribute("y1", String(hp[1]));
+          line.setAttribute("x2", String(x));
+          line.setAttribute("y2", String(y));
+        }
       }
-      // Hover label follows the hovered satellite.
+      // Hover label follows the hovered satellite (at its live position).
       const hov = hoverSatIdRef.current;
       const hoverEl = satHoverRef.current;
       if (hoverEl && hov) {
-        const m = meta.get(hov);
-        const hp = m && P[m.hostId];
-        if (m && hp) {
-          hoverEl.setAttribute(
-            "transform",
-            `translate(${hp[0] + Math.cos(m.angle) * m.rad},${hp[1] + Math.sin(m.angle) * m.rad - 10})`,
-          );
-        }
+        const p = satSim.get(hov);
+        if (p) hoverEl.setAttribute("transform", `translate(${p.x},${p.y - 10})`);
       }
     };
 
@@ -554,8 +755,25 @@ export default function GraphCanvas({
       const rect = svg.getBoundingClientRect();
       const s = simRef.current.get(dragIdRef.current);
       if (s) {
-        s.x = (ev.clientX - rect.left - v.tx) / v.k;
-        s.y = (ev.clientY - rect.top - v.ty) / v.k;
+        const nx = (ev.clientX - rect.left - v.tx) / v.k;
+        const ny = (ev.clientY - rect.top - v.ty) / v.k;
+        // Velocity inheritance: carry this host's leaves rigidly by the same
+        // delta so a fast drag doesn't tear the cluster off its host (the
+        // springs then relax it back into shape). O(leaves-of-this-host).
+        const ddx = nx - s.x;
+        const ddy = ny - s.y;
+        s.x = nx;
+        s.y = ny;
+        const satSim = satSimRef.current;
+        const meta = satMetaRef.current;
+        for (const sat of renderedSatsRef.current) {
+          if (meta.get(sat.id)?.hostId !== dragIdRef.current) continue;
+          const sp = satSim.get(sat.id);
+          if (sp) {
+            sp.x += ddx;
+            sp.y += ddy;
+          }
+        }
         alphaRef.current = 1;
       }
       return;
@@ -697,7 +915,30 @@ export default function GraphCanvas({
               </g>
             );
           })}
-          {/* satellites — small family-colored dots orbiting their host */}
+          {/* satellite link lines — one thin family-tinted line per leaf to its
+              host, drawn behind the dots. Faint (0.18) so a cluster reads as
+              organized knowledge; dims with family/host filtering; a hovered
+              leaf raises its line to 0.6. Positions driven by the draw loop. */}
+          {renderedSats.map((sat) => {
+            const familyDim = activeFamily !== "all" && sat.family !== activeFamily;
+            const hostActive = activeId === sat.hostId;
+            const hostDim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
+            const dim = familyDim || hostDim;
+            const hovered = sat.id === hoverSatId;
+            const fam = colorForFamily(colors, sat.family);
+            return (
+              <line
+                key={`satlink-${sat.id}`}
+                ref={(el) => {
+                  satLineElRef.current.set(sat.id, el);
+                }}
+                stroke={fam}
+                strokeWidth={0.8}
+                style={{ opacity: dim ? 0.04 : hovered ? 0.6 : 0.18, pointerEvents: "none" }}
+              />
+            );
+          })}
+          {/* satellites — small family-colored dots, real force-sim leaves */}
           {renderedSats.map((sat) => {
             const familyDim = activeFamily !== "all" && sat.family !== activeFamily;
             const hostActive = activeId === sat.hostId;
@@ -739,7 +980,10 @@ export default function GraphCanvas({
           {/* nodes */}
           {nodes.map((n) => {
             const c = colorForType(colors, n.type);
-            const r = NODE_RADIUS[n.type];
+            // Prominence: knowledge-heavy hosts read bigger (Obsidian degree
+            // scaling). All downstream geometry (ring, label offset, facility
+            // rect, small-label declutter) derives from this scaled r.
+            const r = NODE_RADIUS[n.type] + hostRadiusBump(hostSatCount.get(n.id) ?? 0);
             const isSel = n.id === selectedId;
             const dim = !!activeId && n.id !== activeId && !(activeNeighbors?.has(n.id));
             const match = searchMatchIds.has(n.id);
