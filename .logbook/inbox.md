@@ -2,6 +2,8 @@
 
 ## Open (queued for separate work)
 
+- 2026-07-06 — contact display-name hygiene (visible in knowledge graph): "Peter Mackenzie (175)" carries a numeric suffix in the contacts row; "Nicola Elia RenÃ¨ Kinnie" is UTF-8 mojibake (é double-encoded — likely from a CH/Apollo sync path). Audit contacts name fields; fix the two rows; find + fix the encoding culprit in the sync that wrote them. #backend #cleanup #data-quality
+
 - 2026-07-06 — Mackenzie Miller Homes status anomaly (NOT a duplicate — full sweep of 257 client rows found exactly one MMH row, `kn7byatdbeywpd8z5c7aghf2m582jyvq`): fully intel-enriched, 3 active in-app projects (LEILAD/POOFL/TEMPG), yet still `status: prospect` / `prospectState: researched`. Operator believed a separate real client profile existed. Decide: promote to active (`client_activate`) so its document library shows in the Docs sidebar (which now filters prospects out), and generally audit clients with active projects still sitting in prospect status. #backend #cleanup #status
 
 - 2026-07-06 — **Knowledge Layer Phase 3 — atom backfill for pre-Drive documents.** Once Spec 2 (atomization + entity graph) ships, existing documents already processed by the v4 bulk-upload pipeline must be reconciled into the atomic-fact model. Likely shape: a converter adapter that transforms stored v4 outputs (key terms, summaries, classifications) into provenance-carrying atoms without re-reading source bytes; fall back to full re-atomization only where v4 output is too thin. Scope: all documents ingested before the Drive backbone existed. Depends on: Spec 1 (drive ingestion) + Spec 2 (knowledge layer) both landed. #knowledge-layer #backfill #phase-3

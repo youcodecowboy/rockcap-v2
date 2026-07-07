@@ -32,6 +32,11 @@ interface RawEdge {
   status: "active" | "contested";
   provenance: { sourceType: string; ref?: string; observationCount: number; nativeCorroboration?: string; matchQuality?: string };
 }
+/** interEdges entry — a ring-to-ring edge; neither endpoint is the center, so
+ * it carries both (`from` = collection side; direction is relative to it). */
+interface RawInterEdge extends RawEdge {
+  from: { id: string; type: GraphEntityType; name: string; sub?: string };
+}
 interface RawAttr {
   predicate: string;
   value: unknown;
@@ -140,6 +145,34 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
         status: e.status,
         provenance: edgeProvenance(e.provenance),
         nodeIds: [entity.id, e.other.id],
+      });
+    });
+
+    // Ring-to-ring edges (interEdges lane). Endpoints are drawn from the
+    // returned center edges so both nodes normally already exist; guard-add
+    // anyway (the server ring cap could differ from what we rendered above).
+    const rawInter = ((data.interEdges ?? []) as RawInterEdge[]);
+    rawInter.forEach((e, i) => {
+      if (e.from.id === e.other.id) return;
+      for (const ep of [e.from, e.other]) {
+        if (!nodeMap.has(ep.id)) {
+          nodeMap.set(ep.id, { id: ep.id, type: ep.type, name: ep.name, sub: ep.sub, isCenter: false });
+        }
+      }
+      const id = `i${i}`;
+      const family = familyFor(e.predicate);
+      edgeVMs.push({ id, aId: e.from.id, bId: e.other.id, predicate: e.predicate, qualifier: e.qualifier, family, status: e.status, inter: true });
+      const subjectName = e.direction === "out" ? e.from.name : e.other.name;
+      const objectName = e.direction === "out" ? e.other.name : e.from.name;
+      atomVMs.push({
+        id,
+        family,
+        predicate: e.predicate,
+        line: `${subjectName} → ${objectName}`,
+        qualifier: e.qualifier,
+        status: e.status,
+        provenance: edgeProvenance(e.provenance),
+        nodeIds: [e.from.id, e.other.id],
       });
     });
 

@@ -30,6 +30,8 @@ interface GraphCanvasProps {
 
 // Ported physics constants (mmh-knowledge-graph.html prototype). The graph
 // settles fully; "alive" is slow render-time drift, not jitter.
+// Tuned for ~16 nodes — scaleForces() adapts them to the node count so a
+// 31-node ring still spreads with readable labels.
 const REPULSE = 9200;
 const REPULSE_RANGE = 440;
 const SPRING_REST = 190;
@@ -37,6 +39,24 @@ const SPRING_K = 0.032;
 const CENTER_PULL = 0.006;
 const DAMP = 0.86;
 const ALPHA_DECAY = 0.0035;
+/** Inter (ring-to-ring) edges pull with weaker springs — they cluster related
+ * ring members without collapsing the ring onto the center's spokes. */
+const INTER_SPRING_FACTOR = 0.6;
+/** The prototype constants were tuned for ~16 nodes. Above that: more
+ * repulsion + longer spring rest (spread the ring), less gravity (let it
+ * breathe outward) — linear in the overcrowding ratio. */
+function scaleForces(n: number) {
+  const crowd = Math.max(0, n - 16) / 16;
+  return {
+    repulse: REPULSE * (1 + crowd * 0.9),
+    springRest: SPRING_REST * (1 + crowd * 0.45),
+    centerPull: CENTER_PULL * (16 / Math.max(16, n)),
+  };
+}
+/** Auto-fit fires when alpha first decays below this, or after 2.5s. */
+const AUTOFIT_ALPHA = 0.15;
+const AUTOFIT_DEADLINE_MS = 2500;
+const AUTOFIT_PADDING = 60;
 
 export default function GraphCanvas({
   nodes,
@@ -66,6 +86,12 @@ export default function GraphCanvas({
   const viewRef = useRef({ vw: 0, vh: 0, tx: 0, ty: 0, k: 1 });
   const panRef = useRef({ on: false, px: 0, py: 0 });
 
+  // Auto-fit bookkeeping — fit once per center change, never after the user
+  // has touched the camera (pan / wheel / zoom buttons).
+  const userTouchedCameraRef = useRef(false);
+  const autoFitDoneRef = useRef(false);
+  const simStartRef = useRef(0);
+
   const [hoverId, setHoverId] = useState<string | null>(null);
 
   const byId = useMemo(() => {
@@ -90,6 +116,15 @@ export default function GraphCanvas({
   const applyView = useCallback(() => {
     const { tx, ty, k } = viewRef.current;
     worldRef.current?.setAttribute("transform", `translate(${tx},${ty}) scale(${k})`);
+    // Label declutter — cheap class toggles at zoom thresholds (k only changes
+    // through here, from the wheel/buttons/auto-fit paths), no React re-render:
+    //   k > 1.15  → sub-labels appear (otherwise only on hover/selected/center)
+    //   k < 0.55  → primary labels of tiny non-center nodes (r < 13) hide too
+    const svg = svgRef.current;
+    if (svg) {
+      svg.classList.toggle("rc-zoom-sub", k > 1.15);
+      svg.classList.toggle("rc-zoom-far", k < 0.55);
+    }
   }, []);
 
   const size = useCallback(() => {
@@ -124,13 +159,49 @@ export default function GraphCanvas({
     next.set(centerId, { x: 0, y: 0, vx: 0, vy: 0, ph: Math.random() * 6.28, ph2: Math.random() * 6.28 });
     simRef.current = next;
     alphaRef.current = 1;
+    // New center ⇒ one fresh auto-fit is allowed again.
+    autoFitDoneRef.current = false;
+    userTouchedCameraRef.current = false;
+    simStartRef.current = performance.now();
   }, [nodeSig, centerId, nodes]);
+
+  /** Fit the node bounding box into the viewport with AUTOFIT_PADDING. Used
+   * by the one-shot auto-fit and the "fit" HUD button. */
+  const fitToContent = useCallback(() => {
+    const v = viewRef.current;
+    if (!v.vw || !v.vh) return;
+    const sim = simRef.current;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let count = 0;
+    for (const n of nodes) {
+      const s = sim.get(n.id);
+      if (!s) continue;
+      const pad = NODE_RADIUS[n.type] + 36; // radius + label allowance
+      minX = Math.min(minX, s.x - pad);
+      maxX = Math.max(maxX, s.x + pad);
+      minY = Math.min(minY, s.y - pad);
+      maxY = Math.max(maxY, s.y + pad);
+      count++;
+    }
+    if (count === 0) return;
+    const bw = Math.max(maxX - minX, 1);
+    const bh = Math.max(maxY - minY, 1);
+    const k = Math.min(
+      1.4,
+      Math.max(0.2, Math.min((v.vw - AUTOFIT_PADDING * 2) / bw, (v.vh - AUTOFIT_PADDING * 2) / bh)),
+    );
+    v.k = k;
+    v.tx = v.vw / 2 - (k * (minX + maxX)) / 2;
+    v.ty = v.vh / 2 - (k * (minY + maxY)) / 2;
+    applyView();
+  }, [nodes, applyView]);
 
   // Simulation + render loop.
   useEffect(() => {
     size();
     let raf = 0;
     const ambient = !reducedMotion;
+    const { repulse, springRest, centerPull } = scaleForces(nodes.length);
 
     const step = () => {
       const sim = simRef.current;
@@ -145,7 +216,7 @@ export default function GraphCanvas({
           let dy = b.y - a.y;
           const d2 = dx * dx + dy * dy || 1;
           if (d2 < REPULSE_RANGE * REPULSE_RANGE) {
-            const f = REPULSE / d2;
+            const f = repulse / d2;
             const d = Math.sqrt(d2);
             dx /= d;
             dy /= d;
@@ -156,18 +227,20 @@ export default function GraphCanvas({
           }
         }
       }
-      // Springs.
+      // Springs. Inter (ring-to-ring) edges pull weaker — they cluster
+      // related ring members without fighting the center spokes.
       for (const e of edges) {
         const a = sim.get(e.aId);
         const b = sim.get(e.bId);
         if (!a || !b) continue;
         const na = byId.get(e.aId);
         const nb = byId.get(e.bId);
-        const rest = SPRING_REST + (NODE_RADIUS[na?.type ?? "contact"] + NODE_RADIUS[nb?.type ?? "contact"]);
+        const rest = springRest + (NODE_RADIUS[na?.type ?? "contact"] + NODE_RADIUS[nb?.type ?? "contact"]);
+        const springK = e.inter ? SPRING_K * INTER_SPRING_FACTOR : SPRING_K;
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         const d = Math.sqrt(dx * dx + dy * dy) || 1;
-        const f = (d - rest) * SPRING_K;
+        const f = (d - rest) * springK;
         dx /= d;
         dy /= d;
         a.vx += dx * f;
@@ -177,8 +250,8 @@ export default function GraphCanvas({
       }
       // Center pull + integrate.
       for (const { n, s } of act) {
-        s.vx -= s.x * CENTER_PULL;
-        s.vy -= s.y * CENTER_PULL;
+        s.vx -= s.x * centerPull;
+        s.vy -= s.y * centerPull;
         if (n.id === dragIdRef.current || n.id === centerId) {
           // Pin the center at origin; a dragged node follows the pointer.
           if (n.id === centerId && n.id !== dragIdRef.current) {
@@ -234,6 +307,18 @@ export default function GraphCanvas({
 
     const loop = () => {
       step();
+      // One-shot auto-fit: once the sim has mostly settled (alpha decayed
+      // below the threshold) or 2.5s has elapsed, whichever first — and never
+      // after the user has taken the camera.
+      if (
+        !autoFitDoneRef.current &&
+        !userTouchedCameraRef.current &&
+        (alphaRef.current < AUTOFIT_ALPHA ||
+          performance.now() - simStartRef.current > AUTOFIT_DEADLINE_MS)
+      ) {
+        autoFitDoneRef.current = true;
+        fitToContent();
+      }
       draw();
       raf = requestAnimationFrame(loop);
     };
@@ -245,7 +330,7 @@ export default function GraphCanvas({
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
     };
-  }, [nodes, edges, byId, centerId, reducedMotion, size]);
+  }, [nodes, edges, byId, centerId, reducedMotion, size, fitToContent]);
 
   // ── pan / zoom / drag ──
   const onWheel = useCallback(
@@ -253,6 +338,7 @@ export default function GraphCanvas({
       ev.preventDefault();
       const svg = svgRef.current;
       if (!svg) return;
+      userTouchedCameraRef.current = true;
       const v = viewRef.current;
       const nk = Math.min(2.6, Math.max(0.35, v.k * (ev.deltaY < 0 ? 1.12 : 0.89)));
       const rect = svg.getBoundingClientRect();
@@ -268,6 +354,7 @@ export default function GraphCanvas({
 
   const onPointerDownBg = useCallback((ev: React.PointerEvent) => {
     panRef.current = { on: true, px: ev.clientX, py: ev.clientY };
+    userTouchedCameraRef.current = true;
     svgRef.current?.setPointerCapture(ev.pointerId);
   }, []);
 
@@ -301,6 +388,7 @@ export default function GraphCanvas({
 
   const zoomBtn = useCallback(
     (factor: number) => {
+      userTouchedCameraRef.current = true;
       const v = viewRef.current;
       v.k = Math.min(2.6, Math.max(0.35, v.k * factor));
       applyView();
@@ -308,9 +396,9 @@ export default function GraphCanvas({
     [applyView],
   );
   const fit = useCallback(() => {
-    viewRef.current.k = 1;
-    size();
-  }, [size]);
+    userTouchedCameraRef.current = true; // explicit camera action — auto-fit stays off
+    fitToContent();
+  }, [fitToContent]);
 
   // ── highlight state (React-driven className/style; positions stay on refs) ──
   const activeId = hoverId ?? selectedId;
@@ -345,6 +433,10 @@ export default function GraphCanvas({
         @keyframes rc-graph-pop { from { transform:scale(0); } to { transform:scale(1); } }
         .rc-node-pop { animation: rc-graph-pop .45s cubic-bezier(.2,1.6,.4,1); transform-origin:center; transform-box:fill-box; }
         @media (prefers-reduced-motion: reduce) { .rc-node-pop { animation:none !important; } }
+        /* Label declutter — classes toggled on the <svg> at zoom thresholds (applyView). */
+        .rc-sublabel { display: none; }
+        .rc-zoom-sub .rc-sublabel, .rc-sublabel.rc-sub-on { display: inline; }
+        .rc-zoom-far .rc-plabel-sm { display: none; }
       `}</style>
       <svg
         ref={svgRef}
@@ -359,11 +451,17 @@ export default function GraphCanvas({
         <g ref={worldRef}>
           {/* edges */}
           {edges.map((e) => {
+            // Inter (ring-to-ring) edges: same styling, ~half opacity so
+            // center edges stay primary; they light up when EITHER endpoint
+            // is hovered/selected (touches already checks both endpoints).
+            const inter = e.inter === true;
             const touches = activeId && (e.aId === activeId || e.bId === activeId);
             const hoverDim = activeId && !touches;
             const familyDim = activeFamily !== "all" && e.family !== activeFamily;
             const dim = hoverDim || familyDim;
             const stroke = touches ? colors.text.secondary : colors.border.mid;
+            const lineOpacity = dim ? 0.12 : touches ? (inter ? 0.6 : 1) : inter ? 0.38 : 0.75;
+            const labelOpacity = dim ? 0.08 : inter ? 0.5 : 1;
             return (
               <g key={e.id}>
                 <line
@@ -372,7 +470,7 @@ export default function GraphCanvas({
                   }}
                   stroke={stroke}
                   strokeWidth={touches ? 1.8 : 1.2}
-                  style={{ opacity: dim ? 0.12 : touches ? 1 : 0.75, pointerEvents: "none" }}
+                  style={{ opacity: lineOpacity, pointerEvents: "none" }}
                 />
                 <text
                   ref={(el) => {
@@ -383,7 +481,7 @@ export default function GraphCanvas({
                     fontSize: 9,
                     fill: colors.text.muted,
                     pointerEvents: "none",
-                    opacity: dim ? 0.08 : 1,
+                    opacity: labelOpacity,
                   }}
                 >
                   {e.predicate}
@@ -450,11 +548,21 @@ export default function GraphCanvas({
                     style={{ filter: match ? "drop-shadow(0 0 6px currentColor)" : undefined }}
                   />
                 )}
-                <text textAnchor="middle" y={r + 17} style={{ fontSize: 11, fill: colors.text.primary, fontWeight: 600, pointerEvents: "none" }}>
+                <text
+                  className={!n.isCenter && r < 13 ? "rc-plabel-sm" : undefined}
+                  textAnchor="middle"
+                  y={r + 17}
+                  style={{ fontSize: 11, fill: colors.text.primary, fontWeight: 600, pointerEvents: "none" }}
+                >
                   {n.name}
                 </text>
                 {n.sub && (
-                  <text textAnchor="middle" y={r + 31} style={{ fontSize: 9, fill: colors.text.muted, pointerEvents: "none" }}>
+                  <text
+                    className={`rc-sublabel${n.isCenter || n.id === hoverId || n.id === selectedId ? " rc-sub-on" : ""}`}
+                    textAnchor="middle"
+                    y={r + 31}
+                    style={{ fontSize: 9, fill: colors.text.muted, pointerEvents: "none" }}
+                  >
                     {n.sub}
                   </text>
                 )}

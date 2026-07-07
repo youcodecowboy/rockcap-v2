@@ -45,6 +45,14 @@ import type { Doc, Id } from "../_generated/dataModel";
 // flag always ride along, so "edges to 27 clients — expand?" is answerable
 // without flooding either the LLM context or the drawer canvas.
 //
+// ── Inter-ring pass ──
+// expandEntity additionally returns `interEdges`: edges AMONG the returned
+// ring members (neither endpoint is the center). Without them the drawer
+// renders a hub-and-spoke even when real clusters exist (facility ↔ SPV,
+// SPV ↔ project, guarantor ↔ facility). Each entry is the standard edge
+// shape plus `from` (the non-center endpoint the edge was collected from),
+// since neither endpoint is implied.
+//
 // ── Consumers ──
 // One shared core, three surfaces (spec §14b.6 — one backend, two consumers):
 //   - internal* wrappers → the MCP graph.* / atoms.search tools (mcp.ts)
@@ -56,6 +64,10 @@ import type { Doc, Id } from "../_generated/dataModel";
 
 const DEFAULT_LIMIT = 30;
 const HARD_CAP = 100;
+/** Inter-ring pass: max ring members expanded for ring-to-ring edges. The
+ * pass operates on the RETURNED (post-truncation) edge endpoints, top-ranked
+ * first, so S = {center} ∪ ring stays ≤ 41 entities per call. */
+const INTER_RING_CAP = 40;
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
@@ -107,6 +119,11 @@ export type GraphEdge = {
   status: "active" | "contested";
   provenance: EdgeProvenance;
 };
+
+/** Ring-to-ring edge (inter-ring pass): neither endpoint is the center, so
+ * the edge carries BOTH — `from` (collection side) and `other`. Direction is
+ * relative to `from`: "out" ⇒ from is the subject. */
+export type InterGraphEdge = GraphEdge & { from: EntityRef };
 
 export type GraphAttribute = {
   predicate: string;
@@ -289,6 +306,10 @@ async function collectAtomEdges(
   entityType: GraphEntityType,
   entityId: string,
   direction: "out" | "in" | "both",
+  /** Optional endpoint filter, applied BEFORE the per-atom observation-count
+   * read — the inter-ring pass keeps only in-ring endpoints and must not pay
+   * a by_atom read for every discarded edge. */
+  keep?: (otherType: GraphEntityType, otherId: string) => boolean,
 ): Promise<FedEdge[]> {
   const rows: Array<{ atom: Doc<"atoms">; direction: "out" | "in" }> = [];
   if (direction !== "in") {
@@ -320,6 +341,7 @@ async function collectAtomEdges(
   for (const { atom, direction: dir } of rows) {
     const otherType = (dir === "out" ? atom.objectEntityType : atom.subjectType) as GraphEntityType;
     const otherId = dir === "out" ? atom.objectEntityId! : atom.subjectId;
+    if (keep && !keep(otherType, otherId)) continue;
     edges.push({
       predicate: atom.predicate,
       direction: dir,
@@ -785,6 +807,18 @@ function edgeIdentity(e: FedEdge): string {
   return `${e.predicate}|${e.direction}|${e.otherType}|${e.otherId}`;
 }
 
+/** The edgeIdentity convention made endpoint-symmetric for the inter-ring
+ * pass: the same relation collected from either endpoint (subject side of an
+ * atom, or a native mirror synthesized from the opposite entity) maps to one
+ * key — predicate + canonical (subject, object) pair. */
+function canonicalEdgeIdentity(fromType: GraphEntityType, fromId: string, e: FedEdge): string {
+  const from = `${fromType}:${fromId}`;
+  const other = `${e.otherType}:${e.otherId}`;
+  const subj = e.direction === "out" ? from : other;
+  const obj = e.direction === "out" ? other : from;
+  return `${e.predicate}|${subj}|${obj}`;
+}
+
 async function federatedEdges(
   ctx: QueryCtx,
   entityType: GraphEntityType,
@@ -880,13 +914,17 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   const limit = Math.min(Math.max(args.limit ?? DEFAULT_LIMIT, 1), HARD_CAP);
   const names = new NameResolver(ctx);
   const entity = await names.ref(args.entityType, args.entityId);
+  // Shared across the center expansion AND the inter-ring pass, so the
+  // unindexed native lanes (projects/facilities/clients/contacts scans) are
+  // read once per call, not once per ring member.
+  const cache: ScanCache = {};
 
   const { atomEdges, nativeEdges } = await federatedEdges(
     ctx,
     args.entityType,
     args.entityId,
     { predicates: args.predicates, direction: args.direction },
-    {},
+    cache,
   );
 
   let attributes: GraphAttribute[] = [];
@@ -904,17 +942,93 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   atomEdges.sort(rankEdges);
   nativeEdges.sort(rankEdges);
 
+  const returnedAtomEdges = atomEdges.slice(0, limit);
+  const returnedNativeEdges = nativeEdges.slice(0, limit);
+
+  // ── Inter-ring pass (see module header) ──
+  // S = {center} ∪ the RETURNED ring (post-truncation endpoints, top-ranked
+  // first, capped at INTER_RING_CAP). For each ring member: atom edges from
+  // the by_subject side ONLY — every in-ring atom edge is seen exactly once,
+  // from its subject, so by_object double-collection can't happen — plus its
+  // native edges (reusing synthesizeNativeEdges + the shared ScanCache).
+  // Only edges whose OTHER endpoint is also in S survive; the center is
+  // excluded as an endpoint, which is exactly what guarantees no inter-edge
+  // duplicates an edge already returned (all of those touch the center).
+  const centerKey = `${args.entityType}:${args.entityId}`;
+  const ringSeen = new Set<string>([centerKey]);
+  const ringMembers: Array<{ type: GraphEntityType; id: string }> = [];
+  for (const e of [...returnedAtomEdges, ...returnedNativeEdges].sort(rankEdges)) {
+    if (ringMembers.length >= INTER_RING_CAP) break;
+    const key = `${e.otherType}:${e.otherId}`;
+    if (ringSeen.has(key)) continue;
+    ringSeen.add(key);
+    ringMembers.push({ type: e.otherType, id: e.otherId });
+  }
+  const inRing = (t: GraphEntityType, i: string) => {
+    const key = `${t}:${i}`;
+    return ringSeen.has(key) && key !== centerKey;
+  };
+
+  type InterFed = { fromType: GraphEntityType; fromId: string; edge: FedEdge };
+  const interAtomByKey = new Map<string, InterFed>();
+  const interNativeCandidates: InterFed[] = [];
+  for (const member of ringMembers) {
+    const memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing);
+    for (const edge of memberAtomEdges) {
+      const key = canonicalEdgeIdentity(member.type, member.id, edge);
+      if (interAtomByKey.has(key)) continue;
+      interAtomByKey.set(key, { fromType: member.type, fromId: member.id, edge });
+    }
+    for (const edge of await synthesizeNativeEdges(ctx, member.type, member.id, cache)) {
+      if (!inRing(edge.otherType, edge.otherId)) continue;
+      interNativeCandidates.push({ fromType: member.type, fromId: member.id, edge });
+    }
+  }
+  // Dedupe — same convention as federatedEdges: atom wins over native (with
+  // nativeCorroboration annotated); native mirrors seen from both endpoints
+  // collapse to one via the canonical key.
+  const interNativeByKey = new Map<string, InterFed>();
+  for (const cand of interNativeCandidates) {
+    const key = canonicalEdgeIdentity(cand.fromType, cand.fromId, cand.edge);
+    const atomWinner = interAtomByKey.get(key);
+    if (atomWinner) {
+      atomWinner.edge.provenance.nativeCorroboration = cand.edge.provenance.ref;
+      continue;
+    }
+    if (!interNativeByKey.has(key)) interNativeByKey.set(key, cand);
+  }
+  let interFed = [...interAtomByKey.values(), ...interNativeByKey.values()];
+  if (args.predicates) {
+    interFed = interFed.filter((x) => args.predicates!.includes(x.edge.predicate));
+  }
+  interFed.sort((a, b) => rankEdges(a.edge, b.edge));
+  const interTotal = interFed.length;
+  interFed = interFed.slice(0, HARD_CAP);
+  const interResolved = await resolveEdges(names, interFed.map((x) => x.edge));
+  const interEdges: InterGraphEdge[] = [];
+  for (let i = 0; i < interFed.length; i++) {
+    interEdges.push({
+      ...interResolved[i],
+      from: await names.ref(interFed[i].fromType, interFed[i].fromId),
+    });
+  }
+
   const truncated =
-    atomEdges.length > limit || nativeEdges.length > limit || attributes.length > limit;
+    atomEdges.length > limit ||
+    nativeEdges.length > limit ||
+    attributes.length > limit ||
+    interTotal > HARD_CAP;
 
   return {
     entity,
-    edges: await resolveEdges(names, atomEdges.slice(0, limit)),
-    nativeEdges: await resolveEdges(names, nativeEdges.slice(0, limit)),
+    edges: await resolveEdges(names, returnedAtomEdges),
+    nativeEdges: await resolveEdges(names, returnedNativeEdges),
+    interEdges,
     attributes: attributes.slice(0, limit),
     counts: {
       edges: atomEdges.length,
       nativeEdges: nativeEdges.length,
+      interEdges: interTotal,
       attributes: attributes.length,
       truncated,
     },

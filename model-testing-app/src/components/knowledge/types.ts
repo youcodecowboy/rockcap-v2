@@ -12,7 +12,9 @@ export interface GraphNodeVM {
   isCenter: boolean;
 }
 
-/** One line between the center and a ring node (server-provided edge). */
+/** One line between two nodes (server-provided edge). Center edges join the
+ * center to a ring node; inter edges (`inter: true`) join two ring nodes —
+ * they render fainter and pull with weaker springs so center edges stay primary. */
 export interface GraphEdgeVM {
   id: string;
   aId: string;
@@ -21,6 +23,8 @@ export interface GraphEdgeVM {
   qualifier?: string;
   family: GraphFamily;
   status: "active" | "contested";
+  /** Ring-to-ring edge from expandEntity's interEdges lane. */
+  inter?: boolean;
 }
 
 /** One atom-rail line item — an edge or an attribute of the center entity. */
