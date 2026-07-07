@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
+import { Network } from "lucide-react";
 import { StageChip } from "./StageChip";
 import { FlagChip } from "./FlagChip";
 import { PIPELINE_STAGES, derivePipelineStage, ladderForStage } from "@/lib/prospects/stages";
@@ -24,9 +25,12 @@ interface ProspectDetailHeaderProps {
   threadsCount?: number;
   knowledgeCount?: number;
   lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
+  /** Opens the Knowledge Graph drawer (mounted by the page). Prospect entry is
+   * always unfiltered — spec §14b.6a: prospecting sees the whole graph. */
+  onOpenGraph?: () => void;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, threadsCount, knowledgeCount, lenderTierConflict }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, threadsCount, knowledgeCount, lenderTierConflict, onOpenGraph }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
@@ -230,6 +234,30 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                   ))}
                 </select>
               </label>
+            )}
+            {/* Knowledge graph — peer of "Graduate to client" in prominence.
+                The prospect view is always unfiltered (§14b.6a). */}
+            {onOpenGraph && (
+              <button
+                onClick={onOpenGraph}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  border: `1px solid ${colors.accent.indigo}`,
+                  background: colors.accent.indigo,
+                  color: "#fff",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <Network size={15} />
+                Knowledge Graph
+              </button>
             )}
             {canPromote && (
               <button
