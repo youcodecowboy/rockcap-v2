@@ -1596,6 +1596,30 @@ export const sharedNeighbors = query({
   },
 });
 
+/** Client-WIDE atom totals for the drawer header. The canvas shows only the
+ * current center's one-hop neighborhood; without this, a client whose
+ * knowledge lives mostly on project subjects (the normal case) looks like it
+ * "isn't growing" no matter how much is atomized. Two indexed count reads. */
+export const clientAtomTotals = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    await requireIdentity(ctx);
+    let active = 0;
+    let contested = 0;
+    for (const status of ["active", "contested"] as const) {
+      const rows = await ctx.db
+        .query("atoms")
+        .withIndex("by_client_status", (q) =>
+          q.eq("clientId", args.clientId).eq("status", status),
+        )
+        .collect();
+      if (status === "active") active = rows.length;
+      else contested = rows.length;
+    }
+    return { active, contested, total: active + contested };
+  },
+});
+
 export const findPaths = query({
   args: findPathsArgs,
   handler: async (ctx, args) => {

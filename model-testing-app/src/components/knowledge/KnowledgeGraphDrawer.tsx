@@ -121,6 +121,12 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     setSelectedAtomId(null);
   }, [center.id]);
 
+  // Client-wide totals for the header — the canvas is a one-hop view; most
+  // client knowledge lives on project subjects, one pivot away.
+  const clientTotals = useQuery(
+    api.knowledge.graphQueries.clientAtomTotals,
+    entryEntityType === "client" ? { clientId: entryEntityId as any } : "skip",
+  );
   const data = useQuery(api.knowledge.graphQueries.expandEntity, {
     entityType: center.type,
     entityId: center.id,
@@ -491,7 +497,9 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
             </span>
           )}
           <span style={{ marginLeft: "auto", color: colors.text.dim, fontSize: 11.5, fontFamily: "ui-monospace, Menlo, monospace" }}>
-            {nodes.length} entities · {atoms.length} atoms{contestedCount ? ` · ${contestedCount} contested` : ""}
+            {clientTotals
+              ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${nodes.length} entities · ${atoms.length} in view`
+              : `${nodes.length} entities · ${atoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}`}
           </span>
         </div>
 
