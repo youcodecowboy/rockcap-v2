@@ -3,71 +3,7 @@ import { mutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser } from "./authHelpers";
-
-// Helper functions for document code generation (same as in documents.ts)
-function abbreviateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, maxLength);
-}
-
-function abbreviateCategory(category: string): string {
-  if (!category) return 'DOC';
-  
-  const categoryMap: Record<string, string> = {
-    'valuation': 'VAL',
-    'operating': 'OPR',
-    'operating statement': 'OPR',
-    'appraisal': 'APP',
-    'financial': 'FIN',
-    'contract': 'CNT',
-    'agreement': 'AGR',
-    'invoice': 'INV',
-    'report': 'RPT',
-    'letter': 'LTR',
-    'email': 'EML',
-    'note': 'NTE',
-    'memo': 'MEM',
-    'proposal': 'PRP',
-    'quote': 'QTE',
-    'receipt': 'RCP',
-  };
-  
-  const categoryLower = category.toLowerCase();
-  for (const [key, value] of Object.entries(categoryMap)) {
-    if (categoryLower.includes(key)) {
-      return value;
-    }
-  }
-  
-  return abbreviateText(category, 3);
-}
-
-function formatDateDDMMYY(dateString: string | Date): string {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
-}
-
-function generateDocumentCode(
-  clientName: string,
-  category: string,
-  projectName: string | undefined,
-  uploadedAt: string | Date
-): string {
-  const clientCode = abbreviateText(clientName, 8);
-  const typeCode = abbreviateCategory(category);
-  const projectCode = projectName ? abbreviateText(projectName, 10) : '';
-  const dateCode = formatDateDDMMYY(uploadedAt);
-  
-  if (projectCode) {
-    return `${clientCode}-${typeCode}-${projectCode}-${dateCode}`;
-  } else {
-    return `${clientCode}-${typeCode}-${dateCode}`;
-  }
-}
+import { buildDocumentName } from "../src/lib/documentNaming";
 
 // Mutation: Direct upload document with AI analysis
 // This bypasses the queue and creates the document immediately
@@ -104,17 +40,18 @@ export const uploadDocumentDirect = mutation({
       // This allows for backward compatibility
     }
     
-    // Generate document code
+    // Generate document code via the canonical convention
+    // e.g. DarkMills_CreditChecklist_V1.0_20260707
     let documentCode: string | undefined = undefined;
     if (args.clientName) {
       // For base documents, don't include project name in code
       const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
-      documentCode = generateDocumentCode(
-        args.clientName,
-        args.category,
-        projectNameForCode,
-        uploadedAt
-      );
+      documentCode = buildDocumentName({
+        fileType: args.fileTypeDetected || args.category,
+        clientName: args.clientName,
+        projectName: projectNameForCode,
+        date: uploadedAt,
+      });
       
       // Ensure uniqueness
       const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();

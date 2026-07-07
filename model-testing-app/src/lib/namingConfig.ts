@@ -1,8 +1,14 @@
 /**
  * Naming config resolver — handles inheritance, migration, and token assembly.
  * Reads from project/client metadata.documentNaming.
+ *
+ * Default convention (client-approved, see docs/classification/dark-mills-exemplar-pack.md §5):
+ *   <Project>_<DocType>_<Initials>_<AUDIENCE>_V<maj.min>_<YYYYMMDD>
+ *   e.g. DarkMills_CreditChecklist_RS_INTERNAL_V1.0_20260707
+ *
+ * Tokens are full words in compact PascalCase — no abbreviation maps.
+ * Per-client/project overrides (pattern, separator, custom tokens) keep working.
  */
-import { abbreviateCategory } from './documentCodeUtils';
 
 export interface CustomToken {
   id: string;
@@ -19,11 +25,26 @@ export interface DocumentNamingConfig {
   inheritFromClient?: boolean;
 }
 
-const BUILT_IN_TOKENS = ["CLIENT", "TYPE", "PROJECT", "DATE"] as const;
-const DEFAULT_PATTERN: string[] = ["CLIENT", "TYPE", "PROJECT", "DATE"];
-const DEFAULT_SEPARATOR = "-";
+// CLIENT is kept as a built-in for legacy per-client patterns that use it.
+const BUILT_IN_TOKENS = ["PROJECT", "TYPE", "INITIALS", "AUDIENCE", "VERSION", "DATE", "CLIENT"] as const;
+const DEFAULT_PATTERN: string[] = ["PROJECT", "TYPE", "INITIALS", "AUDIENCE", "VERSION", "DATE"];
+const DEFAULT_SEPARATOR = "_";
 const RESERVED_TOKEN_IDS = new Set(BUILT_IN_TOKENS.map((t) => t.toLowerCase()));
 const MAX_CUSTOM_TOKENS = 8;
+
+/**
+ * Compact a name into PascalCase full words: "dark mills" → "DarkMills",
+ * "Credit Checklist" → "CreditChecklist", "KYC Pack" → "KYCPack".
+ * Preserves existing capitalization inside words (all-caps stays all-caps).
+ */
+export function toCompactPascalCase(text: string): string {
+  if (!text) return "";
+  return text
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join("");
+}
 
 /**
  * Resolve the active naming config for a document context.
@@ -80,7 +101,25 @@ function normalizeConfig(raw: any): DocumentNamingConfig {
 }
 
 /**
+ * Sanitize a single token value for use in a document code.
+ * Preserves case (PascalCase words, V1.0 dots, RS_AL initials runs);
+ * compacts whitespace-separated words PascalCase-style and strips
+ * anything outside [A-Za-z0-9._-].
+ */
+function sanitizeTokenValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const words = trimmed.split(/\s+/);
+  const joined =
+    words.length > 1
+      ? words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("")
+      : words[0];
+  return joined.replace(/[^A-Za-z0-9._-]/g, "");
+}
+
+/**
  * Assemble a document code from a naming config and token values.
+ * Tokens with no value (e.g. unknown AUDIENCE) are omitted entirely.
  */
 export function assembleDocumentCode(
   config: DocumentNamingConfig,
@@ -92,7 +131,8 @@ export function assembleDocumentCode(
     const key = token.toLowerCase();
     const value = tokenValues[key];
     if (value) {
-      parts.push(value.toUpperCase().replace(/[^A-Z0-9]/g, ""));
+      const sanitized = sanitizeTokenValue(value);
+      if (sanitized) parts.push(sanitized);
     }
   }
 
@@ -100,25 +140,47 @@ export function assembleDocumentCode(
 }
 
 /**
- * Get built-in token values from document metadata.
+ * Get built-in token values for a document context.
+ *
+ * - project: projectShortcode if set, else compacted project name,
+ *   else compacted client name (client-scoped docs).
+ * - type: the classified fileType in compact PascalCase, full words.
+ * - initials: uploader initials (omitted when unknown).
+ * - audience: INTERNAL | EXTERNAL, only when known.
+ * - version: V<maj.min>, defaults to V1.0.
+ * - date: YYYYMMDD.
  */
-export function getBuiltInTokenValues(
-  clientCode: string,
-  category: string,
-  projectCode?: string,
-  date?: string | Date
-): Record<string, string> {
+export function getBuiltInTokenValues(options: {
+  clientName?: string;
+  projectName?: string;
+  projectShortcode?: string;
+  fileType?: string;
+  initials?: string;
+  audience?: "INTERNAL" | "EXTERNAL";
+  version?: string;
+  date?: string | Date;
+}): Record<string, string> {
   const values: Record<string, string> = {};
 
-  if (clientCode) values.client = clientCode;
-  if (category) values.type = abbreviateCategory(category);
-  if (projectCode) values.project = projectCode;
+  const project =
+    (options.projectShortcode && toCompactPascalCase(options.projectShortcode)) ||
+    (options.projectName && toCompactPascalCase(options.projectName)) ||
+    (options.clientName && toCompactPascalCase(options.clientName)) ||
+    "";
+  if (project) values.project = project;
 
-  const d = date ? new Date(date) : new Date();
-  const dd = String(d.getDate()).padStart(2, "0");
+  if (options.clientName) values.client = toCompactPascalCase(options.clientName);
+  if (options.fileType) values.type = toCompactPascalCase(options.fileType);
+  if (options.initials) values.initials = options.initials.toUpperCase().replace(/[^A-Z0-9_]/g, "");
+  if (options.audience) values.audience = options.audience;
+
+  values.version = options.version || "V1.0";
+
+  const d = options.date ? new Date(options.date) : new Date();
+  const yyyy = String(d.getFullYear());
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  values.date = `${dd}${mm}${yy}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  values.date = `${yyyy}${mm}${dd}`;
 
   return values;
 }

@@ -37,7 +37,7 @@ import { formatForPrompt, getAllReferences } from '../../lib/references';
 import { preprocessDocument, chunkBatch } from './document-preprocessor';
 import { buildSystemPrompt, buildBatchUserMessage, callAnthropicBatch, type SystemPromptBlocks } from './anthropic-client';
 import { callMockBatch } from './mock-client';
-import { resolvePlacement, getTypeAbbreviation } from './placement-rules';
+import { resolvePlacement } from './placement-rules';
 import type { PlacementResult } from './placement-rules';
 
 // =============================================================================

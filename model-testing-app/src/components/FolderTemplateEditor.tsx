@@ -152,6 +152,32 @@ export default function FolderTemplateEditor({
     return name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   };
 
+  // Depth of a folder by walking its parentKey chain (0 = root).
+  // Returns Infinity on a cycle or broken chain so the folder is
+  // excluded as a parent candidate rather than crashing the walk.
+  const getFolderDepth = (folderKey: string): number => {
+    let depth = 0;
+    const seen = new Set<string>([folderKey]);
+    let current = folders.find(f => f.folderKey === folderKey);
+    while (current?.parentKey) {
+      if (seen.has(current.parentKey)) return Infinity; // cycle guard
+      seen.add(current.parentKey);
+      const parent = folders.find(f => f.folderKey === current!.parentKey);
+      if (!parent) return Infinity; // dangling parentKey
+      depth++;
+      if (depth > 4) return Infinity;
+      current = parent;
+    }
+    return depth;
+  };
+
+  // Any folder can be a parent as long as the new child stays within the
+  // depth cap (0-4), i.e. the parent itself sits at depth <= 3.
+  const parentCandidates = folders
+    .map(f => ({ folder: f, depth: getFolderDepth(f.folderKey) }))
+    .filter(({ depth }) => depth < 4)
+    .sort((a, b) => a.folder.order - b.folder.order);
+
   const renderFolder = (folder: FolderItem, depth: number = 0) => {
     const children = getChildren(folder.folderKey);
     const hasChildren = children.length > 0;
@@ -315,8 +341,10 @@ export default function FolderTemplateEditor({
           <Field label="Parent Folder">
             <Select value={newFolderParent} onChange={(e) => setNewFolderParent(e.target.value)}>
               <option value="none">No parent (root level)</option>
-              {folders.filter(f => !f.parentKey).map(f => (
-                <option key={f.folderKey} value={f.folderKey}>{f.name}</option>
+              {parentCandidates.map(({ folder: f, depth }) => (
+                <option key={f.folderKey} value={f.folderKey}>
+                  {`${'—'.repeat(depth)}${depth > 0 ? ' ' : ''}${f.name}`}
+                </option>
               ))}
             </Select>
           </Field>

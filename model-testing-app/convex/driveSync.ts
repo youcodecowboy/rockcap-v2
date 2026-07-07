@@ -17,7 +17,7 @@ import { getAuthenticatedUserOrNull } from "./authHelpers";
 // Imported by the refile migration to re-resolve placement from a document's
 // STORED classification (precedent: convex/migrations/seedCodeMappings.ts
 // imports src/lib code the same way).
-import { resolvePlacement } from "../src/v4/lib/placement-rules";
+import { resolvePlacement, getParentFolderKey } from "../src/v4/lib/placement-rules";
 
 // Google Drive metadata mirror — the sync engine (phase 2).
 //
@@ -1368,10 +1368,10 @@ async function computeFolderChildren(
     };
   });
   const clientIds = Array.from(
-    new Set(enriched.map((e) => e.effectiveClientId).filter(Boolean) as string[]),
+    new Set(enriched.map((e: any) => e.effectiveClientId).filter(Boolean) as string[]),
   );
   const projectIds = Array.from(
-    new Set(enriched.map((e) => e.effectiveProjectId).filter(Boolean) as string[]),
+    new Set(enriched.map((e: any) => e.effectiveProjectId).filter(Boolean) as string[]),
   );
   const nameById = new Map<string, string>();
   const projectNameById = new Map<string, string>();
@@ -1578,47 +1578,88 @@ async function loadFolderMap(ctx: any): Promise<Map<string, MirrorFolder>> {
 }
 
 // Resolve a v4 target-folder key against a PROJECT's real folder taxonomy.
-// Mirrors bulkUpload.fileItem's project-scope branch exactly, including the
-// fallback order: exact key → "unfiled" → "background" → first project
+// SUBFOLDER-AWARE (Dark Mills taxonomy, 2026-07-07): the target may be a
+// nested folder key (e.g. "client_appraisals" — a projectFolders row whose
+// parent chain runs via parentFolderId). Fallback order: exact key → parent
+// key chain (a pre-taxonomy project without the subfolder row files to the
+// parent, e.g. client_appraisals → modelling_info) → "modelling_info" (the
+// new default) → legacy chain ("unfiled" → "background") → first project
 // folder. Returns undefined when the project has no folders at all (callers
 // leave the doc where it is / unfiled). Shared by driveHydration's
-// first-extraction placement and the refile migration below.
+// first-extraction placement, harnessClassify.applyClassification, and the
+// refile migration below.
 export async function resolveProjectFolderKey(
   ctx: any,
   projectId: Id<"projects">,
   targetFolder: string | undefined,
 ): Promise<string | undefined> {
-  const matchExact = targetFolder
-    ? await ctx.db
-        .query("projectFolders")
-        .withIndex("by_project_type", (q: any) =>
-          q.eq("projectId", projectId).eq("folderType", targetFolder),
-        )
-        .first()
-    : null;
-  if (matchExact) return targetFolder;
-  const unfiled = await ctx.db
+  const findByType = (folderType: string) =>
+    ctx.db
+      .query("projectFolders")
+      .withIndex("by_project_type", (q: any) =>
+        q.eq("projectId", projectId).eq("folderType", folderType),
+      )
+      .first();
+
+  // Exact key, then walk the parent chain (guard against cycles).
+  let candidate: string | undefined = targetFolder;
+  const seen = new Set<string>();
+  while (candidate && !seen.has(candidate)) {
+    seen.add(candidate);
+    const match = await findByType(candidate);
+    if (match) return candidate;
+    candidate = getParentFolderKey(candidate);
+  }
+
+  for (const fallback of ["modelling_info", "unfiled", "background"]) {
+    if (seen.has(fallback)) continue;
+    const match = await findByType(fallback);
+    if (match) return fallback;
+  }
+  const anyFolder = await ctx.db
     .query("projectFolders")
-    .withIndex("by_project_type", (q: any) =>
-      q.eq("projectId", projectId).eq("folderType", "unfiled"),
-    )
+    .withIndex("by_project", (q: any) => q.eq("projectId", projectId))
     .first();
-  const background = unfiled
-    ? null
-    : await ctx.db
-        .query("projectFolders")
-        .withIndex("by_project_type", (q: any) =>
-          q.eq("projectId", projectId).eq("folderType", "background"),
-        )
-        .first();
-  const anyFolder =
-    unfiled || background
-      ? null
-      : await ctx.db
-          .query("projectFolders")
-          .withIndex("by_project", (q: any) => q.eq("projectId", projectId))
-          .first();
-  return (unfiled ?? background ?? anyFolder)?.folderType;
+  return anyFolder?.folderType;
+}
+
+// Client-side twin of resolveProjectFolderKey — resolves a target-folder key
+// against a CLIENT's folder taxonomy, subfolder-aware (e.g. "kyc" is a child
+// of "background" in the new template; an older client without the subfolder
+// row falls back to the parent). Fallback order: exact key → parent key
+// chain → "miscellaneous" → first client folder. Returns undefined when the
+// client has no folders at all.
+export async function resolveClientFolderKey(
+  ctx: any,
+  clientId: Id<"clients">,
+  targetFolder: string | undefined,
+): Promise<string | undefined> {
+  const findByType = (folderType: string) =>
+    ctx.db
+      .query("clientFolders")
+      .withIndex("by_client_type", (q: any) =>
+        q.eq("clientId", clientId).eq("folderType", folderType),
+      )
+      .first();
+
+  let candidate: string | undefined = targetFolder;
+  const seen = new Set<string>();
+  while (candidate && !seen.has(candidate)) {
+    seen.add(candidate);
+    const match = await findByType(candidate);
+    if (match) return candidate;
+    candidate = getParentFolderKey(candidate);
+  }
+
+  if (!seen.has("miscellaneous")) {
+    const misc = await findByType("miscellaneous");
+    if (misc) return "miscellaneous";
+  }
+  const anyFolder = await ctx.db
+    .query("clientFolders")
+    .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
+    .first();
+  return anyFolder?.folderType;
 }
 
 // Full descendant-folder set of a Drive folder (the folder itself included),
@@ -2647,15 +2688,20 @@ export const refileSubtreeToProject = internalMutation({
         }
 
         // Re-derive the v4 target-folder key from the STORED classification
-        // (the original mapped.targetFolder is not persisted on documents).
+        // (the original mapped.targetFolder is not persisted on documents;
+        // stored axes, if any, live in extractedData.classificationAxes).
         // resolvePlacement is the pipeline's own rule table; targetLevel
-        // "project" makes its no-rule fallback "unfiled", which is right
-        // here — everything in this subtree IS project material.
+        // "project" makes its no-rule fallback "modelling_info" (flagged
+        // lowConfidence), which is right here — everything in this subtree
+        // IS project material.
+        const storedAxes: any = (doc as any).extractedData?.classificationAxes;
         const placement = resolvePlacement(
           {
             classification: {
               fileType: doc.fileTypeDetected ?? "",
               category: doc.category ?? "",
+              ...(storedAxes?.producer ? { producer: storedAxes.producer } : {}),
+              ...(storedAxes?.audience ? { audience: storedAxes.audience } : {}),
               suggestedFolder: "",
               targetLevel: "project",
             },

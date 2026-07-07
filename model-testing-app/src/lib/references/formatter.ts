@@ -64,9 +64,11 @@ function formatSingle(ref: DocumentReference, context: AIContext): string {
 
 /**
  * Classification: Compact but sufficient for distinguishing between all types.
- * First paragraph of description + top 3 identification rules + disambiguation.
- * Omits terminology and full descriptions to keep prompt under 20K tokens
- * when sending all ~45 references (enables prompt caching across bulk uploads).
+ * First paragraph of description + placement axes + top identification rules
+ * + disambiguation (prominent — the near-miss pairs are where classification
+ * fails). Filename grammar is included as an explicitly WEAK prior (pack §4:
+ * filenames lie; body content wins). Omits terminology and full descriptions
+ * to keep the prompt cacheable across bulk uploads.
  */
 function formatClassification(ref: DocumentReference): string {
   // First paragraph only — enough to understand the type
@@ -75,9 +77,18 @@ function formatClassification(ref: DocumentReference): string {
   const parts = [
     `### ${ref.fileType} (${ref.category})`,
     `Keywords: ${ref.keywords.slice(0, 8).join(', ')}`,
-    `Filing: ${ref.filing.targetFolder} (${ref.filing.targetLevel}-level)`,
-    shortDesc,
+    `Filing: ${ref.targetFolderKey ?? ref.filing.targetFolder} (${ref.filing.targetLevel}-level)`,
   ];
+
+  // Placement axes — producer/audience drive subfolder placement
+  if (ref.producer || ref.audience) {
+    const axes: string[] = [];
+    if (ref.producer) axes.push(`producer=${ref.producer}`);
+    if (ref.audience) axes.push(`audience=${ref.audience}`);
+    parts.push(`Axes: ${axes.join(', ')}`);
+  }
+
+  parts.push(shortDesc);
 
   // Top 3 identification rules (prioritize PRIMARY/CRITICAL)
   if (ref.identificationRules.length > 0) {
@@ -88,9 +99,23 @@ function formatClassification(ref: DocumentReference): string {
     prioritized.forEach((rule) => parts.push(`- ${rule}`));
   }
 
-  // Disambiguation is critical for similar types — always include
+  // Disambiguation is critical for similar types — always include, headed so
+  // the near-miss rules stand out from the identification rules.
   if (ref.disambiguation.length > 0) {
-    ref.disambiguation.slice(0, 3).forEach((d) => parts.push(`- ${d}`));
+    parts.push('**Disambiguation:**');
+    ref.disambiguation.slice(0, 5).forEach((d) => parts.push(`- ${d}`));
+  }
+
+  // Filename grammar / patterns — WEAK PRIOR only (filenames lie)
+  if (ref.filenameGrammar) {
+    parts.push(`Filename grammar (weak prior — body content wins): ${ref.filenameGrammar}`);
+  } else if (ref.filenamePatterns.length > 0) {
+    parts.push(`Filename hints (weak prior — body content wins): ${ref.filenamePatterns.slice(0, 4).join(', ')}`);
+  }
+
+  // Version semantics — which version is operative
+  if (ref.versionSemantics) {
+    parts.push(`Versions: ${ref.versionSemantics}`);
   }
 
   return parts.join('\n');
@@ -151,8 +176,15 @@ function formatSummarization(ref: DocumentReference): string {
  */
 function formatFiling(ref: DocumentReference): string {
   const parts = [
-    `### ${ref.fileType} → ${ref.filing.targetFolder} (${ref.filing.targetLevel})`,
+    `### ${ref.fileType} → ${ref.targetFolderKey ?? ref.filing.targetFolder} (${ref.filing.targetLevel})`,
   ];
+
+  if (ref.producer || ref.audience) {
+    const axes: string[] = [];
+    if (ref.producer) axes.push(`producer=${ref.producer}`);
+    if (ref.audience) axes.push(`audience=${ref.audience}`);
+    parts.push(`Axes: ${axes.join(', ')}`);
+  }
 
   if (ref.disambiguation.length > 0) {
     ref.disambiguation.slice(0, 2).forEach((d) => parts.push(`- ${d}`));

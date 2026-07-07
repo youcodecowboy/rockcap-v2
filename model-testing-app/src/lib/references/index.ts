@@ -42,6 +42,7 @@ import { COMMUNICATION_REFERENCES } from './references/communications';
 import { WARRANTY_REFERENCES } from './references/warranties';
 import { PROJECT_DOCUMENT_REFERENCES } from './references/project-documents';
 import { PHOTOGRAPH_REFERENCES } from './references/photographs';
+import { DEAL_LIFECYCLE_REFERENCES } from './references/deal-lifecycle';
 
 /**
  * All system references, indexed at module load time.
@@ -60,6 +61,7 @@ const ALL_SYSTEM_REFERENCES: DocumentReference[] = [
   ...WARRANTY_REFERENCES,
   ...PROJECT_DOCUMENT_REFERENCES,
   ...PHOTOGRAPH_REFERENCES,
+  ...DEAL_LIFECYCLE_REFERENCES,
 ];
 
 /**

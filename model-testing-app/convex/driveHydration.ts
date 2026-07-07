@@ -9,6 +9,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   ensureAccessToken,
   resolveFolderScope,
+  resolveClientFolderKey,
   resolveProjectFolderKey,
   SETTLE_MS,
   type FolderScope,
@@ -423,34 +424,13 @@ export const applyExtraction = internalMutation({
           placementPatch = { folderId: resolvedKey, folderType: "project" };
         }
       } else if (effectiveClientId) {
-        const matchExact = targetFolder
-          ? await ctx.db
-              .query("clientFolders")
-              .withIndex("by_client_type", (q: any) =>
-                q.eq("clientId", effectiveClientId).eq("folderType", targetFolder),
-              )
-              .first()
-          : null;
-        let resolvedKey: string | undefined = matchExact
-          ? targetFolder
-          : undefined;
-        if (!resolvedKey) {
-          const misc = await ctx.db
-            .query("clientFolders")
-            .withIndex("by_client_type", (q: any) =>
-              q.eq("clientId", effectiveClientId).eq("folderType", "miscellaneous"),
-            )
-            .first();
-          const anyFolder = misc
-            ? null
-            : await ctx.db
-                .query("clientFolders")
-                .withIndex("by_client", (q: any) =>
-                  q.eq("clientId", effectiveClientId),
-                )
-                .first();
-          resolvedKey = (misc ?? anyFolder)?.folderType;
-        }
+        // Subfolder-aware client resolution (exact key → parent chain →
+        // miscellaneous → any) — shared with harnessClassify.
+        const resolvedKey = await resolveClientFolderKey(
+          ctx,
+          effectiveClientId,
+          targetFolder,
+        );
         // A client with no folders at all leaves the doc unfiled — the next
         // (re-)extraction retries placement because folderId is still unset.
         if (resolvedKey) {

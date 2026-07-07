@@ -259,6 +259,8 @@ export function buildBatchUserMessage(
     type: 'text',
     text: `\n---\n## Required Output Format\n` +
       `Return a JSON array with one object per document, in the same order as above.\n` +
+      `"producer" MUST be one of: "client" | "rockcap" | "lender" | "third_party_professional" | "statutory_authority" — detect from CONTENT, never from file metadata.\n` +
+      `"audience" MUST be one of: "internal" | "external" | "neutral" — detect from body name-stamp + register; the filename AUDIENCE token records filing custody only and can lie.\n` +
       `Each object must match this schema exactly:\n` +
       '```json\n' +
       `[
@@ -268,8 +270,10 @@ export function buildBatchUserMessage(
     "classification": {
       "fileType": "RedBook Valuation",
       "category": "Appraisals",
-      "suggestedFolder": "appraisals",
+      "suggestedFolder": "modelling_info",
       "targetLevel": "project",
+      "producer": "third_party_professional",
+      "audience": "external",
       "confidence": 0.92,
       "reasoning": "Contains RICS valuation methodology...",
       "alternativeTypes": [{"fileType": "Appraisal", "category": "Appraisals", "confidence": 0.7}]
@@ -583,6 +587,9 @@ function parseClassificationResponse(text: string): DocumentClassification[] {
   return raw.map(normalizeClassification);
 }
 
+const VALID_PRODUCERS = new Set(['client', 'rockcap', 'lender', 'third_party_professional', 'statutory_authority']);
+const VALID_AUDIENCES = new Set(['internal', 'external', 'neutral']);
+
 /** Ensure a raw classification object has all required fields with safe defaults. */
 function normalizeClassification(raw: any): DocumentClassification {
   const classification = raw.classification || {};
@@ -597,6 +604,10 @@ function normalizeClassification(raw: any): DocumentClassification {
       category: classification.category || 'Miscellaneous',
       suggestedFolder: classification.suggestedFolder || 'miscellaneous',
       targetLevel: classification.targetLevel || 'project',
+      // Axes are optional — dropped when the model returns an out-of-vocab value
+      // (placement then falls back to the fileType/category rules).
+      ...(VALID_PRODUCERS.has(classification.producer) ? { producer: classification.producer } : {}),
+      ...(VALID_AUDIENCES.has(classification.audience) ? { audience: classification.audience } : {}),
       confidence: classification.confidence ?? 0.5,
       reasoning: classification.reasoning || '',
       alternativeTypes: Array.isArray(classification.alternativeTypes) ? classification.alternativeTypes : [],

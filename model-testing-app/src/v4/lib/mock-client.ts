@@ -188,22 +188,22 @@ function resolveFileType(
 // FOLDER & LEVEL RESOLUTION
 // =============================================================================
 
-/** Map category to standard folder key */
+/** Map category to standard folder key (Dark Mills taxonomy — mirrors CATEGORY_PLACEMENT in placement-rules.ts) */
 function resolveFolder(category: string): string {
   const CATEGORY_TO_FOLDER: Record<string, string> = {
-    'Appraisals': 'appraisals',
+    'Appraisals': 'modelling_info',
     'KYC': 'kyc',
-    'Legal Documents': 'terms_comparison',
-    'Loan Terms': 'terms_comparison',
+    'Legal Documents': 'credit',
+    'Loan Terms': 'terms_received',
     'Inspections': 'post_completion',
-    'Professional Reports': 'background',
-    'Plans': 'background',
+    'Professional Reports': 'modelling_info',
+    'Plans': 'modelling_info',
     'Insurance': 'post_completion',
-    'Financial Documents': 'background',
+    'Financial Documents': 'background_docs',
     'Communications': 'notes',
-    'Photographs': 'background',
-    'Project Documents': 'background',
-    'Warranties': 'background',
+    'Photographs': 'modelling_info',
+    'Project Documents': 'modelling_info',
+    'Warranties': 'post_completion',
     'Other': 'miscellaneous',
   };
   return CATEGORY_TO_FOLDER[category] || 'miscellaneous';

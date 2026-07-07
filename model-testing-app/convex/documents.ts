@@ -1,54 +1,17 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
+import {
+  buildDocumentName,
+  buildInternalDocumentName,
+  toCompactPascalCase,
+  formatDateForNaming,
+} from "../src/lib/documentNaming";
 
-// Helper functions for document code generation
-function abbreviateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, maxLength);
-}
-
-function abbreviateCategory(category: string): string {
-  if (!category) return 'DOC';
-  
-  const categoryMap: Record<string, string> = {
-    'valuation': 'VAL',
-    'operating': 'OPR',
-    'operating statement': 'OPR',
-    'appraisal': 'APP',
-    'financial': 'FIN',
-    'contract': 'CNT',
-    'agreement': 'AGR',
-    'invoice': 'INV',
-    'report': 'RPT',
-    'letter': 'LTR',
-    'email': 'EML',
-    'note': 'NTE',
-    'memo': 'MEM',
-    'proposal': 'PRP',
-    'quote': 'QTE',
-    'receipt': 'RCP',
-  };
-  
-  const categoryLower = category.toLowerCase();
-  for (const [key, value] of Object.entries(categoryMap)) {
-    if (categoryLower.includes(key)) {
-      return value;
-    }
-  }
-  
-  return abbreviateText(category, 3);
-}
-
-function formatDateDDMMYY(dateString: string | Date): string {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
-}
-
+// Document code generation — delegates to the canonical convention in
+// src/lib/documentNaming (see docs/classification/dark-mills-exemplar-pack.md §5).
+// Forward-only: existing documentCodes are never regenerated; only new
+// creates/moves that already regenerate get the new format.
 function generateDocumentCode(
   clientName: string,
   category: string,
@@ -57,32 +20,35 @@ function generateDocumentCode(
   options?: {
     scope?: "client" | "internal" | "personal";
     uploaderInitials?: string;
+    audience?: "INTERNAL" | "EXTERNAL";
+    projectShortcode?: string;
   }
 ): string {
-  const typeCode = abbreviateCategory(category);
-  const dateCode = formatDateDDMMYY(uploadedAt);
   const scope = options?.scope || "client";
 
-  // Internal scope: RC-TYPE-DATE (e.g., RC-POLICY-231215)
+  // Internal scope: RockCap_<Topic>_<YYYYMMDD> (e.g., RockCap_LendingPolicy_20260707)
   if (scope === "internal") {
-    return `RC-${typeCode}-${dateCode}`;
+    return buildInternalDocumentName(category, uploadedAt);
   }
 
-  // Personal scope: INITIALS-TYPE-DATE (e.g., JS-NOTE-231215)
+  // Personal scope: <Initials>_<Topic>_<YYYYMMDD> (e.g., JS_Note_20260707)
   if (scope === "personal") {
-    const initials = options?.uploaderInitials || "XX";
-    return `${initials}-${typeCode}-${dateCode}`;
+    const initials = (options?.uploaderInitials || "XX").toUpperCase();
+    const topic = toCompactPascalCase(category) || "Document";
+    return `${initials}_${topic}_${formatDateForNaming(uploadedAt)}`;
   }
 
-  // Client scope: CLIENT-TYPE-PROJECT-DATE (existing behavior)
-  const clientCode = abbreviateText(clientName, 8);
-  const projectCode = projectName ? abbreviateText(projectName, 10) : '';
-
-  if (projectCode) {
-    return `${clientCode}-${typeCode}-${projectCode}-${dateCode}`;
-  } else {
-    return `${clientCode}-${typeCode}-${dateCode}`;
-  }
+  // Client scope: <Project>_<DocType>_<Initials>_<AUDIENCE>_V1.0_<YYYYMMDD>
+  // (e.g., DarkMills_CreditChecklist_RS_INTERNAL_V1.0_20260707)
+  return buildDocumentName({
+    fileType: category,
+    clientName,
+    projectName,
+    projectShortcode: options?.projectShortcode,
+    initials: options?.uploaderInitials,
+    audience: options?.audience,
+    date: uploadedAt,
+  });
 }
 
 // Query: Get all documents
@@ -434,14 +400,18 @@ export const create = mutation({
           { scope, uploaderInitials: args.uploaderInitials }
         );
       } else if (args.clientName) {
-        // Client scope: existing behavior
+        // Client scope: canonical convention (DocType = classified fileType)
         const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
         documentCode = generateDocumentCode(
           args.clientName,
-          args.category,
+          args.fileTypeDetected || args.category,
           projectNameForCode,
           uploadedAt,
-          { scope: "client" }
+          {
+            scope: "client",
+            uploaderInitials: args.uploaderInitials,
+            audience: args.isInternal ? "INTERNAL" : undefined,
+          }
         );
       }
 
@@ -657,11 +627,11 @@ export const uploadFileAndCreateDocument = mutation({
       const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
       documentCode = generateDocumentCode(
         args.clientName,
-        args.category,
+        args.fileTypeDetected || args.category,
         projectNameForCode,
         uploadedAt
       );
-      
+
       // Ensure uniqueness
       const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       let finalCode = documentCode;
@@ -672,7 +642,7 @@ export const uploadFileAndCreateDocument = mutation({
       }
       documentCode = finalCode;
     }
-    
+
     const documentId = await ctx.db.insert("documents", {
       fileStorageId: args.storageId,
       fileName: args.fileName,
@@ -1134,9 +1104,14 @@ export const moveDocument = mutation({
     if (clientName) {
       newDocumentCode = generateDocumentCode(
         clientName,
-        doc.category,
+        doc.fileTypeDetected || doc.category,
         projectNameForCode,
-        doc.uploadedAt
+        doc.uploadedAt,
+        {
+          scope: "client",
+          uploaderInitials: doc.uploaderInitials,
+          audience: doc.isInternal ? "INTERNAL" : undefined,
+        }
       );
       
       // Ensure uniqueness

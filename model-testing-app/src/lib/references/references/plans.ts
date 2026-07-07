@@ -19,6 +19,7 @@ export const PLAN_REFERENCES: DocumentReference[] = [
       targetFolder: 'Plans',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Floor plans are horizontal architectural drawings that depict the layout of a building at a specific level, typically produced at scales of 1:50 or 1:100. Each plan represents a horizontal slice through the building at approximately one metre above the finished floor level, revealing the arrangement of rooms, corridors, walls, doors, windows, staircases, and structural elements. In UK property finance and development lending, floor plans are critical documents because they define the usable areas that underpin valuation and loan-to-value calculations. ' +
       'A complete set of floor plans for a development will include a plan for each storey — ground floor, first floor, second floor, and so on — plus any basement or roof-level plans where applicable. Each plan is annotated with room dimensions, door swing arcs, window positions, and functional labels such as bedroom, kitchen, bathroom, or reception. Hatching conventions distinguish load-bearing walls from partitions, and standard symbols denote fixtures like sinks, WCs, and radiators. ' +
@@ -172,6 +173,7 @@ export const PLAN_REFERENCES: DocumentReference[] = [
       targetFolder: 'Plans',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Elevations are architectural drawings that depict the external vertical faces of a building as viewed head-on from a fixed point at a distance. Each elevation represents one facade — typically labelled by orientation (north elevation, south elevation, east, west) or by context (front elevation, rear elevation, side elevation, street elevation). They are usually drawn at scales of 1:50 or 1:100, matching the floor plans for the same project, and form part of the statutory planning application package submitted to the local planning authority. ' +
       'An elevation drawing shows the external appearance of the building including the roof profile, ridge and eave lines, chimney stacks, window and door openings, external cladding materials, brickwork coursing, render finishes, rainwater goods, and any balconies or canopies. Finish materials are typically annotated or referenced to a materials schedule — for example "facing brick to match existing" or "through-coloured render, RAL 7016". Ground levels, finished floor levels, and ridge heights are dimensioned relative to an ordnance datum or site benchmark. ' +
@@ -324,6 +326,7 @@ export const PLAN_REFERENCES: DocumentReference[] = [
       targetFolder: 'Plans',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Sections are architectural drawings that depict a building as if it has been sliced vertically along a defined cutting plane, revealing the internal structure, floor-to-ceiling heights, roof construction, and the relationship between different storeys. The cutting line is indicated on the corresponding floor plan with a labelled reference such as A-A, B-B, or 1-1, with arrows showing the direction of view. Sections are typically drawn at scales of 1:50 or 1:100 and form an essential part of both planning application submissions and building regulations packages. ' +
       'A section drawing shows the full vertical profile of the building from foundation to ridge. It exposes floor slab thicknesses, ceiling heights, structural beams and columns, roof trusses or rafters, insulation zones, and damp-proof courses. Where the cutting plane passes through solid structure — walls, floors, roofs — the cut material is shown with dense hatching or fill to distinguish it from elements seen beyond the cut. Rooms on either side of the cut are visible in the background, providing spatial context. ' +
@@ -474,6 +477,7 @@ export const PLAN_REFERENCES: DocumentReference[] = [
       targetFolder: 'Plans',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Site plans are scaled drawings that show the arrangement of buildings, structures, and external works on a specific piece of land, typically drawn at scales of 1:200 or 1:500. They form a mandatory component of UK planning applications and are the primary drawing used to understand how a development sits within its plot and relates to adjacent properties, roads, and infrastructure. The site is usually delineated by a red line boundary (the application site) and may include a blue line boundary indicating land in the same ownership but outside the application. ' +
       'A site plan shows the footprint of existing and proposed buildings, vehicular and pedestrian access points, parking layouts (including disabled bays and cycle stores), hard and soft landscaping, boundary treatments (fences, walls, hedges), refuse and recycling storage, drainage runs, and any external plant or service compound areas. Finished floor levels and external ground levels are annotated to demonstrate how the development responds to the topography. Tree positions, root protection areas, and landscaping zones may also appear, particularly where a tree preservation order or ecological constraint applies. ' +
@@ -625,6 +629,7 @@ export const PLAN_REFERENCES: DocumentReference[] = [
       targetFolder: 'Plans',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Location plans are small-scale maps that show the wider geographic context of a development site, typically drawn at scales of 1:1250 or 1:2500 using Ordnance Survey (OS) base mapping. They are a mandatory requirement for UK planning applications under Article 7 of the Town and Country Planning (Development Management Procedure) Order, and must show at least two named roads and surrounding buildings or land to enable the local planning authority to identify the precise location of the proposed development. The application site is outlined in red (the red line boundary), and any adjoining land owned by the applicant is outlined in blue. ' +
       'Location plans are distinguished from site plans by their scale and level of detail. Where a site plan shows the detailed arrangement of buildings, access, and landscaping within the development at 1:200 or 1:500, a location plan shows the surrounding streets, neighbouring properties, public open spaces, watercourses, and local landmarks at 1:1250 or 1:2500. The base mapping is reproduced under Ordnance Survey licence and carries the OS copyright acknowledgement and licence number. The site outline is typically a simple red rectangle or polygon superimposed on the OS map base. ' +

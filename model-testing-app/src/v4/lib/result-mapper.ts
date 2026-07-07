@@ -22,7 +22,7 @@
 
 import type { DocumentClassification } from '../types';
 import type { PlacementResult } from './placement-rules';
-import { getTypeAbbreviation } from './placement-rules';
+import { buildDocumentName } from '../../lib/documentNaming';
 
 // =============================================================================
 // TYPES
@@ -142,12 +142,14 @@ export function mapClassificationToConvex(
 ): MappedDocumentResult {
   const { fileType, category, confidence, alternativeTypes } = classification.classification;
 
-  // Generate document code
-  const documentCode = generateDocumentCode({
-    shortcode: context.projectShortcode || deriveShortcode(context.clientName || 'DOC'),
-    typeAbbreviation: getTypeAbbreviation(fileType),
-    isInternal: context.isInternal ?? false,
-    uploaderInitials: context.uploaderInitials || 'SYS',
+  // Generate document code via the canonical convention
+  // e.g. DarkMills_CreditChecklist_RS_EXTERNAL_V1.0_20260707
+  const documentCode = buildDocumentName({
+    fileType,
+    projectShortcode: context.projectShortcode,
+    clientName: context.clientName,
+    initials: context.uploaderInitials || 'XX',
+    audience: context.isInternal ? 'INTERNAL' : 'EXTERNAL',
     version: 'V1.0',
     date: new Date(),
   });
@@ -236,36 +238,6 @@ export function mapBatchToConvex(
 }
 
 // =============================================================================
-// DOCUMENT CODE GENERATION
-// =============================================================================
-
-interface DocumentCodeInput {
-  shortcode: string;
-  typeAbbreviation: string;
-  isInternal: boolean;
-  uploaderInitials: string;
-  version: string;
-  date: Date;
-}
-
-function generateDocumentCode(input: DocumentCodeInput): string {
-  const { shortcode, typeAbbreviation, isInternal, uploaderInitials, version, date } = input;
-
-  const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
-  const intExt = isInternal ? 'INT' : 'EXT';
-
-  return `${shortcode}-${typeAbbreviation}-${intExt}-${uploaderInitials}-${version}-${dateStr}`;
-}
-
-/** Derive a project shortcode from a name (max 10 chars, uppercase) */
-function deriveShortcode(name: string): string {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 10) || 'DOC';
-}
-
-// =============================================================================
 // DOCUMENT ANALYSIS BUILDER
 // =============================================================================
 
@@ -340,6 +312,15 @@ function buildExtractedData(
   classification: DocumentClassification,
 ): Record<string, any> {
   const data: Record<string, any> = {};
+
+  // Mirror harnessClassify.applyClassification: the classification axes ride in
+  // extractedData.classificationAxes so both lanes persist the same shape.
+  if (classification.producer || classification.audience) {
+    data.classificationAxes = {
+      ...(classification.producer ? { producer: classification.producer } : {}),
+      ...(classification.audience ? { audience: classification.audience } : {}),
+    };
+  }
 
   if (!classification.intelligenceFields || classification.intelligenceFields.length === 0) {
     return data;

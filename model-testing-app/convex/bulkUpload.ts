@@ -777,21 +777,46 @@ export const updateItemProject = mutation({
   },
 });
 
-/** Derive a shortcode from a name (uppercase, alphanumeric, max 10 chars) */
+/**
+ * Derive a project token from a name — compact PascalCase, alphanumeric only
+ * (e.g. "Dark Mills" → "DarkMills"). Feeds replaceShortcodeInDocumentCode.
+ */
 function deriveShortcodeFromName(name: string): string {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 10) || "DOC";
+  const token = name
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join("");
+  return token || "DOC";
 }
 
 /**
- * Replace the shortcode prefix in a document code.
- * Format: {SHORTCODE}-{TYPEABBREV}-{INTEXT}-{INITIALS}-{VERSION}-{DATE}
- * We find the boundary by looking for -EXT- or -INT- which is always the 3rd segment.
+ * Replace the project token in a document code when an item moves target.
+ * Handles BOTH conventions (existing rows keep their legacy codes):
+ * - Current: {Project}_{DocType}_{Initials}_{AUDIENCE}_V{maj.min}_{YYYYMMDD}
+ *   (underscore-delimited; the project is the first token — except the
+ *   lender-terms variant {Lender}Terms_{Project}_{YYYYMMDD}, where it is the second)
+ * - Legacy: {SHORTCODE}-{TYPEABBREV}-{INT|EXT}-{INITIALS}-{VERSION}-{DATE}
+ *   (find the -EXT-/-INT- boundary; the type abbrev is the segment before it)
  */
 function replaceShortcodeInDocumentCode(code: string, newShortcode: string): string {
-  // Find -EXT- or -INT- marker which separates shortcode+typeAbbrev from the rest
+  // Current underscore convention
+  if (code.includes("_")) {
+    const tokens = code.split("_");
+    if (tokens.length < 2) return code;
+    const newToken = newShortcode.replace(/[^A-Za-z0-9]/g, "");
+    if (!newToken) return code;
+
+    // Lender-terms variant: {Lender}Terms_{Project}_{YYYYMMDD} — project is token 2
+    if (tokens.length >= 3 && /Terms$/i.test(tokens[0]) && /^\d{8}$/.test(tokens[tokens.length - 1])) {
+      return [tokens[0], newToken, ...tokens.slice(2)].join("_");
+    }
+
+    return [newToken, ...tokens.slice(1)].join("_");
+  }
+
+  // Legacy hyphen convention: find -EXT- or -INT- which separates
+  // shortcode+typeAbbrev from the rest
   const extMatch = code.match(/^(.+?)-(EXT|INT)-(.+)$/);
   if (!extMatch) return code; // Can't parse — leave unchanged
 
@@ -807,7 +832,8 @@ function replaceShortcodeInDocumentCode(code: string, newShortcode: string): str
   // Last segment is always the type abbreviation
   const typeAbbrev = segments[segments.length - 1];
 
-  return `${newShortcode}-${typeAbbrev}-${intExt}-${afterIntExt}`;
+  // Legacy codes are all-caps — keep the replacement consistent with the format
+  return `${newShortcode.toUpperCase()}-${typeAbbrev}-${intExt}-${afterIntExt}`;
 }
 
 // Helper function for generating content hash (djb2 algorithm)

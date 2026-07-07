@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { anyApi } from "convex/server";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
@@ -115,6 +116,7 @@ async function bootstrapNewClient(
         clientId,
         folderType: folder.folderKey as any,
         name: folder.name,
+        depth: 0,
         createdAt: now,
       });
       folderIdMap[folder.folderKey] = folderId;
@@ -129,17 +131,21 @@ async function bootstrapNewClient(
         folderType: folder.folderKey as any,
         name: folder.name,
         parentFolderId: folderIdMap[folder.parentKey],
+        depth: 1,
         createdAt: now,
       });
     }
   }
 
-  await ctx.scheduler.runAfter(0, api.intelligence.initializeClientIntelligence, {
+  // anyApi: clients.ts is part of the generated `api` type cycle; resolving
+  // `api` member types here trips TS2589 (instantiation depth). ctx is already
+  // untyped in this helper, so the shallow reference loses nothing.
+  await ctx.scheduler.runAfter(0, anyApi.intelligence.initializeClientIntelligence, {
     clientId,
     clientType,
   });
 
-  await ctx.scheduler.runAfter(0, api.knowledgeLibrary.initializeChecklistForClient, {
+  await ctx.scheduler.runAfter(0, anyApi.knowledgeLibrary.initializeChecklistForClient, {
     clientId,
     clientType,
   });
@@ -690,25 +696,45 @@ export const addCustomFolder = mutation({
   handler: async (ctx, args) => {
     // Generate a folderType from the name (lowercase, underscore-separated)
     const folderType = `custom_${args.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}`;
-    
+
+    // If creating a subfolder, validate parent and compute depth
+    // (mirrors addCustomProjectFolder in projects.ts)
+    let depth = 0;
+    if (args.parentFolderId) {
+      const parent = await ctx.db.get(args.parentFolderId);
+      if (!parent) {
+        throw new Error("Parent folder not found");
+      }
+      if (parent.clientId !== args.clientId) {
+        throw new Error("Parent folder belongs to a different client");
+      }
+
+      // Compute depth from parent (server-side, never trust client)
+      depth = (parent.depth ?? 0) + 1;
+      if (depth > 4) {
+        throw new Error("Maximum folder nesting depth (5 levels) reached");
+      }
+    }
+
     // Check if folder with same type already exists for this client
     const existing = await ctx.db
       .query("clientFolders")
-      .withIndex("by_client_type", (q: any) => 
+      .withIndex("by_client_type", (q: any) =>
         q.eq("clientId", args.clientId).eq("folderType", folderType)
       )
       .first();
-    
+
     if (existing) {
       throw new Error(`A folder named "${args.name}" already exists for this client`);
     }
-    
+
     return await ctx.db.insert("clientFolders", {
       clientId: args.clientId,
       folderType,
       name: args.name,
       description: args.description,
       parentFolderId: args.parentFolderId,
+      depth,
       isCustom: true,
       createdAt: new Date().toISOString(),
     });
@@ -1173,7 +1199,9 @@ async function activateClient(
 
     // Schedule the HubSpot push-back so the lifecycleStage + hs_lead_status
     // reflect the promotion (same side-effect as prospect.transitionState MCP).
-    await ctx.scheduler.runAfter(0, internal.prospects.pushStateToHubspotInternal, {
+    // anyApi (runtime-identical to `internal`): prospects.ts has self-referential
+    // inference; resolving this member type here trips TS2589.
+    await ctx.scheduler.runAfter(0, anyApi.prospects.pushStateToHubspotInternal, {
       clientId,
       newState: "promoted",
     });

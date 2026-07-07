@@ -19,6 +19,7 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
       targetFolder: 'Communications',
       targetLevel: 'project',
     },
+    targetFolderKey: 'notes',
 
     description:
       'Emails and written correspondence form the connective tissue of every property finance transaction at RockCap. ' +
@@ -153,6 +154,7 @@ export const COMMUNICATION_REFERENCES: DocumentReference[] = [
       targetFolder: 'Communications',
       targetLevel: 'project',
     },
+    targetFolderKey: 'notes',
 
     description:
       'Meeting Minutes are the formal written record of proceedings, decisions, and action items arising from a ' +
