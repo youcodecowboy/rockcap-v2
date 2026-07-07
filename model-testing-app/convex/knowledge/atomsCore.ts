@@ -311,12 +311,22 @@ async function validateCandidate(
 // ── Identity lookup & write helpers ──
 
 /** All live (active or contested) atoms sharing the candidate's canonical
- * identity (subjectType, subjectId, predicate, qualifier??null, object-kind). */
+ * identity.
+ *
+ * ATTRIBUTES: (subjectType, subjectId, predicate, qualifier??null) — one
+ * canonical value per key; a different literal is a revision/contest.
+ *
+ * EDGES: identity ALSO includes objectEntityId. An edge to a DIFFERENT
+ * object is a different fact, never a revision — a lender lends_to many
+ * borrowers, a person guarantees many facilities. (Bug fix 2026-07-07:
+ * without this, Quantum's Temple Guiting lends_to superseded its
+ * Leighterton lends_to — multi-valued relations were collapsing to one.) */
 async function findLiveAtomsByIdentity(
   ctx: MutationCtx,
   cand: Candidate,
 ): Promise<Doc<"atoms">[]> {
   const out: Doc<"atoms">[] = [];
+  const candIsEdge = objectKind(cand) === "edge";
   for (const status of ["active", "contested"] as const) {
     const rows = await ctx.db
       .query("atoms")
@@ -331,7 +341,8 @@ async function findLiveAtomsByIdentity(
       if (
         row.predicate === cand.predicate &&
         (row.qualifier ?? null) === (cand.qualifier ?? null) &&
-        objectKind(row) === objectKind(cand)
+        objectKind(row) === objectKind(cand) &&
+        (!candIsEdge || row.objectEntityId === cand.objectEntityId)
       ) {
         out.push(row);
       }
