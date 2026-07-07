@@ -18,9 +18,11 @@ interface Sim {
 interface GraphCanvasProps {
   nodes: GraphNodeVM[];
   edges: GraphEdgeVM[];
-  /** Attribute atoms of the center + ring members, rendered as small dots. */
+  /** Attribute atoms of the center + ring members, rendered as small dots.
+   * EVERY atom is rendered — no client-side aggregation. */
   satellites: SatelliteVM[];
-  /** hostId → attributes the server capped away (per-member overflow). */
+  /** hostId → attributes the server capped away (pathological >48/node only).
+   * Rendered as tiny muted "+N (capped)" text under the host, never a badge. */
   satelliteTruncation: Record<string, number>;
   /** Satellite ids whose predicate+value match the current search (glow). */
   satelliteMatchIds: Set<string>;
@@ -40,12 +42,30 @@ interface GraphCanvasProps {
 
 /** Satellite render dot radius. */
 const SAT_RADIUS = 4.5;
-/** Short, jittered rest radii (px) — satellites fan out in a tight halo. */
-const SAT_REST_MIN = 34;
-const SAT_REST_MAX = 46;
-/** Above this many total satellites, aggregate beyond SAT_PER_HOST_CAP/host. */
-const SAT_DENSITY_LIMIT = 120;
-const SAT_PER_HOST_CAP = 8;
+// ── Phyllotaxis (sunflower) satellite discs ──
+// Every atom of a host is placed on a phyllotaxis spiral: satellite i sits at
+// angle i × 137.5° (the golden angle) and radius r0 + c·√i. This packs an
+// arbitrary count into a near-uniform-density disc — no aggregation, no
+// hidden atoms — and the disc grows as √count so it stays compact.
+/** Golden angle (≈137.5°) — the phyllotaxis divergence angle. */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/** Inner offset (px): the first satellite sits this far off the host center. */
+const PHYLLO_R0 = 30;
+/** Spiral growth coefficient. Tuned so ~48 satellites fill a disc of radius
+ * ~85: r0 + c·√47 ≈ 30 + 8·6.86 ≈ 85. */
+const PHYLLO_C = 8;
+
+/** Radius (px) of the satellite disc a host with `count` atoms occupies —
+ * the outermost satellite's center distance plus its own dot radius. Drives
+ * each node's effectiveRadius so hosts claim canvas room for their knowledge. */
+function satDiscRadius(count: number): number {
+  if (count <= 0) return 0;
+  return PHYLLO_R0 + PHYLLO_C * Math.sqrt(count - 1) + SAT_RADIUS;
+}
+/** Extra breathing gap (px) between two nodes' satellite discs. */
+const SAT_DISC_GAP = 24;
+/** Soft separation stiffness — pushes overlapping discs apart each step. */
+const SEP_K = 0.5;
 
 /** Stable non-negative hash — deterministic per-satellite slot/phase seeding. */
 function hashStr(s: string): number {
@@ -113,12 +133,10 @@ export default function GraphCanvas({
   const alphaRef = useRef(1);
   const dragIdRef = useRef<string | null>(null);
 
-  // Satellites: element refs + per-host expansion + hover (positions are
-  // kinematic — computed relative to the host each frame, no force solve).
+  // Satellites: element refs + hover (positions are kinematic — computed
+  // relative to the host each frame from a phyllotaxis slot, no force solve).
   const satElRef = useRef<Map<string, SVGGElement | null>>(new Map());
-  const badgeElRef = useRef<Map<string, SVGGElement | null>>(new Map());
   const satHoverRef = useRef<SVGGElement | null>(null);
-  const [expandedHosts, setExpandedHosts] = useState<Set<string>>(new Set());
   const [hoverSatId, setHoverSatId] = useState<string | null>(null);
 
   // Viewport transform.
@@ -152,7 +170,7 @@ export default function GraphCanvas({
     [edges],
   );
 
-  // Satellites grouped by host. `aggregate` trips the density guard.
+  // Satellites grouped by host.
   const satsByHost = useMemo(() => {
     const m = new Map<string, SatelliteVM[]>();
     for (const s of satellites) {
@@ -162,60 +180,56 @@ export default function GraphCanvas({
     }
     return m;
   }, [satellites]);
-  const aggregate = satellites.length > SAT_DENSITY_LIMIT;
 
-  // Reset per-host expansion when the satellite set changes (pivot / refilter).
+  // Clear a stale hover when the satellite set changes (pivot / refilter).
   const satSig = useMemo(() => satellites.map((s) => s.id).join(","), [satellites]);
   useEffect(() => {
-    setExpandedHosts(new Set());
     setHoverSatId(null);
   }, [satSig]);
 
-  // Which satellites actually render (density guard + per-host expansion), the
-  // "+N" aggregate badges, and each satellite's kinematic slot (angle + rest).
-  const { renderedSats, satMeta, badges } = useMemo(() => {
+  // Phyllotaxis layout: EVERY satellite gets a slot (angle + radius) on its
+  // host's sunflower spiral, plus each host's disc radius (its knowledge
+  // footprint). Nothing is aggregated or hidden.
+  const { renderedSats, satMeta, hostDiscRadius } = useMemo(() => {
     const rendered: SatelliteVM[] = [];
-    const meta = new Map<string, { angle: number; rest: number; ph: number; ph2: number; hostId: string }>();
-    const badgeList: Array<{ hostId: string; count: number; angle: number; rest: number; expandable: boolean }> = [];
+    const meta = new Map<string, { angle: number; rad: number; ph: number; ph2: number; hostId: string }>();
+    const disc = new Map<string, number>();
     for (const [hostId, sats] of satsByHost) {
-      const expanded = expandedHosts.has(hostId);
-      const cap = aggregate && !expanded ? SAT_PER_HOST_CAP : sats.length;
-      const shown = sats.slice(0, cap);
-      const base = ((hashStr(hostId) % 360) * Math.PI) / 180;
-      // Slot count leaves room for a badge slot when anything is hidden.
-      const clientHidden = sats.length - shown.length;
-      const serverTrunc = satelliteTruncation[hostId] ?? 0;
-      const hidden = clientHidden + serverTrunc;
-      const slots = shown.length + (hidden > 0 ? 1 : 0);
-      shown.forEach((sat, i) => {
-        const angle = base + ((i + 0.5) / Math.max(slots, 1)) * Math.PI * 2;
-        const rest = SAT_REST_MIN + ((hashStr(sat.id) % 100) / 100) * (SAT_REST_MAX - SAT_REST_MIN);
+      // Per-host phase offset (host id hash) so neighboring discs don't align.
+      const phase = ((hashStr(hostId) % 360) * Math.PI) / 180;
+      sats.forEach((sat, i) => {
         meta.set(sat.id, {
-          angle,
-          rest,
+          angle: phase + i * GOLDEN_ANGLE,
+          rad: PHYLLO_R0 + PHYLLO_C * Math.sqrt(i),
           ph: (hashStr(sat.id) % 628) / 100,
           ph2: (hashStr(`${sat.id}b`) % 628) / 100,
           hostId,
         });
         rendered.push(sat);
       });
-      if (hidden > 0) {
-        const angle = base + ((shown.length + 0.5) / Math.max(slots, 1)) * Math.PI * 2;
-        badgeList.push({ hostId, count: hidden, angle, rest: SAT_REST_MAX + 7, expandable: clientHidden > 0 });
-      }
+      disc.set(hostId, satDiscRadius(sats.length));
     }
-    return { renderedSats: rendered, satMeta: meta, badges: badgeList };
-  }, [satsByHost, aggregate, expandedHosts, satelliteTruncation]);
+    return { renderedSats: rendered, satMeta: meta, hostDiscRadius: disc };
+  }, [satsByHost]);
+
+  // effectiveRadius = node radius + its satellite disc radius. Hosts with heavy
+  // knowledge discs claim more canvas: this feeds repulsion, spring rests, and
+  // auto-fit. Kept in a ref so the rAF sim loop reads live values.
+  const effRadius = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of nodes) m.set(n.id, NODE_RADIUS[n.type] + (hostDiscRadius.get(n.id) ?? 0));
+    return m;
+  }, [nodes, hostDiscRadius]);
 
   // Mirror the satellite render data into refs so the rAF draw loop reads live
-  // values without being torn down/recreated on every hover or expand.
+  // values without being torn down/recreated on every hover.
   const renderedSatsRef = useRef(renderedSats);
   const satMetaRef = useRef(satMeta);
-  const badgesRef = useRef(badges);
+  const effRadiusRef = useRef(effRadius);
   const hoverSatIdRef = useRef(hoverSatId);
   useEffect(() => { renderedSatsRef.current = renderedSats; }, [renderedSats]);
   useEffect(() => { satMetaRef.current = satMeta; }, [satMeta]);
-  useEffect(() => { badgesRef.current = badges; }, [badges]);
+  useEffect(() => { effRadiusRef.current = effRadius; }, [effRadius]);
   useEffect(() => { hoverSatIdRef.current = hoverSatId; }, [hoverSatId]);
 
   const applyView = useCallback(() => {
@@ -271,7 +285,9 @@ export default function GraphCanvas({
   }, [nodeSig, centerId, nodes]);
 
   /** Fit the node bounding box into the viewport with AUTOFIT_PADDING. Used
-   * by the one-shot auto-fit and the "fit" HUD button. */
+   * by the one-shot auto-fit and the "fit" HUD button. The box uses each
+   * node's effectiveRadius (node + satellite disc) so the initial fit zooms
+   * out far enough to show every satellite. */
   const fitToContent = useCallback(() => {
     const v = viewRef.current;
     if (!v.vw || !v.vh) return;
@@ -281,7 +297,8 @@ export default function GraphCanvas({
     for (const n of nodes) {
       const s = sim.get(n.id);
       if (!s) continue;
-      const pad = NODE_RADIUS[n.type] + 36; // radius + label allowance
+      // effectiveRadius (node + its satellite disc) + label allowance.
+      const pad = (effRadiusRef.current.get(n.id) ?? NODE_RADIUS[n.type]) + 36;
       minX = Math.min(minX, s.x - pad);
       maxX = Math.max(maxX, s.x + pad);
       minY = Math.min(minY, s.y - pad);
@@ -312,7 +329,11 @@ export default function GraphCanvas({
       const sim = simRef.current;
       const act = nodes.map((n) => ({ n, s: sim.get(n.id)! })).filter((x) => x.s);
       const alpha = alphaRef.current;
-      // Repulsion.
+      // Repulsion + disc separation. Inverse-square repulsion spreads the
+      // ring; a soft linear separation pushes any two nodes apart until their
+      // satellite discs clear (min sep = sum of effectiveRadii + gap), so a
+      // heavy knowledge disc naturally claims its canvas room.
+      const eff = effRadiusRef.current;
       for (let i = 0; i < act.length; i++) {
         for (let j = i + 1; j < act.length; j++) {
           const a = act[i].s;
@@ -320,15 +341,26 @@ export default function GraphCanvas({
           let dx = b.x - a.x;
           let dy = b.y - a.y;
           const d2 = dx * dx + dy * dy || 1;
+          const d = Math.sqrt(d2);
+          dx /= d;
+          dy /= d;
           if (d2 < REPULSE_RANGE * REPULSE_RANGE) {
             const f = repulse / d2;
-            const d = Math.sqrt(d2);
-            dx /= d;
-            dy /= d;
             a.vx -= dx * f;
             a.vy -= dy * f;
             b.vx += dx * f;
             b.vy += dy * f;
+          }
+          const minSep =
+            (eff.get(act[i].n.id) ?? NODE_RADIUS[act[i].n.type]) +
+            (eff.get(act[j].n.id) ?? NODE_RADIUS[act[j].n.type]) +
+            SAT_DISC_GAP;
+          if (d < minSep) {
+            const push = (minSep - d) * SEP_K;
+            a.vx -= dx * push;
+            a.vy -= dy * push;
+            b.vx += dx * push;
+            b.vy += dy * push;
           }
         }
       }
@@ -340,7 +372,11 @@ export default function GraphCanvas({
         if (!a || !b) continue;
         const na = byId.get(e.aId);
         const nb = byId.get(e.bId);
-        const rest = springRest + (NODE_RADIUS[na?.type ?? "contact"] + NODE_RADIUS[nb?.type ?? "contact"]);
+        // Rest length grows with each endpoint's effectiveRadius (node + its
+        // satellite disc) so edges don't drag heavy discs into each other.
+        const restA = eff.get(e.aId) ?? NODE_RADIUS[na?.type ?? "contact"];
+        const restB = eff.get(e.bId) ?? NODE_RADIUS[nb?.type ?? "contact"];
+        const rest = springRest + restA + restB;
         const springK = e.inter ? SPRING_K * INTER_SPRING_FACTOR : SPRING_K;
         let dx = b.x - a.x;
         let dy = b.y - a.y;
@@ -418,23 +454,13 @@ export default function GraphCanvas({
         if (!el || !m) continue;
         const hp = P[m.hostId];
         if (!hp) continue;
-        let x = hp[0] + Math.cos(m.angle) * m.rest;
-        let y = hp[1] + Math.sin(m.angle) * m.rest;
+        let x = hp[0] + Math.cos(m.angle) * m.rad;
+        let y = hp[1] + Math.sin(m.angle) * m.rad;
         if (ambient) {
           x += Math.sin(t * 0.0009 + m.ph) * 1.6;
           y += Math.cos(t * 0.0008 + m.ph2) * 1.6;
         }
         el.setAttribute("transform", `translate(${x},${y})`);
-      }
-      for (const b of badgesRef.current) {
-        const el = badgeElRef.current.get(b.hostId);
-        if (!el) continue;
-        const hp = P[b.hostId];
-        if (!hp) continue;
-        el.setAttribute(
-          "transform",
-          `translate(${hp[0] + Math.cos(b.angle) * b.rest},${hp[1] + Math.sin(b.angle) * b.rest})`,
-        );
       }
       // Hover label follows the hovered satellite.
       const hov = hoverSatIdRef.current;
@@ -445,7 +471,7 @@ export default function GraphCanvas({
         if (m && hp) {
           hoverEl.setAttribute(
             "transform",
-            `translate(${hp[0] + Math.cos(m.angle) * m.rest},${hp[1] + Math.sin(m.angle) * m.rest - 10})`,
+            `translate(${hp[0] + Math.cos(m.angle) * m.rad},${hp[1] + Math.sin(m.angle) * m.rad - 10})`,
           );
         }
       }
@@ -710,44 +736,6 @@ export default function GraphCanvas({
               </g>
             );
           })}
-          {/* per-host aggregate badges ("+N") — density guard / server overflow */}
-          {badges.map((b) => {
-            const expanded = expandedHosts.has(b.hostId);
-            return (
-              <g
-                key={`sat-badge-${b.hostId}`}
-                ref={(el) => {
-                  badgeElRef.current.set(b.hostId, el);
-                }}
-                style={{ cursor: b.expandable ? "pointer" : "default" }}
-                onPointerDown={(ev) => ev.stopPropagation()}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  if (!b.expandable) return;
-                  setExpandedHosts((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(b.hostId)) next.delete(b.hostId);
-                    else next.add(b.hostId);
-                    return next;
-                  });
-                }}
-              >
-                <title>
-                  {b.expandable
-                    ? `${b.count} more knowledge point${b.count === 1 ? "" : "s"} — click to ${expanded ? "collapse" : "expand"}`
-                    : `${b.count} more knowledge point${b.count === 1 ? "" : "s"} (capped)`}
-                </title>
-                <circle r={8} fill={colors.bg.card} stroke={colors.border.mid} strokeWidth={1} />
-                <text
-                  textAnchor="middle"
-                  y={3}
-                  style={{ fontSize: 8.5, fontWeight: 700, fill: colors.text.secondary, pointerEvents: "none" }}
-                >
-                  {expanded ? "−" : `+${b.count}`}
-                </text>
-              </g>
-            );
-          })}
           {/* nodes */}
           {nodes.map((n) => {
             const c = colorForType(colors, n.type);
@@ -823,6 +811,17 @@ export default function GraphCanvas({
                     style={{ fontSize: 9, fill: colors.text.muted, pointerEvents: "none" }}
                   >
                     {n.sub}
+                  </text>
+                )}
+                {/* Server-capped satellite overflow — muted text, not a badge.
+                    Only appears for a pathological host (>48 atoms). */}
+                {(satelliteTruncation[n.id] ?? 0) > 0 && (
+                  <text
+                    textAnchor="middle"
+                    y={r + (n.sub ? 43 : 31)}
+                    style={{ fontSize: 8.5, fill: colors.text.dim, pointerEvents: "none" }}
+                  >
+                    {`+${satelliteTruncation[n.id]} more (capped)`}
                   </text>
                 )}
                 {n.isCenter && truncatedMore > 0 && (

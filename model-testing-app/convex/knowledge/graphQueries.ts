@@ -88,9 +88,12 @@ const HARD_CAP = 100;
  * first, so S = {center} ∪ ring stays ≤ 41 entities per call. */
 const INTER_RING_CAP = 40;
 /** Ring-attribute pass ("knowledge satellites"): max ATTRIBUTE atoms surfaced
- * per ring member. Ranked contested-first, capped so a data-rich project can't
- * flood the canvas; the overflow rides along as a per-member truncatedCount. */
-const RING_ATTR_CAP = 12;
+ * per ring member. Ranked contested-first. Operator directive: visualize ALL
+ * knowledge — the drawer fans every atom out into canvas space, so this is a
+ * sanity ceiling (48 per node) against a pathological subject, NOT an
+ * aggregation cap. Overflow still rides along as a per-member truncatedCount
+ * (surfaced as muted "+N (capped)" text, never a badge) and in the counts. */
+const RING_ATTR_CAP = 48;
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
