@@ -40,6 +40,12 @@ export interface AtomLineVM {
   provenance: string;
   /** Node ids this atom touches — [center] for an attribute, [center, other] for an edge. */
   nodeIds: string[];
+  /** Convex atom id — the handle for contested resolution. Present on stored
+   * atoms (ring attributes, center attributes, atom edges); absent on native
+   * edges (structural record, never contested). */
+  atomId?: string;
+  /** Display name of the atom's subject/host — the contested section header. */
+  hostName?: string;
 }
 
 /** One "knowledge satellite" — an ATTRIBUTE atom rendered as a small dot
@@ -55,9 +61,17 @@ export interface SatelliteVM {
   family: GraphFamily;
   /** Predicate — the hover label's key half. */
   label: string;
-  /** Formatted value — the hover label's value half. */
+  /** Formatted value — the hover card's value half (full, un-truncated). */
   valueSnippet: string;
   status: "active" | "contested";
+  /** Qualifier tag (e.g. tranche / role) — hover-card muted line. */
+  qualifier?: string;
+  /** asOf date string — hover-card muted line. */
+  asOf?: string;
+  /** Display name of the host entity this satellite orbits — hover-card footer. */
+  hostName: string;
+  /** Provenance summary — hover-card muted line. */
+  provenance?: string;
 }
 
 /** A breadcrumb hop — the pivot stack the explorer pushes/pops. */

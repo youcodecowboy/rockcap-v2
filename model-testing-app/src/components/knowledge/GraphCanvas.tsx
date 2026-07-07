@@ -201,8 +201,11 @@ export default function GraphCanvas({
   const satElRef = useRef<Map<string, SVGGElement | null>>(new Map());
   const satLineElRef = useRef<Map<string, SVGLineElement | null>>(new Map());
   const satSimRef = useRef<Map<string, SatSim>>(new Map());
-  const satHoverRef = useRef<SVGGElement | null>(null);
   const [hoverSatId, setHoverSatId] = useState<string | null>(null);
+  // Screen-space anchor (px, relative to the stage) of the hovered satellite —
+  // captured once when hover starts (static while hovering; hidden on
+  // leave/zoom/pan). Drives the HTML overlay tooltip card.
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // Viewport transform.
   const viewRef = useRef({ vw: 0, vh: 0, tx: 0, ty: 0, k: 1 });
@@ -250,7 +253,32 @@ export default function GraphCanvas({
   const satSig = useMemo(() => satellites.map((s) => s.id).join(","), [satellites]);
   useEffect(() => {
     setHoverSatId(null);
+    setHoverPos(null);
   }, [satSig]);
+
+  // Hover lifecycle: capture the hovered satellite's screen anchor once (world
+  // pos → screen via the live view transform), and a shared clear used on
+  // leave and on any camera move (zoom / pan) — the card is static, so it must
+  // vanish rather than drift when the camera changes.
+  const showSatHover = useCallback((satId: string) => {
+    setHoverSatId(satId);
+    const p = satSimRef.current.get(satId);
+    const v = viewRef.current;
+    if (p) setHoverPos({ x: v.tx + v.k * p.x, y: v.ty + v.k * p.y });
+    else setHoverPos(null);
+  }, []);
+  const clearSatHover = useCallback(() => {
+    setHoverSatId(null);
+    setHoverPos(null);
+  }, []);
+  // Leave guard: clustered satellites can fire enter(B) before leave(A), so
+  // only clear if the leaving satellite is still the hovered one (ref avoids a
+  // stale-closure read + keeps the updater pure).
+  const hoverSatIdRef = useRef<string | null>(null);
+  useEffect(() => { hoverSatIdRef.current = hoverSatId; }, [hoverSatId]);
+  const onSatLeave = useCallback((id: string) => {
+    if (hoverSatIdRef.current === id) clearSatHover();
+  }, [clearSatHover]);
 
   // Per-satellite sim metadata: a phyllotaxis SEED slot (angle + slotRad) used
   // only to place a freshly-appearing leaf pre-spread, plus its spring rest
@@ -301,11 +329,9 @@ export default function GraphCanvas({
   const renderedSatsRef = useRef(renderedSats);
   const satMetaRef = useRef(satMeta);
   const effRadiusRef = useRef(effRadius);
-  const hoverSatIdRef = useRef(hoverSatId);
   useEffect(() => { renderedSatsRef.current = renderedSats; }, [renderedSats]);
   useEffect(() => { satMetaRef.current = satMeta; }, [satMeta]);
   useEffect(() => { effRadiusRef.current = effRadius; }, [effRadius]);
-  useEffect(() => { hoverSatIdRef.current = hoverSatId; }, [hoverSatId]);
 
   // When the satellite set changes (pivot / refilter): drop sim particles for
   // leaves that no longer exist (bounded memory) and wake the sim so new/removed
@@ -704,13 +730,6 @@ export default function GraphCanvas({
           line.setAttribute("y2", String(y));
         }
       }
-      // Hover label follows the hovered satellite (at its live position).
-      const hov = hoverSatIdRef.current;
-      const hoverEl = satHoverRef.current;
-      if (hoverEl && hov) {
-        const p = satSim.get(hov);
-        if (p) hoverEl.setAttribute("transform", `translate(${p.x},${p.y - 10})`);
-      }
     };
 
     const loop = () => {
@@ -747,6 +766,7 @@ export default function GraphCanvas({
       const svg = svgRef.current;
       if (!svg) return;
       userTouchedCameraRef.current = true;
+      clearSatHover();
       const v = viewRef.current;
       const nk = Math.min(2.6, Math.max(0.35, v.k * (ev.deltaY < 0 ? 1.12 : 0.89)));
       const rect = svg.getBoundingClientRect();
@@ -757,7 +777,7 @@ export default function GraphCanvas({
       v.k = nk;
       applyView();
     },
-    [applyView],
+    [applyView, clearSatHover],
   );
 
   const onSelectRef = useRef(onSelect);
@@ -776,8 +796,9 @@ export default function GraphCanvas({
     panRef.current = { on: true, px: ev.clientX, py: ev.clientY };
     pressRef.current = { x: ev.clientX, y: ev.clientY, moved: false };
     userTouchedCameraRef.current = true;
+    clearSatHover();
     svgRef.current?.setPointerCapture(ev.pointerId);
-  }, []);
+  }, [clearSatHover]);
 
   const onPointerMove = useCallback((ev: React.PointerEvent) => {
     const svg = svgRef.current;
@@ -845,16 +866,18 @@ export default function GraphCanvas({
   const zoomBtn = useCallback(
     (factor: number) => {
       userTouchedCameraRef.current = true;
+      clearSatHover();
       const v = viewRef.current;
       v.k = Math.min(2.6, Math.max(0.35, v.k * factor));
       applyView();
     },
-    [applyView],
+    [applyView, clearSatHover],
   );
   const fit = useCallback(() => {
     userTouchedCameraRef.current = true; // explicit camera action — auto-fit stays off
+    clearSatHover();
     fitToContent();
-  }, [fitToContent]);
+  }, [fitToContent, clearSatHover]);
 
   // A family view whose subgraph collapsed to the center alone (no in-view edges
   // and no in-view satellites) — the center survives but has no knowledge of
@@ -866,9 +889,6 @@ export default function GraphCanvas({
   const activeId = hoverId ?? selectedId;
   const activeNeighbors = useMemo(() => (activeId ? neighbors(activeId) : null), [activeId, neighbors]);
   const hoverSat = hoverSatId ? renderedSats.find((s) => s.id === hoverSatId) ?? null : null;
-  const hoverSatLabel = hoverSat
-    ? `${hoverSat.label}: ${hoverSat.valueSnippet.length > 42 ? `${hoverSat.valueSnippet.slice(0, 42)}…` : hoverSat.valueSnippet}`
-    : "";
 
   const btn: React.CSSProperties = {
     width: 30,
@@ -1000,8 +1020,8 @@ export default function GraphCanvas({
                   satElRef.current.set(sat.id, el);
                 }}
                 style={{ cursor: "pointer", opacity: dim ? 0.12 : 1, color: fill }}
-                onPointerEnter={() => setHoverSatId(sat.id)}
-                onPointerLeave={() => setHoverSatId((h) => (h === sat.id ? null : h))}
+                onPointerEnter={() => showSatHover(sat.id)}
+                onPointerLeave={() => onSatLeave(sat.id)}
                 /* Without this, pointerdown bubbles to the svg pan handler,
                    which captures the pointer — the click never lands. */
                 onPointerDown={(ev) => ev.stopPropagation()}
@@ -1137,27 +1157,84 @@ export default function GraphCanvas({
               </g>
             );
           })}
-          {/* satellite hover label — position driven by the draw loop */}
-          {hoverSat && (
-            <g ref={satHoverRef} style={{ pointerEvents: "none" }}>
-              <rect
-                x={-5}
-                y={-11}
-                width={hoverSatLabel.length * 5.6 + 10}
-                height={16}
-                rx={3}
-                fill={colors.bg.card}
-                stroke={colors.border.default}
-                strokeWidth={1}
-                opacity={0.96}
-              />
-              <text x={0} y={0} style={{ fontSize: 10, fill: colors.text.primary }}>
-                {hoverSatLabel}
-              </text>
-            </g>
-          )}
         </g>
       </svg>
+
+      {/* satellite hover card — an HTML overlay anchored to the hovered
+          satellite's screen position (captured at hover start; static while
+          hovering). Flips across the anchor to stay inside the stage. Shows the
+          FULL value clearly — the operator's core ask. */}
+      {hoverSat && hoverPos && (() => {
+        const v = viewRef.current;
+        const CARD_W = 260;
+        const EST_H = 130;
+        const flipX = hoverPos.x + 14 + CARD_W > v.vw;
+        const flipY = hoverPos.y + 14 + EST_H > v.vh;
+        const contested = hoverSat.status === "contested";
+        const fam = colorForFamily(colors, hoverSat.family);
+        const metaBits = [hoverSat.qualifier, hoverSat.asOf].filter(Boolean).join("  ·  ");
+        return (
+          <div
+            style={{
+              position: "absolute",
+              left: flipX ? hoverPos.x - 14 : hoverPos.x + 14,
+              top: flipY ? hoverPos.y - 14 : hoverPos.y + 14,
+              transform: `${flipX ? "translateX(-100%)" : ""} ${flipY ? "translateY(-100%)" : ""}`.trim() || undefined,
+              maxWidth: CARD_W,
+              pointerEvents: "none",
+              background: colors.bg.card,
+              border: `1px solid ${colors.border.mid}`,
+              borderRadius: 8,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              padding: "11px 13px",
+              zIndex: 5,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
+              <i style={{ width: 9, height: 9, borderRadius: 2, background: fam, flex: "none" }} />
+              <span
+                style={{
+                  fontFamily: "ui-monospace, Menlo, monospace",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: colors.text.primary,
+                  background: colors.bg.cardAlt,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: 4,
+                  padding: "2px 8px",
+                }}
+              >
+                {hoverSat.label}
+              </span>
+              <span
+                style={{
+                  marginLeft: "auto",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  color: contested ? colors.accent.red : colors.accent.green,
+                }}
+              >
+                {contested ? "CONTESTED" : "ACTIVE"}
+              </span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: colors.text.primary, lineHeight: 1.3, wordBreak: "break-word" }}>
+              {hoverSat.valueSnippet}
+            </div>
+            {metaBits && (
+              <div style={{ marginTop: 6, fontSize: 11, color: colors.text.muted }}>{metaBits}</div>
+            )}
+            {hoverSat.provenance && (
+              <div style={{ marginTop: 3, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 10, color: colors.text.dim }}>
+                {hoverSat.provenance}
+              </div>
+            )}
+            <div style={{ marginTop: 8, paddingTop: 7, borderTop: `1px solid ${colors.border.default}`, fontSize: 11, color: colors.text.muted }}>
+              on <span style={{ color: colors.text.secondary, fontWeight: 600 }}>{hoverSat.hostName}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* empty-family hint — subtle, non-blocking; the center still renders */}
       {emptyFamily && (

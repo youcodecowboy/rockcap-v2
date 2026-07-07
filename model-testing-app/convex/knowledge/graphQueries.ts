@@ -1,7 +1,8 @@
 import { v } from "convex/values";
-import { internalQuery, query } from "../_generated/server";
+import { internalQuery, mutation, query } from "../_generated/server";
 import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { resolveContestedCore } from "./atomsCore";
 
 // Graph traversal layer — Spec 2 Phase 2a.4 (docs/spec-2-knowledge-layer.md
 // §9, §2.1, §14b.3, §14b.6).
@@ -163,6 +164,9 @@ export type GraphAttribute = {
   /** Set when the attribute is federated from a native lane
    * (today: "appetiteSignals" for lender clients). */
   native?: string;
+  /** Convex atom id — the contested-resolution handle. Present on stored
+   * attribute atoms; absent on native-federated attributes (appetiteSignals). */
+  atomId?: string;
 };
 
 /** Pre-name-resolution federated edge. */
@@ -1058,9 +1062,9 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
     if (prospectFilter) {
       attrsWithOwner = await prospectFilter.filter(attrsWithOwner);
     }
-    // Strip the internal ownerClientId + atomId before the CENTER attribute
-    // leaves the module — its public shape is unchanged (GraphAttribute).
-    attributes = attrsWithOwner.map(({ ownerClientId: _owner, atomId: _atomId, ...attr }) => attr);
+    // Strip the internal ownerClientId before the CENTER attribute leaves the
+    // module; KEEP atomId (the contested-resolution handle the drawer needs).
+    attributes = attrsWithOwner.map(({ ownerClientId: _owner, ...attr }) => attr);
     if (args.entityType === "client") {
       attributes.push(...(await nativeAttributesForClient(ctx, args.entityId)));
     }
@@ -1703,6 +1707,18 @@ export const findPaths = query({
   handler: async (ctx, args) => {
     await requireIdentity(ctx);
     return findPathsCore(ctx, args);
+  },
+});
+
+/** Operator adjudication of a contested fact (spec §7 layer 3) — the drawer's
+ * "Contested" resolution lane. The winner returns to active; every other member
+ * of its contested identity group is archived as superseded (operator reason).
+ * Nothing is deleted — provenance survives. Operator hygiene, no approvals. */
+export const resolveContested = mutation({
+  args: { winnerAtomId: v.id("atoms") },
+  handler: async (ctx, args) => {
+    await requireIdentity(ctx);
+    return resolveContestedCore(ctx, args);
   },
 });
 

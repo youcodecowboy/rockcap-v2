@@ -8,6 +8,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   ensureAccessToken,
+  resolveClientFolderKey,
   resolveProjectFolderKey,
   SETTLE_MS,
 } from "../driveSync";
@@ -398,6 +399,27 @@ export const applyClassification = internalMutation({
     contentChecksum: v.optional(v.string()),
     fileTypeDetected: v.string(),
     category: v.string(),
+    // Classification axes (Dark Mills taxonomy, 2026-07-07) — content-derived:
+    // producer = WHO authored (never from Drive metadata), audience = WHO it
+    // is for (body name-stamp + register beat filename tokens). Optional for
+    // backward compat; they refine subfolder placement (e.g. client vs
+    // rockcap appraisals) and are persisted in extractedData.classificationAxes.
+    producer: v.optional(
+      v.union(
+        v.literal("client"),
+        v.literal("rockcap"),
+        v.literal("lender"),
+        v.literal("third_party_professional"),
+        v.literal("statutory_authority"),
+      ),
+    ),
+    audience: v.optional(
+      v.union(
+        v.literal("internal"),
+        v.literal("external"),
+        v.literal("neutral"),
+      ),
+    ),
     summary: v.string(),
     confidence: v.number(),
     reasoning: v.optional(v.string()),
@@ -451,6 +473,12 @@ export const applyClassification = internalMutation({
     // confidence on every subsequent write through this lane — only content
     // fields refresh. Placement + side effects below therefore derive from
     // the EFFECTIVE (kept) identity, not the agent's rejected re-verdict.
+    // NOTE (taxonomy rebuild phase 3, 2026-07-07): this identityLocked path
+    // is the designated hook for the later re-atomization migration — when
+    // legacy docs are re-classified under the new axis-aware vocabulary,
+    // that migration will lift the lock explicitly (operator action /
+    // `document.reclassify`), re-stamp identity + axes, and re-atomize.
+    // Nothing else should ever bypass this gate.
     const identityLocked =
       typeof doc.fileTypeDetected === "string" &&
       doc.fileTypeDetected !== "" &&
@@ -486,14 +514,16 @@ export const applyClassification = internalMutation({
     const projectId: Id<"projects"> | undefined = doc.projectId ?? undefined;
 
     // ── PLACEMENT: first classification only (folderId not yet set), and
-    // resolved SERVER-SIDE — the agent supplies category/fileTypeDetected,
-    // the deterministic placement-rules table (the exact table the v4
-    // pipeline uses) derives the target-folder key, and the key resolves
-    // against the real folder taxonomy: PROJECT taxonomy when the doc has a
-    // projectId (exact → unfiled → background → any), CLIENT taxonomy
-    // otherwise (exact → miscellaneous → any). Once folderId is set it is
-    // APP-OWNED (operators move documents freely); this block is skipped and
-    // agents can never move a filed document through this tool.
+    // resolved SERVER-SIDE — the agent supplies category/fileTypeDetected
+    // (+ optional producer/audience axes), the deterministic placement-rules
+    // table (the exact table the v4 pipeline uses) derives the target-folder
+    // key — which may be a SUBFOLDER key (client_appraisals, comps_appendix…)
+    // — and the key resolves against the real folder taxonomy: PROJECT
+    // taxonomy when the doc has a projectId (exact → parent chain →
+    // modelling_info → legacy unfiled/background → any), CLIENT taxonomy
+    // otherwise (exact → parent chain → miscellaneous → any). Once folderId
+    // is set it is APP-OWNED (operators move documents freely); this block is
+    // skipped and agents can never move a filed document through this tool.
     let placementPatch:
       | { folderId: string; folderType: "client" | "project" }
       | undefined;
@@ -503,11 +533,14 @@ export const applyClassification = internalMutation({
         {
           classification: {
             // Effective identity: a locked doc files by its ORIGINAL
-            // classification, never the rejected re-verdict.
+            // classification, never the rejected re-verdict. Axes only apply
+            // on first classification (locked docs never reach placement).
             fileType: effectiveFileTypeDetected,
             category: effectiveCategory,
             suggestedFolder: "",
             targetLevel: projectId ? "project" : "client",
+            ...(args.producer ? { producer: args.producer } : {}),
+            ...(args.audience ? { audience: args.audience } : {}),
           },
         } as any,
         { clientType: client?.type } as any,
@@ -523,32 +556,11 @@ export const applyClassification = internalMutation({
           placementPatch = { folderId: resolvedKey, folderType: "project" };
         }
       } else if (clientId) {
-        const matchExact = targetFolder
-          ? await ctx.db
-              .query("clientFolders")
-              .withIndex("by_client_type", (q: any) =>
-                q.eq("clientId", clientId).eq("folderType", targetFolder),
-              )
-              .first()
-          : null;
-        let resolvedKey: string | undefined = matchExact
-          ? targetFolder
-          : undefined;
-        if (!resolvedKey) {
-          const misc = await ctx.db
-            .query("clientFolders")
-            .withIndex("by_client_type", (q: any) =>
-              q.eq("clientId", clientId).eq("folderType", "miscellaneous"),
-            )
-            .first();
-          const anyFolder = misc
-            ? null
-            : await ctx.db
-                .query("clientFolders")
-                .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
-                .first();
-          resolvedKey = (misc ?? anyFolder)?.folderType;
-        }
+        const resolvedKey = await resolveClientFolderKey(
+          ctx,
+          clientId,
+          targetFolder,
+        );
         if (resolvedKey) {
           placementPatch = { folderId: resolvedKey, folderType: "client" };
         }
@@ -604,6 +616,23 @@ export const applyClassification = internalMutation({
     // still unclassified (identity immutability — module header).
     const effectiveStorageId: Id<"_storage"> | undefined =
       doc.fileStorageId ?? driveRow?.cachedStorageId ?? undefined;
+    // Classification axes ride inside extractedData (v.any() — no schema
+    // change needed; schema.ts is owned by the scaffolding lane). They are
+    // part of classification IDENTITY, so identity-locked docs keep their
+    // original axes; first classification merges them into any existing
+    // extractedData payload.
+    const axesPatch =
+      !identityLocked && (args.producer || args.audience)
+        ? {
+            extractedData: {
+              ...((existingDoc as any).extractedData ?? {}),
+              classificationAxes: {
+                ...(args.producer ? { producer: args.producer } : {}),
+                ...(args.audience ? { audience: args.audience } : {}),
+              },
+            },
+          }
+        : {};
     await ctx.db.patch(args.documentId, {
       summary,
       ...(identityLocked
@@ -615,6 +644,7 @@ export const applyClassification = internalMutation({
             confidence,
             classificationReasoning: reasoning || undefined,
           }),
+      ...axesPatch,
       ...(documentAnalysis ? { documentAnalysis } : {}),
       ...(args.textContent
         ? { textContent: args.textContent.slice(0, MAX_TEXT_CONTENT_CHARS) }

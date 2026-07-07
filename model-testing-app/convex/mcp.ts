@@ -3901,7 +3901,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.applyClassification",
     description:
-      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. The server resolves the target folder from your category/fileTypeDetected through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. CLASSIFICATION IDENTITY IS IMMUTABLE: if the doc already has a real classification (extractText returned alreadyClassified:true), your fileTypeDetected/category/confidence are IGNORED — only contents refresh (summary/documentAnalysis/textContent/checksum) and the result carries identityLocked:true; reclassification is a future explicit operator tool. This persists at zero API cost — you already did the classification.",
+      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. ALSO PASS THE TWO CLASSIFICATION AXES when you can determine them: producer (client|rockcap|lender|third_party_professional|statutory_authority) and audience (internal|external|neutral) — content-derived (see the per-field descriptions; body stamp beats filename token, Drive owner is never a producer signal). The axes are persisted in the doc's extractedData.classificationAxes and refine SUBFOLDER placement: the server resolves the target folder from (fileTypeDetected, category, producer, audience) through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise; nested folder keys like client_appraisals/rockcap_appraisals/comps_appendix fall back to their parent folder on older projects; lender_pack is NEVER a target — it encodes an operator send-event, not a category) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. CLASSIFICATION IDENTITY IS IMMUTABLE: if the doc already has a real classification (extractText returned alreadyClassified:true), your fileTypeDetected/category/producer/audience/confidence are IGNORED — only contents refresh (summary/documentAnalysis/textContent/checksum) and the result carries identityLocked:true; reclassification is a future explicit operator tool (the identityLocked path is the designated hook for the later re-atomization migration). This persists at zero API cost — you already did the classification.",
     inputSchema: {
       type: "object",
       properties: {
@@ -3909,6 +3909,16 @@ const TOOLS: McpTool[] = [
         contentChecksum: { type: "string", description: "The fetch-time checksum document.extractText returned. REQUIRED for Drive-mirrored docs." },
         fileTypeDetected: { type: "string", description: "Specific document type, e.g. 'RedBook Valuation', 'Facility Letter', 'Meeting Minutes'." },
         category: { type: "string", description: "One of the 13 canonical categories (see tool description)." },
+        producer: {
+          type: "string",
+          enum: ["client", "rockcap", "lender", "third_party_professional", "statutory_authority"],
+          description: "WHO authored the document — detect from CONTENT, never Drive metadata (Drive owner is always rockcap.uk). client = developer-ops DNA (timesheets, trade cost matrices, Gross Margin %); rockcap = debt-structuring DNA (LTGDV / Lender IRR / Lender Dashboard tabs / Note house template); lender = first-person lender voice + broker-as-a-fee-line; third_party_professional = firm letterhead / architect job numbers; statutory_authority = HEREBY PERMITS / TCPA citations / planning refs. Refines subfolder placement (e.g. client_appraisals vs rockcap_appraisals).",
+        },
+        audience: {
+          type: "string",
+          enum: ["internal", "external", "neutral"],
+          description: "WHO the document is for — detect from body name-stamp + register; a filename AUDIENCE token records filing custody only and can lie (body stamp wins). neutral = public record (statutory decisions).",
+        },
         summary: { type: "string", description: "≤1200 chars. What the document is, who it concerns, the headline figures/dates." },
         confidence: { type: "number", description: "0..1 (clamped server-side)." },
         reasoning: { type: "string", description: "Why you classified it this way — audit trail." },
@@ -3936,6 +3946,8 @@ const TOOLS: McpTool[] = [
           contentChecksum: args.contentChecksum,
           fileTypeDetected: args.fileTypeDetected,
           category: args.category,
+          producer: args.producer,
+          audience: args.audience,
           summary: args.summary,
           confidence: args.confidence,
           reasoning: args.reasoning,
@@ -4371,7 +4383,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.importFiles",
     description:
-      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Files under a project-mapped folder (drive.mapFolderToProject) are additionally stamped with projectId/projectName and file into the PROJECT's folder taxonomy on extraction. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first).",
+      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Files under a project-mapped folder (drive.mapFolderToProject) are additionally stamped with projectId/projectName and file into the PROJECT's folder taxonomy on extraction. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first). DUPLICATE SIGNATURE: several files whose Drive createdTime clusters in a tight window (seconds apart) AND whose createdTime > modifiedTime are COPIES pasted in together (e.g. a curated 'Lender Pack' send bundle) — the cheap first check is the same filename elsewhere in the tree. Classify such files by TYPE to their canonical folder (never to a lender_pack folder) and note them as outbound-pack members / probable duplicates of the canonical copy.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4393,7 +4405,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.importFolder",
     description:
-      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files under a project-mapped folder (drive.mapFolderToProject) are stamped with projectId/projectName and file into the PROJECT's folder taxonomy — map project subfolders BEFORE importing so project documents don't pollute the client library. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient.",
+      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files under a project-mapped folder (drive.mapFolderToProject) are stamped with projectId/projectName and file into the PROJECT's folder taxonomy — map project subfolders BEFORE importing so project documents don't pollute the client library. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient. DUPLICATE SIGNATURE (common in imported deal folders): files whose Drive createdTime clusters in a tight window (seconds apart) AND whose createdTime > modifiedTime are COPIES pasted in together — typically an operator-curated 'Lender Pack' send bundle duplicating files that live elsewhere in the tree (same filename is the cheap first check). Classify such files by TYPE to their canonical folder (lender_pack is never a classification target) and treat them as outbound-pack members / probable duplicates of the canonical copy.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4632,6 +4644,24 @@ const TOOLS: McpTool[] = [
         atomId: args.atomId,
       });
       return asText({ ...result, operatorReason: args.reason });
+    },
+  },
+  {
+    name: "atoms.resolveContested",
+    description:
+      "Operator adjudication of a contested fact: name the atom whose value is correct and the contest closes. The winner (winnerAtomId) returns to status=active; every OTHER member of its contested identity group (same subject/predicate/qualifier/object-kind) is archived as superseded (supersededBy=winner, reason=operator). Losers keep their full observation history — nothing is deleted. This is operator hygiene, NOT an approvals action: it fires immediately and is reversible via the preserved provenance. Errors if the atom isn't currently contested. Returns {resolved, archived}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        winnerAtomId: { type: "string", description: "Convex id of the contested atom whose value is correct." },
+      },
+      required: ["winnerAtomId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.resolveContested, {
+        winnerAtomId: args.winnerAtomId,
+      });
+      return asText(result);
     },
   },
   {

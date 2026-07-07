@@ -739,6 +739,83 @@ export const retireAtom = internalMutation({
   },
 });
 
+// ── resolveContested — operator adjudication of a contest (spec §7 layer 3) ──
+//
+// A contest keeps every competing value live (status "contested") with its
+// provenance rather than silently picking one. The operator resolves it by
+// naming the winner: the winner returns to "active"; every OTHER member of its
+// contested identity group is archived as "superseded" (supersededBy = winner,
+// reason "operator"). Nothing is deleted — the losing values keep their full
+// observation trail (this is the operator-hygiene lane; no approvals row).
+
+/** Two atoms share a canonical identity iff they agree on
+ * (subjectType, subjectId, predicate, qualifier ?? null, object-kind) — and,
+ * for EDGES, also the objectEntityId (an edge to a different object is a
+ * different fact, never a contest). Mirrors findLiveAtomsByIdentity's rule. */
+function atomsShareIdentity(a: Doc<"atoms">, ref: Doc<"atoms">): boolean {
+  const refIsEdge = objectKind(ref) === "edge";
+  return (
+    a.subjectType === ref.subjectType &&
+    a.subjectId === ref.subjectId &&
+    a.predicate === ref.predicate &&
+    (a.qualifier ?? null) === (ref.qualifier ?? null) &&
+    objectKind(a) === objectKind(ref) &&
+    (!refIsEdge || a.objectEntityId === ref.objectEntityId)
+  );
+}
+
+export async function resolveContestedCore(
+  ctx: MutationCtx,
+  args: { winnerAtomId: Id<"atoms"> },
+): Promise<{ resolved: Id<"atoms">; archived: number }> {
+  const winner = await ctx.db.get(args.winnerAtomId);
+  if (!winner) throw new Error("atom_not_found");
+  if (winner.status !== "contested") {
+    throw new Error(
+      `not_contested: atom ${args.winnerAtomId} has status "${winner.status}", not "contested"`,
+    );
+  }
+
+  // The contested identity group: contested atoms sharing the winner's
+  // canonical identity (by_subject index, contested only, then identity filter).
+  const contestedRows = await ctx.db
+    .query("atoms")
+    .withIndex("by_subject", (q) =>
+      q
+        .eq("subjectType", winner.subjectType)
+        .eq("subjectId", winner.subjectId)
+        .eq("status", "contested"),
+    )
+    .collect();
+  const group = contestedRows.filter((a) => atomsShareIdentity(a, winner));
+
+  // Winner → active (clear any supersession pointer defensively).
+  await ctx.db.patch(winner._id, {
+    status: "active",
+    supersededBy: undefined,
+    supersessionReason: undefined,
+  });
+
+  // Every other group member → superseded by the winner, operator reason.
+  let archived = 0;
+  for (const member of group) {
+    if (member._id === winner._id) continue;
+    await ctx.db.patch(member._id, {
+      status: "superseded",
+      supersededBy: winner._id,
+      supersessionReason: "operator",
+    });
+    archived++;
+  }
+
+  return { resolved: winner._id, archived };
+}
+
+export const resolveContested = internalMutation({
+  args: { winnerAtomId: v.id("atoms") },
+  handler: async (ctx, args) => resolveContestedCore(ctx, args),
+});
+
 // ── reatomizeDiff — same-lineage supersession (spec §7) ──
 //
 // Document D re-extracted at a new checksum. The prior revision's

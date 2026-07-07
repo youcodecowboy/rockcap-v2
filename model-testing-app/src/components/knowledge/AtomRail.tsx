@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { FAMILIES, colorForFamily } from "./graphVocab";
 import type { GraphFamily } from "./graphVocab";
 import type { AtomLineVM } from "./types";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 interface AtomRailProps {
   atoms: AtomLineVM[];
@@ -18,6 +21,12 @@ interface AtomRailProps {
 
 const ORDER: GraphFamily[] = [...FAMILIES, "other"];
 
+/** Group key for a contested identity: same host + predicate + qualifier is
+ * one contest (the competing values). */
+function contestKey(a: AtomLineVM): string {
+  return `${a.nodeIds.join(",")}|${a.predicate}|${a.qualifier ?? ""}`;
+}
+
 export default function AtomRail({
   atoms,
   visibleIds,
@@ -27,6 +36,8 @@ export default function AtomRail({
   onAtomSelect,
 }: AtomRailProps) {
   const colors = useColors();
+  const resolveContested = useMutation(api.knowledge.graphQueries.resolveContested);
+  const [resolving, setResolving] = useState<string | null>(null);
 
   // Scroll the selected atom's row into view — e.g. after a satellite click on
   // the canvas selects an atom that may be far down the rail.
@@ -36,6 +47,31 @@ export default function AtomRail({
       selRef.current.scrollIntoView({ block: "nearest" });
     }
   }, [selectedAtomId]);
+
+  // Contested groups — competing values of one fact, pinned at the top of the
+  // rail for operator adjudication. Grouped by identity (host + predicate +
+  // qualifier); shown regardless of the search/selection filters (hygiene lane).
+  const contestedGroups = useMemo(() => {
+    const groups = new Map<string, AtomLineVM[]>();
+    for (const a of atoms) {
+      if (a.status !== "contested") continue;
+      const key = contestKey(a);
+      const arr = groups.get(key);
+      if (arr) arr.push(a);
+      else groups.set(key, [a]);
+    }
+    return [...groups.values()];
+  }, [atoms]);
+
+  const onKeep = async (a: AtomLineVM) => {
+    if (!a.atomId || resolving) return;
+    setResolving(a.id);
+    try {
+      await resolveContested({ winnerAtomId: a.atomId as Id<"atoms"> });
+    } finally {
+      setResolving(null);
+    }
+  };
 
   return (
     <nav
@@ -48,6 +84,129 @@ export default function AtomRail({
         padding: "6px 0 34px",
       }}
     >
+      {contestedGroups.length > 0 && (
+        <div style={{ borderBottom: `1px solid ${colors.border.mid}`, paddingBottom: 6 }}>
+          <div
+            style={{
+              padding: "16px 18px 8px",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: ".13em",
+              textTransform: "uppercase",
+              color: colors.accent.red,
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+            }}
+          >
+            <i style={{ width: 8, height: 8, borderRadius: 2, display: "inline-block", background: colors.accent.red }} />
+            Contested
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 10,
+                fontWeight: 700,
+                color: colors.accent.red,
+                background: `${colors.accent.red}1a`,
+                borderRadius: 999,
+                padding: "1px 8px",
+                letterSpacing: 0,
+              }}
+            >
+              {contestedGroups.length}
+            </span>
+          </div>
+          <div style={{ padding: "0 14px 4px", fontSize: 11, color: colors.text.dim, lineHeight: 1.5 }}>
+            Sources disagree. Pick the correct value — the others are archived (kept with full history).
+          </div>
+          {contestedGroups.map((group, gi) => {
+            const head = group[0];
+            return (
+              <div
+                key={`contest-${gi}`}
+                style={{
+                  margin: "8px 14px",
+                  border: `1px solid ${colors.accent.red}44`,
+                  borderRadius: 7,
+                  overflow: "hidden",
+                  background: colors.bg.card,
+                }}
+              >
+                <div
+                  style={{
+                    padding: "8px 11px",
+                    borderBottom: `1px solid ${colors.border.default}`,
+                    fontSize: 12,
+                    color: colors.text.primary,
+                  }}
+                >
+                  {head.hostName && <span style={{ fontWeight: 600 }}>{head.hostName}</span>}
+                  <span
+                    style={{
+                      fontFamily: "ui-monospace, Menlo, monospace",
+                      fontSize: 11,
+                      color: colors.text.secondary,
+                      marginLeft: head.hostName ? 7 : 0,
+                    }}
+                  >
+                    {head.predicate}
+                  </span>
+                  {head.qualifier && <span style={{ color: colors.text.dim }}>{`  ·  ${head.qualifier}`}</span>}
+                </div>
+                {group.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "9px 11px",
+                      borderBottom: `1px solid ${colors.border.default}`,
+                    }}
+                  >
+                    <button
+                      onClick={() => onAtomSelect(a)}
+                      style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                    >
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: colors.text.primary, wordBreak: "break-word" }}>
+                        {a.line}
+                      </span>
+                      {a.provenance && (
+                        <span style={{ display: "block", marginTop: 3, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 10, color: colors.text.dim }}>
+                          {a.provenance}
+                        </span>
+                      )}
+                    </button>
+                    {a.atomId ? (
+                      <button
+                        onClick={() => onKeep(a)}
+                        disabled={resolving !== null}
+                        title="Keep this value — the competing values are archived as superseded (reversible; full history is kept)."
+                        style={{
+                          flex: "none",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: colors.accent.green,
+                          background: "transparent",
+                          border: `1px solid ${colors.accent.green}`,
+                          borderRadius: 5,
+                          padding: "5px 10px",
+                          cursor: resolving !== null ? "default" : "pointer",
+                          opacity: resolving !== null && resolving !== a.id ? 0.5 : 1,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {resolving === a.id ? "Keeping…" : "Keep this value"}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {selectedNodeName && (
         <div
           style={{

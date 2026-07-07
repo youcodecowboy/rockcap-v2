@@ -53,6 +53,9 @@ interface RawAttr {
   status: "active" | "contested";
   confidence: number;
   native?: string;
+  /** Convex atom id — present on stored attribute atoms (center + ring),
+   * absent on native-federated attributes (appetiteSignals). */
+  atomId?: string;
 }
 /** ringAttributes entry — a ring member's attribute atom (the satellite lane):
  * the attribute shape plus its owning subject ref and the atom id. */
@@ -170,6 +173,9 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
       }
       const id = `e${i}`;
       const family = familyFor(e.predicate);
+      // Atom edges carry their atomId in provenance.ref; native edges' ref is a
+      // table name (never contested) → no resolve handle.
+      const atomId = e.provenance.sourceType !== "native" ? e.provenance.ref : undefined;
       edgeVMs.push({ id, aId: entity.id, bId: e.other.id, predicate: e.predicate, qualifier: e.qualifier, family, status: e.status });
       atomVMs.push({
         id,
@@ -180,6 +186,8 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
         status: e.status,
         provenance: edgeProvenance(e.provenance),
         nodeIds: [entity.id, e.other.id],
+        atomId,
+        hostName: e.direction === "out" ? entity.name : e.other.name,
       });
     });
 
@@ -196,6 +204,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
       }
       const id = `i${i}`;
       const family = familyFor(e.predicate);
+      const atomId = e.provenance.sourceType !== "native" ? e.provenance.ref : undefined;
       edgeVMs.push({ id, aId: e.from.id, bId: e.other.id, predicate: e.predicate, qualifier: e.qualifier, family, status: e.status, inter: true });
       const subjectName = e.direction === "out" ? e.from.name : e.other.name;
       const objectName = e.direction === "out" ? e.other.name : e.from.name;
@@ -208,6 +217,8 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
         status: e.status,
         provenance: edgeProvenance(e.provenance),
         nodeIds: [e.from.id, e.other.id],
+        atomId,
+        hostName: subjectName,
       });
     });
 
@@ -216,6 +227,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
       const id = `a${i}`;
       const family = familyFor(a.predicate);
       const value = formatAttrValue(a);
+      const provenance = attrProvenance(a);
       atomVMs.push({
         id,
         family,
@@ -223,10 +235,12 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
         line: value,
         qualifier: a.qualifier,
         status: a.status,
-        provenance: attrProvenance(a),
+        provenance,
         nodeIds: [entity.id],
+        atomId: a.atomId,
+        hostName: entity.name,
       });
-      satelliteVMs.push({ id, hostId: entity.id, family, label: a.predicate, valueSnippet: value, status: a.status });
+      satelliteVMs.push({ id, hostId: entity.id, family, label: a.predicate, valueSnippet: value, status: a.status, qualifier: a.qualifier, asOf: a.asOf, hostName: entity.name, provenance });
     });
 
     // Ring-member attributes (satellite lane). Each becomes a rail row filed
@@ -243,6 +257,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
       rows.forEach((a) => {
         const family = familyFor(a.predicate);
         const value = formatAttrValue(a);
+        const provenance = attrProvenance(a);
         atomVMs.push({
           id: a.atomId,
           family,
@@ -250,10 +265,12 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
           line: value,
           qualifier: a.qualifier,
           status: a.status,
-          provenance: attrProvenance(a),
+          provenance,
           nodeIds: [hostId],
+          atomId: a.atomId,
+          hostName: a.subject.name,
         });
-        satelliteVMs.push({ id: a.atomId, hostId, family, label: a.predicate, valueSnippet: value, status: a.status });
+        satelliteVMs.push({ id: a.atomId, hostId, family, label: a.predicate, valueSnippet: value, status: a.status, qualifier: a.qualifier, asOf: a.asOf, hostName: a.subject.name, provenance });
       });
     }
 
