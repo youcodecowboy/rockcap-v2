@@ -260,6 +260,53 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     return { nodes: [...nodeMap.values()], edges: edgeVMs, atoms: atomVMs, satellites: satelliteVMs, satelliteTruncation: satelliteTrunc };
   }, [data]);
 
+  // ── family VIEW filtering — the filters are TRUE VIEWS, not dimming ──
+  // When a family is active the canvas renders a genuine SUBGRAPH: the CENTER
+  // always stays; a non-center node survives iff it has ≥1 edge of that family
+  // (either endpoint — inter-edges count) OR ≥1 satellite of that family.
+  // Everything else is REMOVED — not passed to the canvas, so not rendered and
+  // not simulated. Only that family's edges + satellites survive; the canvas
+  // recomputes host satellite-counts / cluster radii / prominence against this
+  // filtered satellite set on its own (a project that survives via a people
+  // edge carries no property satellites here and shrinks accordingly). Filtering
+  // in this ONE place keeps GraphCanvas view-agnostic.
+  const { viewNodes, viewEdges, viewAtoms, viewSatellites, viewSatelliteTruncation } = useMemo(() => {
+    if (activeFamily === "all") {
+      return {
+        viewNodes: nodes,
+        viewEdges: edges,
+        viewAtoms: atoms,
+        viewSatellites: satellites,
+        viewSatelliteTruncation: satelliteTruncation,
+      };
+    }
+    const fam = activeFamily;
+    const fEdges = edges.filter((e) => e.family === fam);
+    const fSatellites = satellites.filter((s) => s.family === fam);
+    // Surviving node ids: center + both endpoints of every family edge + every
+    // family satellite's host.
+    const keep = new Set<string>([center.id]);
+    for (const e of fEdges) {
+      keep.add(e.aId);
+      keep.add(e.bId);
+    }
+    for (const s of fSatellites) keep.add(s.hostId);
+    const fNodes = nodes.filter((n) => n.isCenter || keep.has(n.id));
+    // Atoms in view = atoms of this family. Every such atom's nodeIds are
+    // surviving nodes by the membership rule above, so the rail stays exactly
+    // consistent with the canvas with no extra pruning.
+    const fAtoms = atoms.filter((a) => a.family === fam);
+    // Server-capped overflow ("+N more (capped)") is family-agnostic — the
+    // capped atoms can't be attributed to a family, so suppress it inside a view.
+    return {
+      viewNodes: fNodes,
+      viewEdges: fEdges,
+      viewAtoms: fAtoms,
+      viewSatellites: fSatellites,
+      viewSatelliteTruncation: {} as Record<string, number>,
+    };
+  }, [activeFamily, nodes, edges, atoms, satellites, satelliteTruncation, center.id]);
+
   const truncatedMore = useMemo(() => {
     if (!data) return 0;
     const c = data.counts as { edges: number; nativeEdges: number; truncated: boolean };
@@ -276,48 +323,50 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
   const searchLc = search.trim().toLowerCase();
   const visibleIds = useMemo(() => {
     const s = new Set<string>();
-    for (const a of atoms) {
-      if (activeFamily !== "all" && a.family !== activeFamily) continue;
+    // viewAtoms is already family-filtered; only search + selected-node narrow it.
+    for (const a of viewAtoms) {
       if (searchLc && !`${a.predicate} ${a.line} ${a.qualifier ?? ""}`.toLowerCase().includes(searchLc)) continue;
       if (selectedNodeId && !a.nodeIds.includes(selectedNodeId)) continue;
       s.add(a.id);
     }
     return s;
-  }, [atoms, activeFamily, searchLc, selectedNodeId]);
+  }, [viewAtoms, searchLc, selectedNodeId]);
 
   const searchMatchNodeIds = useMemo(() => {
     const s = new Set<string>();
     if (!searchLc) return s;
-    for (const a of atoms) {
+    for (const a of viewAtoms) {
       if (`${a.predicate} ${a.line} ${a.qualifier ?? ""}`.toLowerCase().includes(searchLc)) {
         for (const id of a.nodeIds) s.add(id);
       }
     }
     return s;
-  }, [atoms, searchLc]);
+  }, [viewAtoms, searchLc]);
 
   // Satellites glow on a search hit over their predicate + value (their own
   // ids, matched independently of the node-id set above).
   const satelliteMatchIds = useMemo(() => {
     const s = new Set<string>();
     if (!searchLc) return s;
-    for (const sat of satellites) {
+    for (const sat of viewSatellites) {
       if (`${sat.label} ${sat.valueSnippet}`.toLowerCase().includes(searchLc)) s.add(sat.id);
     }
     return s;
-  }, [satellites, searchLc]);
+  }, [viewSatellites, searchLc]);
 
-  const selectedNode = selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null;
+  // Selection resolves against the in-view node set — a node removed by a family
+  // switch drops its detail card automatically.
+  const selectedNode = selectedNodeId ? viewNodes.find((n) => n.id === selectedNodeId) ?? null : null;
   const detailAtoms = useMemo(
-    () => (selectedNode ? atoms.filter((a) => a.nodeIds.includes(selectedNode.id)) : []),
-    [atoms, selectedNode],
+    () => (selectedNode ? viewAtoms.filter((a) => a.nodeIds.includes(selectedNode.id)) : []),
+    [viewAtoms, selectedNode],
   );
   const detailEdgeCount = useMemo(
-    () => (selectedNode ? edges.filter((e) => e.aId === selectedNode.id || e.bId === selectedNode.id).length : 0),
-    [edges, selectedNode],
+    () => (selectedNode ? viewEdges.filter((e) => e.aId === selectedNode.id || e.bId === selectedNode.id).length : 0),
+    [viewEdges, selectedNode],
   );
 
-  const contestedCount = atoms.filter((a) => a.status === "contested").length;
+  const contestedCount = viewAtoms.filter((a) => a.status === "contested").length;
 
   // ── interactions ──
   const handleSelectNode = useCallback((id: string | null) => {
@@ -430,7 +479,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
               {entryName} — Knowledge Graph
             </h1>
             <div style={{ color: colors.text.muted, fontSize: 12 }}>
-              {atoms.length} atom{atoms.length === 1 ? "" : "s"} shown · {nodes.length} entit{nodes.length === 1 ? "y" : "ies"}
+              {viewAtoms.length} atom{viewAtoms.length === 1 ? "" : "s"} shown · {viewNodes.length} entit{viewNodes.length === 1 ? "y" : "ies"}
               {contestedCount > 0 ? ` · ${contestedCount} contested` : ""}
             </div>
           </div>
@@ -569,15 +618,15 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
             style={{ marginLeft: "auto", color: colors.text.dim, fontSize: 11.5, fontFamily: "ui-monospace, Menlo, monospace", cursor: "help" }}
           >
             {clientTotals
-              ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${nodes.length} entities · ${atoms.length} in view${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`
-              : `${nodes.length} entities · ${atoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`}
+              ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${viewNodes.length} entities · ${viewAtoms.length} in view${viewSatellites.length ? ` · ${viewSatellites.length} knowledge points` : ""}`
+              : `${viewNodes.length} entities · ${viewAtoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}${viewSatellites.length ? ` · ${viewSatellites.length} knowledge points` : ""}`}
           </span>
         </div>
 
         {/* body */}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <AtomRail
-            atoms={atoms}
+            atoms={viewAtoms}
             visibleIds={visibleIds}
             selectedNodeName={selectedNode ? selectedNode.name : null}
             selectedAtomId={selectedAtomId}
@@ -599,10 +648,10 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
           ) : (
             <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex" }}>
               <GraphCanvas
-                nodes={nodes}
-                edges={edges}
-                satellites={satellites}
-                satelliteTruncation={satelliteTruncation}
+                nodes={viewNodes}
+                edges={viewEdges}
+                satellites={viewSatellites}
+                satelliteTruncation={viewSatelliteTruncation}
                 satelliteMatchIds={satelliteMatchIds}
                 centerId={center.id}
                 selectedId={selectedNodeId}

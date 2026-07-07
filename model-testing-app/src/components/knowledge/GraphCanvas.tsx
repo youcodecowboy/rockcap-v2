@@ -185,6 +185,15 @@ export default function GraphCanvas({
   const labelElRef = useRef<Map<string, SVGTextElement | null>>(new Map());
   const alphaRef = useRef(1);
   const dragIdRef = useRef<string | null>(null);
+  // Pin-where-you-drop (session-only): pinned nodes skip force integration —
+  // they hold their dropped position while the layout drapes around them.
+  // Double-click releases. State mirrors the ref so the pin ring renders.
+  const pinnedRef = useRef<Set<string>>(new Set());
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+  const centerIdRef = useRef(centerId);
+  useEffect(() => {
+    centerIdRef.current = centerId;
+  }, [centerId]);
 
   // Satellites: element refs + a persistent force-sim particle store (leaves
   // are real sim participants now, not kinematic slots). satLineElRef holds the
@@ -334,13 +343,32 @@ export default function GraphCanvas({
     applyView();
   }, [applyView]);
 
-  // Reseed the simulation whenever the node set / center changes (pivot): the
-  // center sits at the origin, the ring is seeded in a circle for a clean settle.
+  // Reseed / re-settle the simulation whenever the node set or center changes.
+  // Two distinct cases share this effect (the node set changes in both):
+  //   • Center change (pivot / pop) ⇒ a brand-new view: seed the whole ring
+  //     fresh in a circle, center at the origin, for a clean settle.
+  //   • Same center, different node set ⇒ a family-VIEW switch: surviving nodes
+  //     KEEP their sim positions (continuity — they relax from where they were),
+  //     removed nodes are pruned (rebuilding the map drops them), and any newly
+  //     appearing node is seeded on the ring.
   const nodeSig = useMemo(() => `${centerId}|${nodes.map((n) => n.id).join(",")}`, [centerId, nodes]);
+  const prevCenterRef = useRef<string | null>(null);
   useEffect(() => {
+    const centerChanged = prevCenterRef.current !== centerId;
+    prevCenterRef.current = centerId;
+    if (centerChanged && pinnedRef.current.size) {
+      pinnedRef.current.clear(); // pins are per-view arrangements — a pivot is a new view
+      setPinned(new Set());
+    }
+    const prev = simRef.current;
     const others = nodes.filter((n) => n.id !== centerId);
     const next = new Map<string, Sim>();
     others.forEach((n, i) => {
+      const kept = centerChanged ? undefined : prev.get(n.id);
+      if (kept) {
+        next.set(n.id, kept); // survivor — keep its position for continuity
+        return;
+      }
       const ang = (i / Math.max(others.length, 1)) * Math.PI * 2;
       const rad = 190 + (i % 3) * 34;
       next.set(n.id, {
@@ -352,10 +380,15 @@ export default function GraphCanvas({
         ph2: Math.random() * 6.28,
       });
     });
-    next.set(centerId, { x: 0, y: 0, vx: 0, vy: 0, ph: Math.random() * 6.28, ph2: Math.random() * 6.28 });
+    const keptCenter = centerChanged ? undefined : prev.get(centerId);
+    next.set(centerId, keptCenter ?? { x: 0, y: 0, vx: 0, vy: 0, ph: Math.random() * 6.28, ph2: Math.random() * 6.28 });
     simRef.current = next;
     alphaRef.current = 1;
-    // New center ⇒ one fresh auto-fit is allowed again.
+    // A view change is a NEW view: re-arm the one-shot auto-fit AND clear the
+    // user-camera lock so the surviving subgraph refits even if the user had
+    // panned/zoomed the previous view. This deliberately overrides the "never
+    // refit after the user takes the camera" rule — a family switch is a fresh
+    // framing, not a continuation of the old one.
     autoFitDoneRef.current = false;
     userTouchedCameraRef.current = false;
     simStartRef.current = performance.now();
@@ -483,8 +516,10 @@ export default function GraphCanvas({
       for (const { n, s } of act) {
         s.vx -= s.x * centerPull;
         s.vy -= s.y * centerPull;
-        if (n.id === dragIdRef.current || n.id === centerId) {
-          // Pin the center at origin; a dragged node follows the pointer.
+        if (n.id === dragIdRef.current || n.id === centerId || pinnedRef.current.has(n.id)) {
+          // Pin the center at origin; a dragged node follows the pointer;
+          // operator-pinned nodes hold where they were dropped (they still
+          // exert forces — the rest of the graph drapes around them).
           if (n.id === centerId && n.id !== dragIdRef.current) {
             s.x = 0;
             s.y = 0;
@@ -795,6 +830,12 @@ export default function GraphCanvas({
       suppressBgClickRef.current = true; // the retargeted click on the svg must not deselect
     } else if (moved) {
       suppressBgClickRef.current = true; // end of a drag/pan is not a background click
+      if (pressed && pressed !== centerIdRef.current) {
+        // Pin-where-you-drop: a dragged node holds its position (session-only)
+        // and the layout drapes around it. Double-click releases it.
+        pinnedRef.current.add(pressed);
+        setPinned(new Set(pinnedRef.current));
+      }
     }
     panRef.current.on = false;
     dragIdRef.current = null;
@@ -814,6 +855,12 @@ export default function GraphCanvas({
     userTouchedCameraRef.current = true; // explicit camera action — auto-fit stays off
     fitToContent();
   }, [fitToContent]);
+
+  // A family view whose subgraph collapsed to the center alone (no in-view edges
+  // and no in-view satellites) — the center survives but has no knowledge of
+  // this family in its neighborhood. Show a subtle in-canvas hint instead of the
+  // drawer's generic empty state (which is reserved for a genuinely empty graph).
+  const emptyFamily = activeFamily !== "all" && nodes.length <= 1 && satellites.length === 0;
 
   // ── highlight state (React-driven className/style; positions stay on refs) ──
   const activeId = hoverId ?? selectedId;
@@ -881,9 +928,9 @@ export default function GraphCanvas({
             // is hovered/selected (touches already checks both endpoints).
             const inter = e.inter === true;
             const touches = activeId && (e.aId === activeId || e.bId === activeId);
-            const hoverDim = activeId && !touches;
-            const familyDim = activeFamily !== "all" && e.family !== activeFamily;
-            const dim = hoverDim || familyDim;
+            // Family filtering is now a TRUE VIEW (done in the drawer) — only
+            // in-view edges are passed here, so the canvas only hover-dims.
+            const dim = activeId && !touches;
             const stroke = touches ? colors.text.secondary : colors.border.mid;
             const lineOpacity = dim ? 0.12 : touches ? (inter ? 0.6 : 1) : inter ? 0.38 : 0.75;
             const labelOpacity = dim ? 0.08 : inter ? 0.5 : 1;
@@ -920,10 +967,10 @@ export default function GraphCanvas({
               organized knowledge; dims with family/host filtering; a hovered
               leaf raises its line to 0.6. Positions driven by the draw loop. */}
           {renderedSats.map((sat) => {
-            const familyDim = activeFamily !== "all" && sat.family !== activeFamily;
+            // In-view satellites only reach here (family filtering is a true
+            // view in the drawer); dim only for hover/selection neighborhood.
             const hostActive = activeId === sat.hostId;
-            const hostDim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
-            const dim = familyDim || hostDim;
+            const dim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
             const hovered = sat.id === hoverSatId;
             const fam = colorForFamily(colors, sat.family);
             return (
@@ -940,10 +987,8 @@ export default function GraphCanvas({
           })}
           {/* satellites — small family-colored dots, real force-sim leaves */}
           {renderedSats.map((sat) => {
-            const familyDim = activeFamily !== "all" && sat.family !== activeFamily;
             const hostActive = activeId === sat.hostId;
-            const hostDim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
-            const dim = familyDim || hostDim;
+            const dim = !!activeId && !hostActive && !activeNeighbors?.has(sat.hostId);
             const match = satelliteMatchIds.has(sat.id);
             const isSelAtom = sat.id === selectedAtomId;
             const fill = colorForFamily(colors, sat.family);
@@ -1003,6 +1048,13 @@ export default function GraphCanvas({
                 }}
                 onPointerEnter={() => setHoverId(n.id)}
                 onPointerLeave={() => setHoverId(null)}
+                onDoubleClick={(ev) => {
+                  ev.stopPropagation();
+                  if (pinnedRef.current.delete(n.id)) {
+                    setPinned(new Set(pinnedRef.current));
+                    alphaRef.current = 1; // released — let the sim reclaim it
+                  }
+                }}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   onSelect(n.id);
@@ -1016,6 +1068,11 @@ export default function GraphCanvas({
                     strokeWidth={1.5}
                     style={{ animation: reducedMotion ? "none" : "rc-graph-pulse 2.2s ease-out infinite" }}
                   />
+                )}
+                {pinned.has(n.id) && (
+                  <circle r={r + 5} fill="none" stroke={colors.text.dim} strokeWidth={1} strokeDasharray="3 3">
+                    <title>Pinned — double-click to release</title>
+                  </circle>
                 )}
                 {n.type === "facility" ? (
                   <rect
@@ -1102,6 +1159,28 @@ export default function GraphCanvas({
         </g>
       </svg>
 
+      {/* empty-family hint — subtle, non-blocking; the center still renders */}
+      {emptyFamily && (
+        <div
+          style={{
+            position: "absolute",
+            top: 18,
+            left: "50%",
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            color: colors.text.dim,
+            fontSize: 12.5,
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 999,
+            padding: "6px 15px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          No {activeFamily} knowledge in this neighborhood — try another view
+        </div>
+      )}
+
       {/* zoom HUD */}
       <div style={{ position: "absolute", right: 14, top: 14, display: "flex", flexDirection: "column", gap: 6 }}>
         <button style={btn} title="Zoom in" onClick={() => zoomBtn(1.25)}>+</button>
@@ -1109,7 +1188,7 @@ export default function GraphCanvas({
         <button style={{ ...btn, fontSize: 11 }} title="Fit" onClick={fit}>fit</button>
       </div>
       <div style={{ position: "absolute", left: 16, bottom: 12, color: colors.text.dim, fontSize: 11, pointerEvents: "none" }}>
-        drag canvas to pan · scroll to zoom · drag nodes · click a node for its atoms
+        drag canvas to pan · scroll to zoom · drag a node to arrange (it pins — double-click to release) · click a node for its atoms
       </div>
     </div>
   );
