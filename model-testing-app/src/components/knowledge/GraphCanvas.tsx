@@ -498,8 +498,21 @@ export default function GraphCanvas({
     [applyView],
   );
 
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
+  /* Click-vs-drag discrimination. Pointer capture lives on the SVG, which
+   * retargets pointerup/click to the svg element — child onClick handlers
+   * never fire once a drag/pan starts. So selection is decided here on
+   * pointerup: a press that moved < 4px is a click on whatever was pressed. */
+  const pressRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const suppressBgClickRef = useRef(false);
+
   const onPointerDownBg = useCallback((ev: React.PointerEvent) => {
     panRef.current = { on: true, px: ev.clientX, py: ev.clientY };
+    pressRef.current = { x: ev.clientX, y: ev.clientY, moved: false };
     userTouchedCameraRef.current = true;
     svgRef.current?.setPointerCapture(ev.pointerId);
   }, []);
@@ -507,8 +520,11 @@ export default function GraphCanvas({
   const onPointerMove = useCallback((ev: React.PointerEvent) => {
     const svg = svgRef.current;
     if (!svg) return;
+    const p = pressRef.current;
+    if (p && !p.moved && Math.hypot(ev.clientX - p.x, ev.clientY - p.y) > 4) p.moved = true;
     const v = viewRef.current;
     if (dragIdRef.current) {
+      if (!p?.moved) return; // sub-threshold jitter — keep it a click
       const rect = svg.getBoundingClientRect();
       const s = simRef.current.get(dragIdRef.current);
       if (s) {
@@ -528,8 +544,17 @@ export default function GraphCanvas({
   }, [applyView]);
 
   const endPointer = useCallback(() => {
+    const pressed = dragIdRef.current;
+    const moved = pressRef.current?.moved ?? false;
+    if (pressed && !moved) {
+      onSelectRef.current(pressed); // stationary press on a node = click
+      suppressBgClickRef.current = true; // the retargeted click on the svg must not deselect
+    } else if (moved) {
+      suppressBgClickRef.current = true; // end of a drag/pan is not a background click
+    }
     panRef.current.on = false;
     dragIdRef.current = null;
+    pressRef.current = null;
   }, []);
 
   const zoomBtn = useCallback(
@@ -596,7 +621,13 @@ export default function GraphCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}
         onPointerLeave={endPointer}
-        onClick={() => onSelect(null)}
+        onClick={() => {
+          if (suppressBgClickRef.current) {
+            suppressBgClickRef.current = false; // retargeted click after a drag/pan/node-press
+            return;
+          }
+          onSelect(null);
+        }}
       >
         <g ref={worldRef}>
           {/* edges */}
@@ -659,6 +690,9 @@ export default function GraphCanvas({
                 style={{ cursor: "pointer", opacity: dim ? 0.12 : 1, color: fill }}
                 onPointerEnter={() => setHoverSatId(sat.id)}
                 onPointerLeave={() => setHoverSatId((h) => (h === sat.id ? null : h))}
+                /* Without this, pointerdown bubbles to the svg pan handler,
+                   which captures the pointer — the click never lands. */
+                onPointerDown={(ev) => ev.stopPropagation()}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   onSatelliteSelect(sat);
@@ -686,6 +720,7 @@ export default function GraphCanvas({
                   badgeElRef.current.set(b.hostId, el);
                 }}
                 style={{ cursor: b.expandable ? "pointer" : "default" }}
+                onPointerDown={(ev) => ev.stopPropagation()}
                 onClick={(ev) => {
                   ev.stopPropagation();
                   if (!b.expandable) return;
@@ -731,6 +766,7 @@ export default function GraphCanvas({
                 onPointerDown={(ev) => {
                   ev.stopPropagation();
                   dragIdRef.current = n.id;
+                  pressRef.current = { x: ev.clientX, y: ev.clientY, moved: false };
                   svgRef.current?.setPointerCapture(ev.pointerId);
                 }}
                 onPointerEnter={() => setHoverId(n.id)}
