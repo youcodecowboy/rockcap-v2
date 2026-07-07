@@ -46,6 +46,12 @@ const isPublicRoute = createRouteMatcher([
   // Without this entry Clerk 404-rejects the cookie-less Convex fetch and
   // every Drive extraction fails with "ingest route 404".
   '/api/drive/ingest(.*)',
+  // Knowledge-layer bridges — Convex actions POST here server-to-server:
+  // /api/knowledge/atomize (API atomization lane) and
+  // /api/knowledge/extract-text (harness classification parse). Both
+  // self-authenticate via x-cron-secret. Same Clerk-404 failure mode as
+  // /api/drive/ingest when absent (bit the first harness fleet, 2026-07-07).
+  '/api/knowledge/(.*)',
   // Convex action → Next bridge for the corporate-structure chart renderer.
   // The `structureGen.renderChart` action POSTs here server-to-server (no Clerk
   // cookie); the handler self-authenticates via x-convex-internal-secret. Public
