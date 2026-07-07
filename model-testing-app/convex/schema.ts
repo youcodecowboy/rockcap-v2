@@ -1290,6 +1290,7 @@ export default defineSchema({
     name: v.string(), // Display name
     description: v.optional(v.string()), // Optional description for the folder
     parentFolderId: v.optional(v.id("clientFolders")), // For nested folders
+    depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
@@ -1336,8 +1337,12 @@ export default defineSchema({
     .index("by_client_type_level", ["clientType", "level"])
     .index("by_client_type", ["clientType"]),
 
-  // Document Placement Rules - Define where document types should be filed
-  // Per client type mapping of document types to target folders
+  // Document Placement Rules - DEPRECATED (2026-07-07 taxonomy rebuild).
+  // Placement is now fully deterministic in code (src/v4/lib/placement-rules.ts,
+  // Dark Mills taxonomy) — the DB-rules lane (convex/placementRules.ts,
+  // /api/bulk-analyze, PlacementRulesTable UI) was deleted. The table
+  // definition stays because removing a non-empty table breaks Convex schema
+  // push; data cleanup happens in a later phase. Do not add new writers.
   documentPlacementRules: defineTable({
     clientType: v.string(), // "borrower" | "lender" | etc.
     documentType: v.string(), // e.g., "Red Book Valuation", "Term Sheet"

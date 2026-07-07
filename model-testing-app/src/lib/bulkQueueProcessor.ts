@@ -1,5 +1,5 @@
 import { Id } from '../../convex/_generated/dataModel';
-import { generateDocumentName, generateBasePattern } from './documentNaming';
+import { buildDocumentName } from './documentNaming';
 
 /**
  * Bulk Upload Queue Processor
@@ -627,11 +627,6 @@ export class BulkQueueProcessor {
     let isDuplicate = false;
     let duplicateOfDocumentId: Id<"documents"> | undefined;
 
-    // Use project shortcode if available, otherwise generate from client name
-    const shortcode = this.batchInfo.projectShortcode ||
-      (this.batchInfo.clientName || 'CLIENT').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) ||
-      'CLIENT';
-
     // Check for duplicates by original filename
     console.log(`[BulkQueueProcessor] Checking duplicates for "${item.file.name}"...`);
     const duplicateCheck = await this.callbacks.checkForDuplicates({
@@ -649,11 +644,13 @@ export class BulkQueueProcessor {
     }
 
     // Use V4-generated document code if available, otherwise generate locally
-    generatedDocumentCode = doc.generatedDocumentCode || generateDocumentName({
-      projectShortcode: shortcode,
-      category: result.category,
-      isInternal: this.batchInfo.isInternal,
-      uploaderInitials: this.batchInfo.uploaderInitials,
+    // e.g. DarkMills_CreditChecklist_RS_EXTERNAL_V1.0_20260707
+    generatedDocumentCode = doc.generatedDocumentCode || buildDocumentName({
+      fileType: result.fileType || result.category,
+      projectShortcode: this.batchInfo.projectShortcode,
+      clientName: this.batchInfo.clientName,
+      initials: this.batchInfo.uploaderInitials || 'XX',
+      audience: this.batchInfo.isInternal ? 'INTERNAL' : 'EXTERNAL',
       version,
     });
 

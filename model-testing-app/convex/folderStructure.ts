@@ -8,64 +8,80 @@ import { Id } from "./_generated/dataModel";
 // ============================================================================
 
 // Category to folder type mapping
-// Maps document categories/types to their target folders
-export const CATEGORY_TO_FOLDER_MAP: Record<string, { 
+// Maps document categories/types to their target folders.
+// Folder keys follow the Dark Mills taxonomy (2026-07-07 —
+// docs/classification/dark-mills-exemplar-pack.md §1; canonical rules live in
+// src/v4/lib/placement-rules.ts). This map keeps mobile display/upload
+// consistent with the new key vocabulary.
+export const CATEGORY_TO_FOLDER_MAP: Record<string, {
   level: "client" | "project";
   folderType: string;
 }> = {
   // Project-level folders
-  "appraisal": { level: "project", folderType: "appraisals" },
-  "appraisals": { level: "project", folderType: "appraisals" },
-  "valuation": { level: "project", folderType: "appraisals" },
-  "red book valuation": { level: "project", folderType: "appraisals" },
-  "rics valuation": { level: "project", folderType: "appraisals" },
-  
-  "term sheet": { level: "project", folderType: "terms_comparison" },
-  "termsheet": { level: "project", folderType: "terms_comparison" },
-  "loan terms": { level: "project", folderType: "terms_comparison" },
-  "terms comparison": { level: "project", folderType: "terms_comparison" },
-  
-  "term request": { level: "project", folderType: "terms_request" },
-  "terms request": { level: "project", folderType: "terms_request" },
-  "loan request": { level: "project", folderType: "terms_request" },
-  
-  "credit memo": { level: "project", folderType: "credit_submission" },
-  "credit submission": { level: "project", folderType: "credit_submission" },
-  "credit application": { level: "project", folderType: "credit_submission" },
-  
+  "appraisal": { level: "project", folderType: "modelling_info" },
+  "appraisals": { level: "project", folderType: "modelling_info" },
+  "valuation": { level: "project", folderType: "modelling_info" },
+  "red book valuation": { level: "project", folderType: "modelling_info" },
+  "rics valuation": { level: "project", folderType: "modelling_info" },
+  "client land appraisal": { level: "project", folderType: "client_appraisals" },
+  "rockcap appraisal model": { level: "project", folderType: "rockcap_appraisals" },
+
+  "term sheet": { level: "project", folderType: "terms_received" },
+  "termsheet": { level: "project", folderType: "terms_received" },
+  "loan terms": { level: "project", folderType: "terms_received" },
+  "indicative terms": { level: "project", folderType: "terms_received" },
+  "terms received": { level: "project", folderType: "terms_received" },
+  "terms comparison": { level: "project", folderType: "terms_analysis" },
+  "terms analysis": { level: "project", folderType: "terms_analysis" },
+  "lender comparison": { level: "project", folderType: "terms_analysis" },
+
+  // Terms-request material (outbound briefs/models) lives in the
+  // "Modelling Info and Terms Request" folder in the new taxonomy.
+  "term request": { level: "project", folderType: "modelling_info" },
+  "terms request": { level: "project", folderType: "modelling_info" },
+  "loan request": { level: "project", folderType: "modelling_info" },
+
+  "credit memo": { level: "project", folderType: "credit" },
+  "credit submission": { level: "project", folderType: "credit" },
+  "credit application": { level: "project", folderType: "credit" },
+  "credit checklist": { level: "project", folderType: "credit" },
+
   "completion certificate": { level: "project", folderType: "post_completion" },
   "post completion": { level: "project", folderType: "post_completion" },
   "closing documents": { level: "project", folderType: "post_completion" },
   "settlement": { level: "project", folderType: "post_completion" },
-  
-  "financial model": { level: "project", folderType: "operational_model" },
-  "operating model": { level: "project", folderType: "operational_model" },
-  "operating statement": { level: "project", folderType: "operational_model" },
-  "cash flow": { level: "project", folderType: "operational_model" },
-  "pro forma": { level: "project", folderType: "operational_model" },
-  
+
+  "financial model": { level: "project", folderType: "modelling_info" },
+  "operating model": { level: "project", folderType: "modelling_info" },
+  "operating statement": { level: "project", folderType: "modelling_info" },
+  "cash flow": { level: "project", folderType: "modelling_info" },
+  "pro forma": { level: "project", folderType: "modelling_info" },
+
   "note": { level: "project", folderType: "notes" },
   "notes": { level: "project", folderType: "notes" },
   "memo": { level: "project", folderType: "notes" },
   "internal memo": { level: "project", folderType: "notes" },
-  
-  "background": { level: "project", folderType: "background" },
-  "project background": { level: "project", folderType: "background" },
-  "professional report": { level: "project", folderType: "background" },
-  "professional reports": { level: "project", folderType: "background" },
-  "plans": { level: "project", folderType: "background" },
-  "floor plan": { level: "project", folderType: "background" },
-  "site plan": { level: "project", folderType: "background" },
-  "photographs": { level: "project", folderType: "background" },
-  "site photographs": { level: "project", folderType: "background" },
-  "project documents": { level: "project", folderType: "background" },
-  "accommodation schedule": { level: "project", folderType: "background" },
-  "build programme": { level: "project", folderType: "background" },
-  "specification": { level: "project", folderType: "background" },
-  "tender": { level: "project", folderType: "background" },
-  "cgi": { level: "project", folderType: "background" },
-  "renders": { level: "project", folderType: "background" },
-  "warranties": { level: "project", folderType: "background" },
+
+  "background": { level: "project", folderType: "modelling_info" },
+  "project background": { level: "project", folderType: "modelling_info" },
+  "professional report": { level: "project", folderType: "modelling_info" },
+  "professional reports": { level: "project", folderType: "modelling_info" },
+  "plans": { level: "project", folderType: "modelling_info" },
+  "floor plan": { level: "project", folderType: "modelling_info" },
+  "site plan": { level: "project", folderType: "modelling_info" },
+  "photographs": { level: "project", folderType: "modelling_info" },
+  "site photographs": { level: "project", folderType: "modelling_info" },
+  "project documents": { level: "project", folderType: "modelling_info" },
+  "accommodation schedule": { level: "project", folderType: "comps" },
+  "comps": { level: "project", folderType: "comps" },
+  "comparable schedule": { level: "project", folderType: "comps_appendix" },
+  "comparables": { level: "project", folderType: "comps_appendix" },
+  "build programme": { level: "project", folderType: "modelling_info" },
+  "specification": { level: "project", folderType: "modelling_info" },
+  "tender": { level: "project", folderType: "modelling_info" },
+  "cgi": { level: "project", folderType: "modelling_info" },
+  "renders": { level: "project", folderType: "modelling_info" },
+  "warranties": { level: "project", folderType: "post_completion" },
 
   "captured photos": { level: "project", folderType: "captured_photos" },
   "site photos": { level: "project", folderType: "captured_photos" },
@@ -77,7 +93,7 @@ export const CATEGORY_TO_FOLDER_MAP: Record<string, {
   "identity verification": { level: "client", folderType: "kyc" },
   "passport": { level: "client", folderType: "kyc" },
   "id document": { level: "client", folderType: "kyc" },
-  
+
   "client background": { level: "client", folderType: "background_docs" },
   "company information": { level: "client", folderType: "background_docs" },
   "corporate documents": { level: "client", folderType: "background_docs" },
@@ -313,30 +329,56 @@ export const ensureProjectFolders = mutation({
       return { created: false, foldersCount: existingFolders.length };
     }
     
-    // Standard project folder types
-    const PROJECT_FOLDER_TYPES = [
-      { type: "background" as const, name: "Background" },
-      { type: "terms_comparison" as const, name: "Terms comparison" },
-      { type: "terms_request" as const, name: "Terms request" },
-      { type: "credit_submission" as const, name: "Credit submission" },
-      { type: "post_completion" as const, name: "Post-completion documents" },
-      { type: "appraisals" as const, name: "Appraisals" },
-      { type: "notes" as const, name: "Notes" },
-      { type: "operational_model" as const, name: "Operational Model" },
-      { type: "captured_photos" as const, name: "Captured Photos" },
-      { type: "unfiled" as const, name: "Unfiled" },
+    // Standard project folder types — mirrors the borrower/project default
+    // template (Dark Mills taxonomy, migrations/seedFolderTemplatesV2.ts),
+    // plus app-only folders (captured_photos, unfiled) not in the template.
+    const PROJECT_FOLDER_TYPES: Array<{ type: string; name: string; parentKey?: string }> = [
+      { type: "modelling_info", name: "1. Modelling Info and Terms Request" },
+      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info" },
+      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info" },
+      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info" },
+      { type: "terms_received", name: "2. Terms Received" },
+      { type: "terms_analysis", name: "3. Terms Analysis" },
+      { type: "comps", name: "4. Comps" },
+      { type: "comps_appendix", name: "Appendix", parentKey: "comps" },
+      { type: "credit", name: "5. Credit" },
+      { type: "post_completion", name: "6. Post Completion" },
+      { type: "notes", name: "Notes" },
+      { type: "captured_photos", name: "Captured Photos" },
+      { type: "unfiled", name: "Unfiled" },
     ];
-    
+
     const now = new Date().toISOString();
+    const folderIdMap: Record<string, Id<"projectFolders">> = {};
+
+    // First pass: top-level folders
     for (const folder of PROJECT_FOLDER_TYPES) {
-      await ctx.db.insert("projectFolders", {
-        projectId: args.projectId,
-        folderType: folder.type,
-        name: folder.name,
-        createdAt: now,
-      });
+      if (!folder.parentKey) {
+        const folderId = await ctx.db.insert("projectFolders", {
+          projectId: args.projectId,
+          folderType: folder.type,
+          name: folder.name,
+          depth: 0,
+          createdAt: now,
+        });
+        folderIdMap[folder.type] = folderId;
+      }
     }
-    
+
+    // Second pass: subfolders (this list only nests one level deep)
+    for (const folder of PROJECT_FOLDER_TYPES) {
+      if (folder.parentKey && folderIdMap[folder.parentKey]) {
+        await ctx.db.insert("projectFolders", {
+          projectId: args.projectId,
+          folderType: folder.type,
+          name: folder.name,
+          parentFolderId: folderIdMap[folder.parentKey],
+          depth: 1,
+          createdAt: now,
+        });
+      }
+    }
+
     return { created: true, foldersCount: PROJECT_FOLDER_TYPES.length };
   },
 });

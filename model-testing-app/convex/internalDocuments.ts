@@ -1,60 +1,13 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { buildInternalDocumentName } from "../src/lib/documentNaming";
 
-// Helper function to abbreviate text
-function abbreviateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, maxLength);
-}
-
-// Helper function to abbreviate category
-function abbreviateCategory(category: string): string {
-  if (!category) return 'DOC';
-  
-  const categoryMap: Record<string, string> = {
-    'valuation': 'VAL',
-    'operating': 'OPR',
-    'operating statement': 'OPR',
-    'appraisal': 'APP',
-    'financial': 'FIN',
-    'contract': 'CNT',
-    'agreement': 'AGR',
-    'invoice': 'INV',
-    'report': 'RPT',
-    'letter': 'LTR',
-    'email': 'EML',
-    'note': 'NTE',
-    'memo': 'MEM',
-    'proposal': 'PRP',
-    'quote': 'QTE',
-    'receipt': 'RCP',
-  };
-  
-  const categoryLower = category.toLowerCase();
-  for (const [key, value] of Object.entries(categoryMap)) {
-    if (categoryLower.includes(key)) {
-      return value;
-    }
-  }
-  
-  return abbreviateText(category, 3);
-}
-
-// Helper function to format date to DDMMYY
-function formatDateDDMMYY(dateString: string | Date): string {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
-}
-
-// Generate internal document code
+// Generate internal document code via the canonical convention.
+// RockCap_<Topic>_<YYYYMMDD> (e.g. RockCap_LendingPolicy_20260707) replaces the
+// legacy ROCK-INT-<TOPIC>-<DDMMYY> prefix — the RockCap producer token keeps the
+// RC-internal semantics. Forward-only: existing codes are never regenerated.
 function generateInternalDocumentCode(category: string, uploadedAt: string | Date): string {
-  const topicCode = abbreviateText(category || 'DOC', 8);
-  const dateCode = formatDateDDMMYY(uploadedAt);
-  return `ROCK-INT-${topicCode}-${dateCode}`;
+  return buildInternalDocumentName(category, uploadedAt);
 }
 
 // Query: Get all internal documents

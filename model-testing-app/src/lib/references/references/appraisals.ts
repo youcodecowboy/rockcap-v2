@@ -20,6 +20,7 @@ export const APPRAISAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Appraisals',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A RedBook Valuation is a formal property valuation report prepared in accordance with the RICS ' +
@@ -190,6 +191,7 @@ export const APPRAISAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Appraisals',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A Development Appraisal is a financial assessment of a proposed property development scheme, ' +
@@ -356,6 +358,7 @@ export const APPRAISAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Appraisals',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A Development Cashflow is a time-phased financial projection showing how money flows into and ' +

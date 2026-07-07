@@ -19,6 +19,7 @@ export const WARRANTY_REFERENCES: DocumentReference[] = [
       targetFolder: 'Warranties',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'An NHBC Warranty is a structural warranty and insurance policy issued by the National ' +
@@ -207,6 +208,7 @@ export const WARRANTY_REFERENCES: DocumentReference[] = [
       targetFolder: 'Warranties',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'Latent Defects Insurance (LDI) is a structural warranty policy that provides cover against ' +

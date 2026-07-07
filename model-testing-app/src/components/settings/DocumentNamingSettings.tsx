@@ -7,9 +7,10 @@ import { useColors } from '@/lib/useColors';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import { abbreviateText, generateDocumentCode } from '@/lib/documentCodeUtils';
+import { generateDocumentCode } from '@/lib/documentCodeUtils';
 import {
   resolveNamingConfig,
+  toCompactPascalCase,
   type DocumentNamingConfig,
   type CustomToken,
   labelToTokenId,
@@ -91,15 +92,16 @@ export default function DocumentNamingSettings({
     }));
   }, [initialConfig, projectShortcode, entityType, metadata]);
 
-  // Set default code from names if no saved code
+  // Set default code from names if no saved code — compact PascalCase full words
+  // (e.g. "Dark Mills" → "DarkMills"), per the naming convention
   useEffect(() => {
     setConfig((prev) => {
       if (prev.code) return prev;
       if (entityType === 'client' && clientName) {
-        return { ...prev, code: abbreviateText(clientName, 8) };
+        return { ...prev, code: toCompactPascalCase(clientName).slice(0, 8) };
       }
       if (entityType === 'project' && projectName) {
-        return { ...prev, code: abbreviateText(projectName, 10) };
+        return { ...prev, code: toCompactPascalCase(projectName).slice(0, 10) };
       }
       return prev;
     });
@@ -187,14 +189,15 @@ export default function DocumentNamingSettings({
 
     setIsSaving(true);
     try {
-      // For projects, update the actual projectShortcode field
+      // For projects, update the actual projectShortcode field.
+      // Case is preserved — PascalCase codes (e.g. DarkMills) feed the Project token.
       if (entityType === 'project' && onShortcodeChange) {
-        await onShortcodeChange(config.code.toUpperCase());
+        await onShortcodeChange(config.code);
       }
 
       if (onSave) {
         const savePayload: DocumentNamingConfig = {
-          code: config.code.toUpperCase(),
+          code: config.code,
           pattern: inheriting ? [] : config.pattern,
           separator: inheriting ? DEFAULT_SEPARATOR : config.separator,
           customTokens: inheriting ? [] : config.customTokens,
@@ -228,9 +231,10 @@ export default function DocumentNamingSettings({
         try {
           const generatedCode = generateDocumentCode(
             resolvedClientName || '',
-            doc.category,
+            doc.fileTypeDetected || doc.category,
             projectName,
-            doc.uploadedAt
+            doc.uploadedAt,
+            displayConfig
           );
 
           let finalCode = generatedCode;
@@ -335,8 +339,8 @@ export default function DocumentNamingSettings({
           <Input
             id="code"
             value={config.code}
-            onChange={(e) => setConfig((prev) => ({ ...prev, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
-            placeholder={entityType === 'client' ? 'e.g., FIRESIDE' : 'e.g., WIMBPARK28'}
+            onChange={(e) => setConfig((prev) => ({ ...prev, code: e.target.value.replace(/[^A-Za-z0-9]/g, '') }))}
+            placeholder={entityType === 'client' ? 'e.g., Fireside' : 'e.g., DarkMills'}
             style={{ fontFamily: MONO }}
             maxLength={maxLength}
           />
@@ -352,9 +356,9 @@ export default function DocumentNamingSettings({
       <NamingPatternBuilder
         config={displayConfig}
         onChange={handleConfigChange}
-        sampleClientCode={config.code || 'ACME'}
-        sampleProjectCode={entityType === 'project' ? (projectShortcode || config.code || 'PARK28') : undefined}
-        sampleCategory="Appraisals"
+        sampleClientCode={config.code || 'DarkMills'}
+        sampleProjectCode={entityType === 'project' ? (projectShortcode || config.code || 'DarkMills') : undefined}
+        sampleCategory="Credit Checklist"
         disabled={inheriting}
       />
 

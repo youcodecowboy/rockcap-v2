@@ -21,6 +21,7 @@ export const INSPECTION_REFERENCES: DocumentReference[] = [
       targetFolder: 'Inspections',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'An Initial Monitoring Report (IMR) is the foundational pre-funding due diligence document ' +
@@ -199,6 +200,7 @@ export const INSPECTION_REFERENCES: DocumentReference[] = [
       targetFolder: 'Inspections',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'An Interim Monitoring Report is a recurring progress report produced monthly (or at each ' +

@@ -131,9 +131,9 @@ import type * as migrations_seedAppraisalTemplate from "../migrations/seedApprai
 import type * as migrations_seedCodeMappings from "../migrations/seedCodeMappings.js";
 import type * as migrations_seedFileTypeDefinitions from "../migrations/seedFileTypeDefinitions.js";
 import type * as migrations_seedFolderTemplates from "../migrations/seedFolderTemplates.js";
+import type * as migrations_seedFolderTemplatesV2 from "../migrations/seedFolderTemplatesV2.js";
 import type * as migrations_seedInternalFolders from "../migrations/seedInternalFolders.js";
 import type * as migrations_seedKnowledgeTemplates from "../migrations/seedKnowledgeTemplates.js";
-import type * as migrations_seedPlacementRules from "../migrations/seedPlacementRules.js";
 import type * as migrations_setDefaultDocumentScope from "../migrations/setDefaultDocumentScope.js";
 import type * as modelExports from "../modelExports.js";
 import type * as modelRuns from "../modelRuns.js";
@@ -144,7 +144,6 @@ import type * as notes from "../notes.js";
 import type * as notifications from "../notifications.js";
 import type * as orgBrief from "../orgBrief.js";
 import type * as personalFolders from "../personalFolders.js";
-import type * as placementRules from "../placementRules.js";
 import type * as planning from "../planning.js";
 import type * as projectDataLibrary from "../projectDataLibrary.js";
 import type * as projects from "../projects.js";
@@ -300,9 +299,9 @@ declare const fullApi: ApiFromModules<{
   "migrations/seedCodeMappings": typeof migrations_seedCodeMappings;
   "migrations/seedFileTypeDefinitions": typeof migrations_seedFileTypeDefinitions;
   "migrations/seedFolderTemplates": typeof migrations_seedFolderTemplates;
+  "migrations/seedFolderTemplatesV2": typeof migrations_seedFolderTemplatesV2;
   "migrations/seedInternalFolders": typeof migrations_seedInternalFolders;
   "migrations/seedKnowledgeTemplates": typeof migrations_seedKnowledgeTemplates;
-  "migrations/seedPlacementRules": typeof migrations_seedPlacementRules;
   "migrations/setDefaultDocumentScope": typeof migrations_setDefaultDocumentScope;
   modelExports: typeof modelExports;
   modelRuns: typeof modelRuns;
@@ -313,7 +312,6 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   orgBrief: typeof orgBrief;
   personalFolders: typeof personalFolders;
-  placementRules: typeof placementRules;
   planning: typeof planning;
   projectDataLibrary: typeof projectDataLibrary;
   projects: typeof projects;

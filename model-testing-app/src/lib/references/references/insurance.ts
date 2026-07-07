@@ -17,6 +17,7 @@ export const INSURANCE_REFERENCES: DocumentReference[] = [
       targetFolder: 'Insurance',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'An Insurance Policy is the full contractual document issued by an insurer (or via a broker) ' +
@@ -210,6 +211,7 @@ export const INSURANCE_REFERENCES: DocumentReference[] = [
       targetFolder: 'Insurance',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
 
     description:
       'An Insurance Certificate (also known as a Certificate of Insurance or Evidence of Insurance) ' +

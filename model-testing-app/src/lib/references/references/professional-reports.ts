@@ -19,6 +19,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'A Building Survey (formerly known as a RICS Level 3 Survey or Full Structural Survey) is a comprehensive, ' +
       'professional assessment of a property\'s physical condition. Commissioned by lenders, purchasers, or developers ' +
@@ -147,6 +148,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'credit',
     description:
       'A Report on Title is a solicitor\'s written analysis of a property\'s legal title, prepared for the lender to ' +
       'confirm that the title is acceptable as security for a loan. Typically produced by the borrower\'s solicitor (or the ' +
@@ -276,6 +278,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'credit',
     description:
       'A Legal Opinion is a formal written statement from a qualified solicitor or barrister providing professional ' +
       'legal advice on a specific legal question or issue relevant to a property finance transaction. Unlike a Report ' +
@@ -403,6 +406,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'An Environmental Report is a professional assessment of the environmental condition and potential contamination ' +
       'risks associated with a property or site. In UK property finance, environmental due diligence typically follows a ' +
@@ -532,6 +536,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'credit',
     description:
       'A Local Authority Search is a set of enquiries made to the local council (Local Planning Authority) regarding a ' +
       'property, forming a standard part of conveyancing due diligence in England and Wales. The search is submitted on a ' +
@@ -662,6 +667,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'Planning Documentation encompasses the suite of documents associated with obtaining and evidencing planning ' +
       'permission for a development project. This includes the planning application itself, decision notices (grants of ' +
@@ -806,6 +812,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
     description:
       'A Contract Sum Analysis (CSA) is a detailed cost breakdown of a construction project, typically prepared by a ' +
       'Quantity Surveyor (QS) or cost consultant. It itemises the total contract sum into its constituent elements, ' +
@@ -937,6 +944,7 @@ export const PROFESSIONAL_REPORT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Professional Reports',
       targetLevel: 'project',
     },
+    targetFolderKey: 'comps_appendix',
     description:
       'Comparables (often referred to as "comps") are a compilation of market evidence used to support property ' +
       'valuations, rental assessments, and investment decisions in property finance. A Comparables document presents ' +
