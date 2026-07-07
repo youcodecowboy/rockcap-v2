@@ -96,6 +96,29 @@ export const clientHasAtoms = internalQuery({
   },
 });
 
+/** TIGHTENED cost wall (operator decision 2026-07-07): the API lane only
+ * re-atomizes documents that were ALREADY atomized once (observations exist
+ * for this documentId under some PRIOR checksum). A never-atomized document —
+ * even for a knowledge-enabled client — is harness-lane work (bulk import
+ * batches must never ride the API meter). "Automate ingestion on CHANGES to
+ * files, not on first import." */
+export const docHasPriorAtoms = internalQuery({
+  args: {
+    documentId: v.id("documents"),
+    excludeChecksum: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const obs = await ctx.db
+      .query("atomObservations")
+      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .collect();
+    return obs.some(
+      (o) =>
+        !args.excludeChecksum || o.contentChecksum !== args.excludeChecksum,
+    );
+  },
+});
+
 /** The 10-minute sweep. Finds recent ingestion events with no observations
  * for a knowledge-enabled client, caps at 3/tick, and routes each through the
  * Next atomizer route → reatomizeDiff. Error-tolerant per event; logs loudly. */
@@ -148,11 +171,11 @@ export const sweep = internalAction({
         { documentId, contentChecksum: checksum },
       );
       if (already) continue; // event already handled
-      const enabled = await ctx.runQuery(
-        internal.knowledge.atomizerLane.clientHasAtoms,
-        { clientId: doc.clientId },
+      const isChange = await ctx.runQuery(
+        internal.knowledge.atomizerLane.docHasPriorAtoms,
+        { documentId, excludeChecksum: checksum },
       );
-      if (!enabled) continue; // §14b.1 cost wall — client never onboarded
+      if (!isChange) continue; // tightened cost wall — first-time atomization is harness-lane only
       seen.add(key);
       selected.push({ documentId, contentChecksum: checksum, doc });
     }
