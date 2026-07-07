@@ -1421,6 +1421,35 @@ export type AtomsSearchArgs = {
   includeProspectScoped?: boolean;
 };
 
+/** The enriched hit shape both search lanes return: statement + predicate +
+ * resolved subject/object names + literal + scope + provenance summary. Shared
+ * by the text lane (atomsSearchCore) and the vector lane (atomsVectorEnrich,
+ * consumed by the 2a.2 hybrid action) so the two lists fuse row-for-row. */
+async function enrichSearchAtom(
+  ctx: QueryCtx,
+  names: NameResolver,
+  atom: Doc<"atoms">,
+) {
+  return {
+    atomId: atom._id,
+    statement: atom.statement,
+    predicate: atom.predicate,
+    subject: await names.ref(atom.subjectType as GraphEntityType, atom.subjectId),
+    object: atom.objectEntityId
+      ? await names.ref(atom.objectEntityType as GraphEntityType, atom.objectEntityId)
+      : undefined,
+    objectLiteral: atom.objectLiteral,
+    qualifier: atom.qualifier,
+    clientId: atom.clientId,
+    projectId: atom.projectId,
+    asOf: atom.asOf,
+    status: atom.status,
+    confidence: atom.confidence,
+    primarySourceType: atom.primarySourceType,
+    observationCount: await liveObservationCount(ctx, atom._id),
+  };
+}
+
 export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
   const clientId = args.clientId ? ctx.db.normalizeId("clients", args.clientId) : undefined;
@@ -1466,32 +1495,21 @@ export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
   }
   rows = rows.slice(0, limit);
 
-  // TODO(2a.2 — RRF seam): when the embeddings lane lands, run the vector
-  // query (atoms.by_embedding, same filters) here and merge the two ranked
-  // lists with reciprocal-rank fusion before enrichment. The full-text list
-  // above becomes one input of the fusion, not the final ranking.
+  // ── RRF seam (Phase 2a.2) ──
+  // This function stays the TEXT lane, and stays a QUERY: ctx.vectorSearch is
+  // an ACTION-only platform primitive (never available in a query/mutation),
+  // so the vector lane and reciprocal-rank fusion CANNOT live here. They live
+  // in the hybrid ACTION `internal.knowledge.embeddings.atomsSearchHybrid`,
+  // which calls this query (via atomsSearchInternal) as one fusion input,
+  // runs the atoms `by_embedding` vector search as the other, enriches the
+  // vector hits through `atomsVectorEnrich` (same row shape as below), and
+  // RRF-merges the two ranked lists. The MCP `atoms.search` tool now targets
+  // that action; this query remains the public/text-only entry point.
 
   const names = new NameResolver(ctx);
   const results = [];
   for (const atom of rows) {
-    results.push({
-      atomId: atom._id,
-      statement: atom.statement,
-      predicate: atom.predicate,
-      subject: await names.ref(atom.subjectType as GraphEntityType, atom.subjectId),
-      object: atom.objectEntityId
-        ? await names.ref(atom.objectEntityType as GraphEntityType, atom.objectEntityId)
-        : undefined,
-      objectLiteral: atom.objectLiteral,
-      qualifier: atom.qualifier,
-      clientId: atom.clientId,
-      projectId: atom.projectId,
-      asOf: atom.asOf,
-      status: atom.status,
-      confidence: atom.confidence,
-      primarySourceType: atom.primarySourceType,
-      observationCount: await liveObservationCount(ctx, atom._id),
-    });
+    results.push(await enrichSearchAtom(ctx, names, atom));
   }
   return {
     query: args.query,
@@ -1651,6 +1669,67 @@ export const findPathsInternal = internalQuery({
 export const atomsSearchInternal = internalQuery({
   args: atomsSearchArgs,
   handler: async (ctx, args) => atomsSearchCore(ctx, args),
+});
+
+// ── atomsVectorEnrich — the vector lane's row loader (Phase 2a.2) ──
+// The hybrid action passes the vectorSearch hit ids (already ranked by cosine
+// score) here; this query loads each row, re-applies the SAME semantics the
+// text lane enforces — default LIVE (active|contested) unless a specific
+// status is asked, plus subjectType / clientId / prospect-scope filters — and
+// enriches survivors into the shared search-hit shape. Input order (= vector
+// rank) is preserved, so the action can fuse it against the text list by rank.
+// This mirrors why the vectorSearch filter itself is single-field only: it
+// can't AND clientId with status, so the real narrowing happens right here.
+export const atomsVectorEnrich = internalQuery({
+  args: {
+    atomIds: v.array(v.id("atoms")),
+    clientId: v.optional(v.string()),
+    subjectType: v.optional(entityTypeValidator),
+    status: v.optional(
+      v.union(
+        v.literal("active"),
+        v.literal("contested"),
+        v.literal("superseded"),
+        v.literal("retired"),
+      ),
+    ),
+    includeProspectScoped: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const clientId = args.clientId
+      ? ctx.db.normalizeId("clients", args.clientId)
+      : undefined;
+    if (args.clientId && !clientId) {
+      throw new Error(`invalid_client_id: "${args.clientId}" is not a clients id`);
+    }
+    const prospectFilter =
+      args.includeProspectScoped === false
+        ? new ProspectScopeFilter(ctx, args.clientId as string | undefined)
+        : undefined;
+    const names = new NameResolver(ctx);
+    const results = [];
+    for (const id of args.atomIds) {
+      const atom = await ctx.db.get(id);
+      if (!atom) continue;
+      // Status: a specific status filters to exactly it; otherwise LIVE only.
+      if (args.status) {
+        if (atom.status !== args.status) continue;
+      } else if (atom.status !== "active" && atom.status !== "contested") {
+        continue;
+      }
+      if (args.subjectType && atom.subjectType !== args.subjectType) continue;
+      if (clientId && atom.clientId !== clientId) continue;
+      if (
+        prospectFilter &&
+        (await prospectFilter.isProspectScoped(atom.clientId as string | undefined))
+      ) {
+        prospectFilter.hidden++;
+        continue;
+      }
+      results.push(await enrichSearchAtom(ctx, names, atom));
+    }
+    return results;
+  },
 });
 
 // ── Public Clerk-authed queries (the Phase 2b drawer surface) ──

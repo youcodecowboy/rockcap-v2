@@ -96,6 +96,7 @@ import type * as itemCodeAliases from "../itemCodeAliases.js";
 import type * as keywordLearning from "../keywordLearning.js";
 import type * as knowledge_atomizerLane from "../knowledge/atomizerLane.js";
 import type * as knowledge_atomsCore from "../knowledge/atomsCore.js";
+import type * as knowledge_embeddings from "../knowledge/embeddings.js";
 import type * as knowledge_facilities from "../knowledge/facilities.js";
 import type * as knowledge_graphQueries from "../knowledge/graphQueries.js";
 import type * as knowledge_harnessClassify from "../knowledge/harnessClassify.js";
@@ -264,6 +265,7 @@ declare const fullApi: ApiFromModules<{
   keywordLearning: typeof keywordLearning;
   "knowledge/atomizerLane": typeof knowledge_atomizerLane;
   "knowledge/atomsCore": typeof knowledge_atomsCore;
+  "knowledge/embeddings": typeof knowledge_embeddings;
   "knowledge/facilities": typeof knowledge_facilities;
   "knowledge/graphQueries": typeof knowledge_graphQueries;
   "knowledge/harnessClassify": typeof knowledge_harnessClassify;

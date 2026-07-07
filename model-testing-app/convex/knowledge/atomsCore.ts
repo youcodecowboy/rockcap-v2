@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import {
   isValidPredicate,
   isAtomStorablePredicate,
@@ -591,6 +592,23 @@ async function processCandidate(
   return { type: "superseded", atomId, supersededAtomId: atomId, winner };
 }
 
+/** Atom ids to (re)embed after a batch (Phase 2a.2 write-path hook). Exactly
+ * the outcomes that produce a NEW live row carrying a fresh statement: a
+ * `created` atom, a value-changed `superseded` where the NEW value won, or a
+ * `contested` arrival (born contested — still live, still vector-searchable).
+ * Superseded LOSERS (winner "incumbent") and corroborations are deliberately
+ * excluded: no new statement, so no re-embed (the embed action also skips any
+ * row that already has a vector). */
+function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
+  const ids: Id<"atoms">[] = [];
+  for (const o of outcomes) {
+    if (o.type === "created") ids.push(o.atomId);
+    else if (o.type === "contested") ids.push(o.atomId);
+    else if (o.type === "superseded" && o.winner === "new") ids.push(o.atomId);
+  }
+  return ids;
+}
+
 /** Atoms relevant to facility minting from a batch's outcomes: any live
  * atom touched or created whose predicate is facility-shaped (spec §3.3). */
 async function collectFacilityAtoms(
@@ -694,6 +712,18 @@ export const createAtomsBatch = internalMutation({
       facilityAtoms.length > 0
         ? await mintFacilitiesForAtoms(ctx, facilityAtoms)
         : { minted: [], rebuilt: [], skipped: [] };
+
+    // Embeddings write-path hook (Phase 2a.2): schedule Voyage embedding of the
+    // new/value-changed atoms one scheduler hop later. Lane-disabled (no key)
+    // → the action no-ops; failure here never blocks the write.
+    const embedIds = embedTargetIds(outcomes);
+    if (embedIds.length > 0) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.embeddings.embedAtoms,
+        { atomIds: embedIds },
+      );
+    }
 
     return { created, corroborated, superseded, contested, rejected, facilities };
   },
@@ -926,6 +956,19 @@ export const reatomizeDiff = internalMutation({
         ? await mintFacilitiesForAtoms(ctx, facilityAtoms)
         : { minted: [], rebuilt: [], skipped: [] };
 
+    // Embeddings write-path hook (Phase 2a.2) — same rule as createAtomsBatch:
+    // embed the new/value-changed atoms this revision produced. Superseded
+    // prior-revision rows keep their (now stale-context) embedding but are no
+    // longer live, so retrieval's status filter excludes them.
+    const embedIds = embedTargetIds(outcomes);
+    if (embedIds.length > 0) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.embeddings.embedAtoms,
+        { atomIds: embedIds },
+      );
+    }
+
     return {
       kept: [...keptIds],
       changed: [...changedIds],
@@ -988,9 +1031,21 @@ export const upsertChunks = internalMutation({
         locator: chunk.locator,
         clientId: args.clientId,
         projectId: args.projectId,
-        // embedding backfilled by the 2a.2 embeddings lane
+        // embedding filled by the 2a.2 hook scheduled just below
       });
     }
+
+    // Embeddings write-path hook (Phase 2a.2): the just-created chunks carry no
+    // vectors — schedule Voyage embedding for this revision. Lane-disabled (no
+    // key) → the action no-ops.
+    if (args.chunks.length > 0) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.embeddings.embedChunks,
+        { documentId: args.documentId, contentChecksum: args.contentChecksum },
+      );
+    }
+
     return { deleted: existing.length, inserted: args.chunks.length };
   },
 });

@@ -4734,7 +4734,7 @@ const TOOLS: McpTool[] = [
   {
     name: "atoms.search",
     description:
-      "Search stored atoms by full-text over their one-sentence statements (Convex search index; the vector lane + RRF hybrid merge arrives with the 2a.2 embeddings pass). Filters: clientId (owning scope), subjectType, status (default: live atoms only — active + contested). Each hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one.",
+      "Search stored atoms by a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). Filters: clientId (owning scope), subjectType, status (default: live atoms only — active + contested). Each hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable the call degrades to the text lane alone (vectorLaneDisabled:true).",
     inputSchema: {
       type: "object",
       properties: {
@@ -4748,7 +4748,7 @@ const TOOLS: McpTool[] = [
       required: ["query"],
     },
     handler: async (ctx, _userId, args) => {
-      const result = await ctx.runQuery(internal.knowledge.graphQueries.atomsSearchInternal, {
+      const result = await ctx.runAction(internal.knowledge.embeddings.atomsSearchHybrid, {
         query: args.query,
         clientId: args.clientId,
         subjectType: args.subjectType,
