@@ -135,11 +135,17 @@ export default function AtomRail({
                       {a.predicate}
                     </span>
                     <span
+                      title={
+                        contested
+                          ? "Sources disagree on this fact — the graph keeps every version with its provenance instead of silently picking one. Click for the competing values."
+                          : "Current per the most authoritative, most recent source."
+                      }
                       style={{
                         marginLeft: "auto",
                         fontSize: 9,
                         fontWeight: 700,
                         letterSpacing: ".08em",
+                        cursor: "help",
                         color: contested ? colors.accent.red : colors.accent.green,
                       }}
                     >

@@ -564,7 +564,10 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
               cross-client scope
             </span>
           )}
-          <span style={{ marginLeft: "auto", color: colors.text.dim, fontSize: 11.5, fontFamily: "ui-monospace, Menlo, monospace" }}>
+          <span
+            title="Client-wide = every atom scoped to this client. In view = the current center's one-hop neighborhood — Explore a node to see its own knowledge. Contested = live sources disagree; both values are kept with provenance."
+            style={{ marginLeft: "auto", color: colors.text.dim, fontSize: 11.5, fontFamily: "ui-monospace, Menlo, monospace", cursor: "help" }}
+          >
             {clientTotals
               ? `${clientTotals.total} atoms client-wide${clientTotals.contested ? ` (${clientTotals.contested} contested)` : ""} · ${nodes.length} entities · ${atoms.length} in view${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`
               : `${nodes.length} entities · ${atoms.length} atoms${contestedCount ? ` · ${contestedCount} contested` : ""}${satellites.length ? ` · ${satellites.length} knowledge points` : ""}`}

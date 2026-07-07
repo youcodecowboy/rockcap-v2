@@ -265,12 +265,24 @@ class ProspectScopeFilter {
   /** Atom-lane items excluded so far (edges + attributes + interEdges /
    * search hits) — surfaces as counts.prospectScopedHidden. */
   hidden = 0;
-  constructor(private ctx: QueryCtx) {}
+  /**
+   * @param ownScopeClientId — the viewing context's OWN client scope. An
+   * entity's own atoms are never hidden from its own view: the §14b.6a
+   * asymmetry protects a client's view from OTHER prospects' speculative
+   * intel, not from itself (a prospect-status client would otherwise render
+   * its own drawer nearly empty — the exact confusion this exemption removes).
+   */
+  constructor(
+    private ctx: QueryCtx,
+    private ownScopeClientId?: string,
+  ) {}
 
   /** True iff the owning clientId resolves to a prospect-status clients row.
-   * No clientId (company-wide atom) or unresolvable id → never filtered. */
+   * No clientId (company-wide atom), the viewer's own scope, or an
+   * unresolvable id → never filtered. */
   async isProspectScoped(ownerClientId: string | undefined): Promise<boolean> {
     if (!ownerClientId) return false;
+    if (this.ownScopeClientId && ownerClientId === this.ownScopeClientId) return false;
     const hit = this.cache.get(ownerClientId);
     if (hit !== undefined) return hit;
     const nid = this.ctx.db.normalizeId("clients", ownerClientId);
@@ -1020,8 +1032,14 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   // exclude (includeProspectScoped: false). One instance spans the center
   // expansion, attributes, AND the inter-ring pass, so each owning clientId
   // is loaded once and `hidden` is the single post-filter total.
+  // Own-scope exemption: a client center never has its own atoms hidden
+  // from its own view (see ProspectScopeFilter doc).
+  const ownScope =
+    args.entityType === "client" ? args.entityId : undefined;
   const prospectFilter =
-    args.includeProspectScoped === false ? new ProspectScopeFilter(ctx) : undefined;
+    args.includeProspectScoped === false
+      ? new ProspectScopeFilter(ctx, ownScope)
+      : undefined;
 
   const { atomEdges, nativeEdges } = await federatedEdges(
     ctx,
@@ -1425,7 +1443,9 @@ export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
   // `prospectScopedHidden` counts hidden hits among the fetched candidates
   // (the over-fetch window), not the whole corpus.
   const prospectFilter =
-    args.includeProspectScoped === false ? new ProspectScopeFilter(ctx) : undefined;
+    args.includeProspectScoped === false
+      ? new ProspectScopeFilter(ctx, args.clientId as string | undefined)
+      : undefined;
   if (prospectFilter) {
     const kept: typeof rows = [];
     for (const atom of rows) {
