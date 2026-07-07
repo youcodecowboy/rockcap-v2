@@ -18,6 +18,12 @@ interface KnowledgeGraphDrawerProps {
   entryEntityType: GraphEntityType;
   entryEntityId: string;
   entryName: string;
+  /** Spec §14b.6a — the entry entity is a prospect-status clients row.
+   * Viewing a prospect is ALWAYS unfiltered (connection-hunting is the point)
+   * and the "Prospect intel" toggle is not rendered. Client-side mounts leave
+   * this false/undefined: prospect-scoped atoms are hidden by default and the
+   * toolbar toggle reveals them. */
+  entryIsProspect?: boolean;
   onClose: () => void;
 }
 
@@ -75,7 +81,7 @@ function attrProvenance(a: RawAttr): string {
   return a.asOf ? `atom · ${a.asOf}` : "atom";
 }
 
-export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, entryName, onClose }: KnowledgeGraphDrawerProps) {
+export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, entryName, entryIsProspect, onClose }: KnowledgeGraphDrawerProps) {
   const colors = useColors();
 
   // Breadcrumb / pivot stack — bottom is the entry entity, top is the current center.
@@ -86,6 +92,10 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
   const [selectedAtomId, setSelectedAtomId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeFamily, setActiveFamily] = useState<GraphFamily | "all">("all");
+  // Prospect-intel toggle (spec §14b.6a). Only meaningful when the entry is a
+  // client: off (default) hides prospect-scoped atoms; on reveals them.
+  // A prospect entry is always unfiltered and never shows the toggle.
+  const [showProspectIntel, setShowProspectIntel] = useState(false);
 
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
@@ -114,6 +124,8 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
   const data = useQuery(api.knowledge.graphQueries.expandEntity, {
     entityType: center.type,
     entityId: center.id,
+    // Prospect entry ⇒ always unfiltered; client entry ⇒ the toggle decides.
+    includeProspectScoped: entryIsProspect || showProspectIntel,
   });
 
   // ── derive view-models from the expandEntity result ──
@@ -199,6 +211,10 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     const shown = (data.edges as RawEdge[]).length + (data.nativeEdges as RawEdge[]).length;
     return Math.max(0, c.edges + c.nativeEdges - shown);
   }, [data]);
+
+  // How many atom-lane items the prospect-scope filter hid (0 when the
+  // filter is off) — labels the "Prospect intel" toggle chip.
+  const prospectHidden = (data?.counts as { prospectScopedHidden?: number } | undefined)?.prospectScopedHidden ?? 0;
 
   // ── filtering ──
   const searchLc = search.trim().toLowerCase();
@@ -347,7 +363,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
           <div style={{ flex: 1 }} />
           {entryEntityType === "client" && (
             <Link
-              href={`/clients/${entryEntityId}`}
+              href={entryIsProspect ? `/prospects/${entryEntityId}` : `/clients/${entryEntityId}`}
               style={{
                 background: colors.bg.card,
                 color: colors.text.secondary,
@@ -358,7 +374,7 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
                 textDecoration: "none",
               }}
             >
-              Client profile ↗
+              {entryIsProspect ? "Prospect profile ↗" : "Client profile ↗"}
             </Link>
           )}
           <button
@@ -433,6 +449,30 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
             {chip("All", "all")}
             {FAMILIES.map((f) => chip(f, f))}
           </div>
+          {/* Prospect-intel toggle (spec §14b.6a) — client entries only; a
+              prospect entry is always unfiltered so the toggle never shows. */}
+          {!entryIsProspect && (
+            <button
+              onClick={() => setShowProspectIntel((on) => !on)}
+              title={
+                showProspectIntel
+                  ? "Prospect-scoped atoms are shown — click to hide them"
+                  : "Prospect-scoped atoms are hidden by default — click to include prospect intel"
+              }
+              style={{
+                border: `1px solid ${showProspectIntel ? colors.entityTypes.prospect : colors.border.default}`,
+                background: showProspectIntel ? `${colors.entityTypes.prospect}15` : "transparent",
+                color: showProspectIntel ? colors.entityTypes.prospect : colors.text.muted,
+                borderRadius: 999,
+                padding: "4px 13px",
+                fontSize: 12,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Prospect intel{!showProspectIntel && prospectHidden > 0 ? ` (${prospectHidden})` : ""}
+            </button>
+          )}
           {crossClient && (
             <span
               title="The current center is not the entry client"

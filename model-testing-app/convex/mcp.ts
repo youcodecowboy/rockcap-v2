@@ -4617,6 +4617,7 @@ const TOOLS: McpTool[] = [
         subjectType: { type: "string", description: "Optional: client | project | contact | company | facility | candidate." },
         status: { type: "string", description: "Optional: active | contested | superseded | retired. Default: live (active + contested)." },
         limit: { type: "number", description: "Default 20, max 50." },
+        includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide hits whose owning clientId is a prospect-status clients row; counts.prospectScopedHidden reports how many were hidden." },
       },
       required: ["query"],
     },
@@ -4627,6 +4628,7 @@ const TOOLS: McpTool[] = [
         subjectType: args.subjectType,
         status: args.status,
         limit: args.limit,
+        includeProspectScoped: args.includeProspectScoped,
       });
       return asText(result);
     },
@@ -4652,6 +4654,7 @@ const TOOLS: McpTool[] = [
         direction: { type: "string", description: "out | in | both (default both)." },
         includeAttributes: { type: "boolean", description: "Default true. Set false when you only need edges." },
         limit: { type: "number", description: "Fan-out cap per list. Default 30, hard cap 100." },
+        includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide ATOM-lane items (edges/attributes/interEdges) whose owning clientId is a prospect-status clients row; native edges are public record and always exempt. counts.prospectScopedHidden reports how many were hidden." },
       },
       required: ["entityType", "entityId"],
     },
@@ -4663,6 +4666,7 @@ const TOOLS: McpTool[] = [
         direction: args.direction,
         includeAttributes: args.includeAttributes,
         limit: args.limit,
+        includeProspectScoped: args.includeProspectScoped,
       });
       return asText(result);
     },

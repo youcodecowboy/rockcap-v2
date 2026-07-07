@@ -60,6 +60,8 @@ Persisted to Convex via the MCP tool surface:
 
 7. **Draft per-scheme enrichment (v1.2.5):** one `prospectSchemes` row per live SPV, written via `companies.upsertProspectScheme` in step 10b. Each row is a draft (`operatorConfirmed: false`) containing the best available estimate of what the scheme is building — type, unit count, GDV range, planning references, confidence label, and source URLs. The operator confirms each row in the prospect detail Track Record tab; confirmed rows are never clobbered by a re-run.
 
+8. **Knowledge atoms + Graph connections (Spec 2 §14b.6b, 2026-07-07):** the run's discrete facts are atomized into the knowledge graph via `atoms.createBatch` (step 10c; scoped to the prospect's clientId — prospect-scoped by derivation, graduating automatically on promotion), and a `graph.sharedNeighbors` connection check against the existing graph lands as a `## Graph connections` section in `intelMarkdown`, each hit with one-line provenance and a public-record vs internal marking.
+
 What it does not do:
 
 - Does not send email.
@@ -116,6 +118,11 @@ What it does not do:
 
 10b. **Enrich live schemes (Track Record).** Load `references/scheme-from-charges.md` and follow it. Call `companies.getProspectSchemes({clientId})` to get the group's live schemes (the charge-bearing SPVs), then for the 5-7 most recent run the deep address → planning/web research and persist a draft estimate per scheme via `companies.upsertProspectScheme` (operatorConfirmed defaults false; the operator confirms in the Track Record tab). Estimates only, every figure cited. This populates the prospect detail Track Record tab.
 
+10c. **Atomize + connection check (Spec 2 §14b.6b, 2026-07-07).** Two sub-steps, run after the intelligence is persisted and before the report is finalised:
+
+    - **Atomize the gathered facts.** Write the run's discrete, evidence-backed facts into the knowledge graph via `atoms.createBatch`, following the `../atomize-document/SKILL.md` persistence gates and procedure (the anchored / discriminating / material extraction block, `atoms.vocabulary` for legal predicates, and reading + repairing the `rejected` array) — do not duplicate that block here; load and follow it. Prospect-intel differences from a document pass: sources are **intel-tier, authorityTier 1-2** (web research, Apollo, CH profile summaries: tier 1; the CH charge register and filings: tier 2 with `sourceType: "companies_house"`; use `sourceType: "skill"` for derived findings such as the lender-DNA summary), and every atom is **scoped to the prospect's clientId**. That scoping is what makes the atoms prospect-scoped in read paths (an atom is prospect-scoped iff its owning clients row has `status: "prospect"`) — client drawers hide them by default, the prospect view and the agent lane see everything, and promotion via `client.activate` graduates every atom automatically with no migration. **Cost/dedup note:** this is the *incremental* lane — a prospect's intel is small (typically well under one batch); full-corpus / bulk atomization stays with the `atomize-document` skill and its cost guardrail. Check `atoms.getForSubject` first on a refresh run so re-runs converge instead of re-deriving.
+    - **Run the connection check.** Call `graph.sharedNeighbors` between the prospect and the existing graph: at minimum `{entities: [prospect clientId, ...]}` pairings against the key people contacts created in step 8 and any group companies from step 8b (2-5 entities per call; run multiple calls if the cast is larger). Then add a **`## Graph connections`** section to `intelMarkdown` (unnumbered, between sections 6 and 7 — see `references/intel-report-template.md`) listing each hit with a one-line provenance ("shares director J. Carter with client Bayfield Homes — CH officer register, exact-name match" / "borrows from Hampshire Trust Bank, also lender to 2 book clients — CH charge 0042"). Mark each hit **public record** (`sourceType: companies_house` / native CH edges) or **internal** (client-document-derived) — `outreach-draft` may only cite the public-record ones to the prospect (see its Mutual connections rule). No hits: write "No graph connections found (checked: {entities})" rather than omitting the section.
+
 11. **Outreach is gated — do NOT draft in this run (2026-05-30).** The cadence package, the lender-tier gate, and the contactless held-draft rule all moved to the `outreach-draft` skill. Do not call `companies.getLenderTierConflict`, do not compose touches, do not call `cadence.create`. Outreach is produced only after the operator reviews this intel and clicks **"Accept — ready for outreach"** on the prospect detail page (which sets `outreachReadyAt`); a later session then runs `outreach-draft` for the ready prospects. The Apollo email status you captured in step 8 still matters — it travels on the contacts you created and `outreach-draft` reads it to decide contactless-vs-addressed — but nothing is drafted here. The final manifest line (step 12) records `Outreach: not drafted — pending operator accept`.
 
 12. **Return + Definition-of-Done manifest.** First append a `## Definition of Done` section to the END of `intelMarkdown` (no schema change — it is part of the report). Emit it on **every** run, the same fixed checklist each time, each line either `DONE` or `SKIPPED — {reason}`:
@@ -130,6 +137,7 @@ What it does not do:
     - 9 report sections present: DONE / SKIPPED — reason
     - Per-scheme Track Record rows: DONE / SKIPPED — reason
     - Lender DNA from the group book: DONE / SKIPPED — reason
+    - Atoms written + Graph connections section: DONE / SKIPPED — reason
     - dealType + dealSizeRange set: DONE / SKIPPED — reason
     - Gaps surfaced as chips: DONE / SKIPPED — reason
     - Outreach: not drafted — pending operator accept (mark "Ready for outreach")
@@ -172,6 +180,8 @@ This skill calls these MCP-exposed tools:
 - `companies.getProspectSchemes` — for step 10b (read the group's live schemes + candidate addresses parsed from charge particulars).
 - `companies.upsertProspectScheme` — for step 10b (persist the per-scheme "what they're building" draft estimate; operator confirms in the Track Record tab).
 - `structure.renderChart` — for step 8b (render the corporate-structure chart embedded in the report).
+- `atoms.vocabulary`, `atoms.getForSubject`, `atoms.createBatch` — for step 10c (atomize the run's facts into the knowledge graph, per the `atomize-document` skill's gates).
+- `graph.sharedNeighbors` — for step 10c (the prospect-connection check feeding the `## Graph connections` section).
 - `skillRun.start` (with dedup) — for step 1
 - `skillRun.complete` (with intelMarkdown) — for step 12
 - `prospect.transitionState` — for step 12 (set `prospectState: "researched"` on completion, guarded against downgrade)

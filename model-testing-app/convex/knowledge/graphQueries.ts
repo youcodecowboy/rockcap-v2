@@ -59,6 +59,25 @@ import type { Doc, Id } from "../_generated/dataModel";
 //   - public Clerk-authed queries → the Phase 2b knowledge drawer
 //   - clientGraphSection → the bounded Graph section on
 //     prospects.getDeepContext (client./prospect.getDeepContext).
+//
+// ── Prospect-scope visibility filter (spec §14b.6a) ──
+// "Prospect atoms" are DERIVED, never flagged: an atom is prospect-scoped iff
+// its owning `clientId` row has status "prospect". expandEntity + atomsSearch
+// take `includeProspectScoped?: boolean`:
+//   - undefined / true → no filter (the DEFAULT; the MCP/LLM lane sees
+//     everything — drafting rules gate what leaves, not retrieval).
+//   - false → ATOM-lane items (edges, attributes, interEdges, search hits)
+//     whose owning clientId resolves to a prospect-status clients row are
+//     excluded. Company-wide atoms (no clientId) are never filtered.
+// NATIVE edges are public/structural record (CH officers, clientRoles,
+// facilities columns) and are EXEMPT from the filter — deliberately, even
+// when synthesized from a prospect's own structural data. Only the atom lane
+// is scoped. The atom-lane filter runs BEFORE the atom-wins dedupe, so a
+// public-record native mirror survives when its atom twin is hidden.
+// Post-filter counts ride along plus `counts.prospectScopedHidden`, so the
+// drawer can label its toggle ("include prospect intel (12)"). Promotion is
+// free: `client.activate` flips the owning row's status and every atom
+// graduates — the filter is a status read, not stored state.
 
 // ── Constants ──
 
@@ -151,6 +170,10 @@ type FedEdge = {
   status: "active" | "contested";
   provenance: EdgeProvenance;
   native: boolean;
+  /** The atom's owning clientId (scope tag) — drives the prospect-scope
+   * visibility filter (spec §14b.6a). Unset for native edges and
+   * company-wide atoms; never leaves this module (stripped by resolveEdges). */
+  ownerClientId?: string;
 };
 
 // ── Name resolution (batched per call via cache) ──
@@ -225,6 +248,42 @@ class NameResolver {
         };
       }
     }
+  }
+}
+
+// ── Prospect-scope filter (spec §14b.6a — see module header) ──
+// Batched per call: each distinct owning clientId is loaded ONCE (memoized
+// Map), so filtering a whole result set costs at most a handful of gets.
+
+class ProspectScopeFilter {
+  /** clientId (string) → owning row has status "prospect". */
+  private cache = new Map<string, boolean>();
+  /** Atom-lane items excluded so far (edges + attributes + interEdges /
+   * search hits) — surfaces as counts.prospectScopedHidden. */
+  hidden = 0;
+  constructor(private ctx: QueryCtx) {}
+
+  /** True iff the owning clientId resolves to a prospect-status clients row.
+   * No clientId (company-wide atom) or unresolvable id → never filtered. */
+  async isProspectScoped(ownerClientId: string | undefined): Promise<boolean> {
+    if (!ownerClientId) return false;
+    const hit = this.cache.get(ownerClientId);
+    if (hit !== undefined) return hit;
+    const nid = this.ctx.db.normalizeId("clients", ownerClientId);
+    const row = nid ? await this.ctx.db.get(nid) : null;
+    const isProspect = !!row && row.status === "prospect";
+    this.cache.set(ownerClientId, isProspect);
+    return isProspect;
+  }
+
+  /** Keep the non-prospect-scoped items; count the rest in `hidden`. */
+  async filter<T extends { ownerClientId?: string }>(items: T[]): Promise<T[]> {
+    const kept: T[] = [];
+    for (const item of items) {
+      if (await this.isProspectScoped(item.ownerClientId)) this.hidden++;
+      else kept.push(item);
+    }
+    return kept;
   }
 }
 
@@ -357,17 +416,22 @@ async function collectAtomEdges(
         observationCount: await liveObservationCount(ctx, atom._id),
       },
       native: false,
+      ownerClientId: atom.clientId as string | undefined,
     });
   }
   return edges;
 }
 
+/** GraphAttribute plus the atom's owning clientId — internal only, for the
+ * prospect-scope filter; stripped before the attribute leaves the module. */
+type AttrWithOwner = GraphAttribute & { ownerClientId?: string };
+
 async function collectAtomAttributes(
   ctx: QueryCtx,
   entityType: GraphEntityType,
   entityId: string,
-): Promise<GraphAttribute[]> {
-  const attrs: GraphAttribute[] = [];
+): Promise<AttrWithOwner[]> {
+  const attrs: AttrWithOwner[] = [];
   for (const status of LIVE_STATUSES) {
     const rows = await ctx.db
       .query("atoms")
@@ -386,6 +450,7 @@ async function collectAtomAttributes(
         asOf: atom.asOf,
         status: atom.status as "active" | "contested",
         confidence: atom.confidence,
+        ownerClientId: atom.clientId as string | undefined,
       });
     }
   }
@@ -823,11 +888,21 @@ async function federatedEdges(
   ctx: QueryCtx,
   entityType: GraphEntityType,
   entityId: string,
-  opts?: { predicates?: string[]; direction?: "out" | "in" | "both" },
+  opts?: {
+    predicates?: string[];
+    direction?: "out" | "in" | "both";
+    /** Prospect-scope filter (spec §14b.6a). ATOM lane only — applied BEFORE
+     * the atom-wins dedupe so a public-record native mirror survives when
+     * its atom twin is hidden. Native edges are structural record, exempt. */
+    prospectFilter?: ProspectScopeFilter;
+  },
   cache: ScanCache = {},
 ): Promise<{ atomEdges: FedEdge[]; nativeEdges: FedEdge[] }> {
   const direction = opts?.direction ?? "both";
-  const atomEdges = await collectAtomEdges(ctx, entityType, entityId, direction);
+  let atomEdges = await collectAtomEdges(ctx, entityType, entityId, direction);
+  if (opts?.prospectFilter) {
+    atomEdges = await opts.prospectFilter.filter(atomEdges);
+  }
   let nativeEdges = (await synthesizeNativeEdges(ctx, entityType, entityId, cache)).filter(
     (e) => direction === "both" || e.direction === direction,
   );
@@ -908,6 +983,11 @@ export type ExpandEntityArgs = {
   direction?: "out" | "in" | "both";
   includeAttributes?: boolean;
   limit?: number;
+  /** Prospect-scope visibility (spec §14b.6a). undefined/true = no filter
+   * (the default — the MCP/LLM lane sees everything); false = exclude
+   * ATOM-lane items whose owning clientId is a prospect-status clients row.
+   * Native edges are public/structural record and always exempt. */
+  includeProspectScoped?: boolean;
 };
 
 export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
@@ -918,18 +998,29 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   // unindexed native lanes (projects/facilities/clients/contacts scans) are
   // read once per call, not once per ring member.
   const cache: ScanCache = {};
+  // Prospect-scope filter — only instantiated when explicitly asked to
+  // exclude (includeProspectScoped: false). One instance spans the center
+  // expansion, attributes, AND the inter-ring pass, so each owning clientId
+  // is loaded once and `hidden` is the single post-filter total.
+  const prospectFilter =
+    args.includeProspectScoped === false ? new ProspectScopeFilter(ctx) : undefined;
 
   const { atomEdges, nativeEdges } = await federatedEdges(
     ctx,
     args.entityType,
     args.entityId,
-    { predicates: args.predicates, direction: args.direction },
+    { predicates: args.predicates, direction: args.direction, prospectFilter },
     cache,
   );
 
   let attributes: GraphAttribute[] = [];
   if (args.includeAttributes !== false) {
-    attributes = await collectAtomAttributes(ctx, args.entityType, args.entityId);
+    let attrsWithOwner = await collectAtomAttributes(ctx, args.entityType, args.entityId);
+    if (prospectFilter) {
+      attrsWithOwner = await prospectFilter.filter(attrsWithOwner);
+    }
+    // Strip the internal ownerClientId before the attribute leaves the module.
+    attributes = attrsWithOwner.map(({ ownerClientId: _owner, ...attr }) => attr);
     if (args.entityType === "client") {
       attributes.push(...(await nativeAttributesForClient(ctx, args.entityId)));
     }
@@ -973,7 +1064,12 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   const interAtomByKey = new Map<string, InterFed>();
   const interNativeCandidates: InterFed[] = [];
   for (const member of ringMembers) {
-    const memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing);
+    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing);
+    if (prospectFilter) {
+      // Atom lane only, same as the center expansion — a hidden atom edge
+      // simply lets its public-record native mirror (if any) win the key.
+      memberAtomEdges = await prospectFilter.filter(memberAtomEdges);
+    }
     for (const edge of memberAtomEdges) {
       const key = canonicalEdgeIdentity(member.type, member.id, edge);
       if (interAtomByKey.has(key)) continue;
@@ -1031,6 +1127,10 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
       interEdges: interTotal,
       attributes: attributes.length,
       truncated,
+      // Post-filter semantics: the counts above reflect what survived the
+      // prospect-scope filter; this is how many atom-lane items it hid
+      // (0 when the filter is off) — the drawer's toggle label reads it.
+      prospectScopedHidden: prospectFilter?.hidden ?? 0,
     },
   };
 }
@@ -1238,6 +1338,10 @@ export type AtomsSearchArgs = {
   subjectType?: GraphEntityType;
   status?: "active" | "contested" | "superseded" | "retired";
   limit?: number;
+  /** Prospect-scope visibility (spec §14b.6a) — same semantics as
+   * expandEntity: undefined/true = no filter (default), false = exclude hits
+   * whose owning clientId is a prospect-status clients row. */
+  includeProspectScoped?: boolean;
 };
 
 export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
@@ -1262,6 +1366,24 @@ export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
     .take(args.status ? limit : limit * 3);
   if (!args.status) {
     rows = rows.filter((a) => a.status === "active" || a.status === "contested");
+  }
+
+  // Prospect-scope filter (spec §14b.6a) — applied to the fetched candidate
+  // set BEFORE the final slice, so the returned page is fully non-prospect.
+  // `prospectScopedHidden` counts hidden hits among the fetched candidates
+  // (the over-fetch window), not the whole corpus.
+  const prospectFilter =
+    args.includeProspectScoped === false ? new ProspectScopeFilter(ctx) : undefined;
+  if (prospectFilter) {
+    const kept: typeof rows = [];
+    for (const atom of rows) {
+      if (await prospectFilter.isProspectScoped(atom.clientId as string | undefined)) {
+        prospectFilter.hidden++;
+      } else {
+        kept.push(atom);
+      }
+    }
+    rows = kept;
   }
   rows = rows.slice(0, limit);
 
@@ -1292,7 +1414,15 @@ export async function atomsSearchCore(ctx: QueryCtx, args: AtomsSearchArgs) {
       observationCount: await liveObservationCount(ctx, atom._id),
     });
   }
-  return { query: args.query, results, counts: { returned: results.length, limit } };
+  return {
+    query: args.query,
+    results,
+    counts: {
+      returned: results.length,
+      limit,
+      prospectScopedHidden: prospectFilter?.hidden ?? 0,
+    },
+  };
 }
 
 // ── getDeepContext Graph section (spec §9 "existing tools benefit") ──
@@ -1384,6 +1514,9 @@ const expandArgs = {
   direction: v.optional(v.union(v.literal("out"), v.literal("in"), v.literal("both"))),
   includeAttributes: v.optional(v.boolean()),
   limit: v.optional(v.number()),
+  // Spec §14b.6a — undefined/true = unfiltered (default), false = hide
+  // prospect-scoped atom-lane items. Native edges always exempt.
+  includeProspectScoped: v.optional(v.boolean()),
 };
 
 const sharedNeighborsArgs = {
@@ -1412,6 +1545,8 @@ const atomsSearchArgs = {
     ),
   ),
   limit: v.optional(v.number()),
+  // Spec §14b.6a — same semantics as expandEntity's flag.
+  includeProspectScoped: v.optional(v.boolean()),
 };
 
 // ── Internal wrappers (the MCP graph.* / atoms.search surface) ──

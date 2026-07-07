@@ -114,6 +114,18 @@ Give **each** key person (every majority PSC and each key director) their own `#
 - **HubSpot signals:** {any new touchpoints / notes added}
 - {If empty: "No notable signals in last 90 days"}
 
+## Graph connections
+
+(From `graph.sharedNeighbors` in workflow step 10c — the prospect + its key people/companies intersected against the existing knowledge graph. Deliberately UNNUMBERED so the canonical 1-9 numbering is stable for parsers; keep it between sections 6 and 7.)
+
+- One line per hit, with provenance and a public-record / internal marking:
+  - {example: "Shares director James Carter with client Bayfield Homes — CH officer register, exact-name match. [public record]"}
+  - {example: "Borrows from Hampshire Trust Bank, lender to 2 book clients — CH charge 0042. [public record]"}
+  - {example: "Same architect (Studio Partington) as the Comberton scheme — appraisal, client documents. [internal — strategy only, never cite to the prospect]"}
+- {If empty: "No graph connections found (checked: {entities})"}
+
+The marking is load-bearing: `outreach-draft` may reference **public record** hits (`sourceType: companies_house` / native CH edges) in intro lines; **internal** (client-document-derived) hits inform angle and strategy but are never cited to the prospect.
+
 ## 7. Recommended Approach
 
 This section is REQUIRED to carry a classified deal type AND a deal-size range. Both are mandatory outputs of the skill, not optional colour. Neither may be omitted; if evidence is thin, use the fallback rules below and label the confidence Low. The first two bullets feed structured fields on the clients row (`dealType`, `dealSizeRange`) via `clients.setProspectFacts`, so they must be present and well-formed.

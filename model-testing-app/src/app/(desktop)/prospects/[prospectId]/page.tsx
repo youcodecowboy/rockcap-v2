@@ -22,6 +22,7 @@ import { KnowledgeTab } from "@/components/prospects/tabs/KnowledgeTab";
 import { TrackRecordTab } from "@/components/prospects/tabs/TrackRecordTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
 import { RevisionRequestModal } from "@/components/prospects/RevisionRequestModal";
+import KnowledgeGraphDrawer from "@/components/knowledge/KnowledgeGraphDrawer";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 export default function ProspectDetailPage() {
@@ -32,6 +33,9 @@ export default function ProspectDetailPage() {
 
   const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
+  // Knowledge Graph drawer — prospects are clients rows, so the entry entity
+  // is type "client"; entryIsProspect keeps the view unfiltered (§14b.6a).
+  const [graphOpen, setGraphOpen] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
   const cadencesRaw = useQuery(
@@ -172,6 +176,7 @@ export default function ProspectDetailPage() {
         threadsCount={(threads as any[])?.length ?? 0}
         knowledgeCount={(knowledgeFacts as any[])?.length ?? 0}
         lenderTierConflict={lenderTierConflict as any}
+        onOpenGraph={() => setGraphOpen(true)}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -260,6 +265,18 @@ export default function ProspectDetailPage() {
         hasSendableContact={hasSendableContact}
         touchCount={touchCount}
       />
+
+      {/* Knowledge Graph drawer — prospect entry: always unfiltered, no
+          "Prospect intel" toggle (spec §14b.6a). */}
+      {graphOpen && (
+        <KnowledgeGraphDrawer
+          entryEntityType="client"
+          entryEntityId={prospectId}
+          entryName={prospect.name ?? "Prospect"}
+          entryIsProspect
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
 
       {showRevisionModal && (
         <RevisionRequestModal
