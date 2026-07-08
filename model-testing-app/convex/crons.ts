@@ -179,4 +179,18 @@ crons.interval(
   internal.knowledge.candidates.enrichmentSweep,
 );
 
+// Knowledge-graph nightly integrity sweep (Spec 2 §10). Once daily, chains
+// paginated sub-jobs: retro version-precedence pass over contested groups →
+// stale-contest ageing (flag contests older than 14d the retro didn't resolve)
+// → orphan/dangling atom retirement + supersededBy repair + resolved-candidate
+// tombstone hygiene → salience/IDF refresh → retrievalLog prune + chunk-backfill
+// tick. Every table walk is a sequence of bounded mutations so no transaction is
+// unbounded. 2:45 UTC sits clear of the other daily jobs (2:30 / 3:00 / 3:15 /
+// 3:30 / 3:45 / 4:00 / 5:00).
+crons.daily(
+  "knowledge-integrity-sweep",
+  { hourUTC: 2, minuteUTC: 45 },
+  internal.knowledge.integritySweep.nightlyIntegritySweep,
+);
+
 export default crons;

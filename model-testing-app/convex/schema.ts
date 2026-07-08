@@ -4840,10 +4840,16 @@ export default defineSchema({
         v.literal("document_trashed"),
         v.literal("operator"),
         v.literal("version_precedence"), // auto-resolved: newer version of the same document series won (knowledge/versionPrecedence.ts)
+        v.literal("dangling_entity"), // nightly integrity sweep retired an atom whose subject/object entity row no longer resolves (knowledge/integritySweep.ts)
       ),
     ),
     confidence: v.number(), // corroboration-adjusted (spec §7)
     salience: v.optional(v.number()), // IDF-informed ranking weight (spec §6.2, Phase 2c)
+    // Set by the nightly integrity sweep when a contested atom has outlived the
+    // stale-contest window (default 14d) without version precedence resolving
+    // it — the marker operators filter on to triage aged contests. Cleared
+    // implicitly when the atom leaves "contested" (resolved / superseded).
+    contestFlaggedAt: v.optional(v.string()),
     primarySourceType: v.string(), // most-authoritative observation's sourceType (display convenience)
     embedding: v.optional(v.array(v.float64())), // 1024-dim (spec §13); optional until 2a.2 embeds
   })
