@@ -275,6 +275,14 @@ export const sweep = internalAction({
             candidates,
           },
         );
+        // Re-atomization refreshes atoms; refresh the prose chunks for the
+        // same revision too (delete-and-recreate makes this safe). The policy
+        // layer gates on isProseDocument, so non-prose docs no-op.
+        await ctx.scheduler.runAfter(
+          0,
+          internal.knowledge.chunks.chunkDocument,
+          { documentId: item.documentId },
+        );
         processed++;
         console.log(
           `[knowledge-atomize] ${item.documentId} (${item.doc.fileName ?? "?"}) → ` +

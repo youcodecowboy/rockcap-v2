@@ -804,6 +804,26 @@ export const applyClassification = internalMutation({
       });
     }
 
+    // ── Prose chunking (narrative dual index, spec §3.4). A prose doc's
+    // nuance lives in its surrounding text, not just the atomizer's short
+    // statements — chunk it and route through upsertChunks. The policy layer
+    // re-reads the doc and gates on isProseDocument, so this fires safely for
+    // every classification; we only bother scheduling when there is text and a
+    // revision checksum to key it by (chunks are per-revision derivatives).
+    const chunkText = args.textContent ?? doc.textContent;
+    const chunkChecksum = args.contentChecksum ?? doc.contentChecksum;
+    if (
+      typeof chunkText === "string" &&
+      chunkText.trim().length > 0 &&
+      chunkChecksum
+    ) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.chunks.chunkDocument,
+        { documentId: args.documentId },
+      );
+    }
+
     // ── driveFiles completion (drift-aware, exactly applyExtraction's
     // block). args.contentChecksum is what was ACTUALLY extracted; if the
     // row's md5 has moved on mid-classification (the poller saw another
