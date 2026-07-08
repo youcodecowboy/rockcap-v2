@@ -332,20 +332,20 @@ export const ensureProjectFolders = mutation({
     // Standard project folder types — mirrors the borrower/project default
     // template (Dark Mills taxonomy, migrations/seedFolderTemplatesV2.ts),
     // plus app-only folders (captured_photos, unfiled) not in the template.
-    const PROJECT_FOLDER_TYPES: Array<{ type: string; name: string; parentKey?: string }> = [
-      { type: "modelling_info", name: "1. Modelling Info and Terms Request" },
-      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info" },
-      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info" },
-      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info" },
-      { type: "terms_received", name: "2. Terms Received" },
-      { type: "terms_analysis", name: "3. Terms Analysis" },
-      { type: "comps", name: "4. Comps" },
-      { type: "comps_appendix", name: "Appendix", parentKey: "comps" },
-      { type: "credit", name: "5. Credit" },
-      { type: "post_completion", name: "6. Post Completion" },
-      { type: "notes", name: "Notes" },
-      { type: "captured_photos", name: "Captured Photos" },
-      { type: "unfiled", name: "Unfiled" },
+    const PROJECT_FOLDER_TYPES: Array<{ type: string; name: string; parentKey?: string; order: number }> = [
+      { type: "modelling_info", name: "1. Modelling Info and Terms Request", order: 1 },
+      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info", order: 1 },
+      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info", order: 2 },
+      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info", order: 3 },
+      { type: "terms_received", name: "2. Terms Received", order: 2 },
+      { type: "terms_analysis", name: "3. Terms Analysis", order: 3 },
+      { type: "comps", name: "4. Comps", order: 4 },
+      { type: "comps_appendix", name: "Appendix", parentKey: "comps", order: 1 },
+      { type: "credit", name: "5. Credit", order: 5 },
+      { type: "post_completion", name: "6. Post Completion", order: 6 },
+      { type: "notes", name: "Notes", order: 7 },
+      { type: "captured_photos", name: "Captured Photos", order: 8 },
+      { type: "unfiled", name: "Unfiled", order: 9 },
     ];
 
     const now = new Date().toISOString();
@@ -359,6 +359,7 @@ export const ensureProjectFolders = mutation({
           folderType: folder.type,
           name: folder.name,
           depth: 0,
+          order: folder.order,
           createdAt: now,
         });
         folderIdMap[folder.type] = folderId;
@@ -374,6 +375,7 @@ export const ensureProjectFolders = mutation({
           name: folder.name,
           parentFolderId: folderIdMap[folder.parentKey],
           depth: 1,
+          order: folder.order,
           createdAt: now,
         });
       }
@@ -393,18 +395,18 @@ export const ensureProjectFolders = mutation({
 export const backfillProjectFoldersV2 = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
-    const NEW_TAXONOMY: Array<{ type: string; name: string; parentKey?: string }> = [
-      { type: "modelling_info", name: "1. Modelling Info and Terms Request" },
-      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info" },
-      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info" },
-      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info" },
-      { type: "terms_received", name: "2. Terms Received" },
-      { type: "terms_analysis", name: "3. Terms Analysis" },
-      { type: "comps", name: "4. Comps" },
-      { type: "comps_appendix", name: "Appendix", parentKey: "comps" },
-      { type: "credit", name: "5. Credit" },
-      { type: "post_completion", name: "6. Post Completion" },
-      { type: "notes", name: "Notes" },
+    const NEW_TAXONOMY: Array<{ type: string; name: string; parentKey?: string; order: number }> = [
+      { type: "modelling_info", name: "1. Modelling Info and Terms Request", order: 1 },
+      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info", order: 1 },
+      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info", order: 2 },
+      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info", order: 3 },
+      { type: "terms_received", name: "2. Terms Received", order: 2 },
+      { type: "terms_analysis", name: "3. Terms Analysis", order: 3 },
+      { type: "comps", name: "4. Comps", order: 4 },
+      { type: "comps_appendix", name: "Appendix", parentKey: "comps", order: 1 },
+      { type: "credit", name: "5. Credit", order: 5 },
+      { type: "post_completion", name: "6. Post Completion", order: 6 },
+      { type: "notes", name: "Notes", order: 7 },
     ];
 
     const existing = await ctx.db
@@ -423,8 +425,8 @@ export const backfillProjectFoldersV2 = mutation({
     for (const folder of NEW_TAXONOMY.filter((f) => !f.parentKey)) {
       const hit = byType.get(folder.type);
       if (hit) {
-        if (hit.name !== folder.name) {
-          await ctx.db.patch(hit._id, { name: folder.name });
+        if (hit.name !== folder.name || (hit as any).order !== folder.order) {
+          await ctx.db.patch(hit._id, { name: folder.name, order: folder.order });
           renamed++;
         }
       } else {
@@ -433,19 +435,28 @@ export const backfillProjectFoldersV2 = mutation({
           folderType: folder.type,
           name: folder.name,
           depth: 0,
+          order: folder.order,
           createdAt: now,
         });
         created++;
       }
     }
     for (const folder of NEW_TAXONOMY.filter((f) => f.parentKey)) {
-      if (byType.has(folder.type)) continue;
+      const hit = byType.get(folder.type);
+      if (hit) {
+        if ((hit as any).order !== folder.order) {
+          await ctx.db.patch(hit._id, { order: folder.order });
+          renamed++;
+        }
+        continue;
+      }
       await ctx.db.insert("projectFolders", {
         projectId: args.projectId,
         folderType: folder.type,
         name: folder.name,
         parentFolderId: idByType[folder.parentKey!],
         depth: 1,
+        order: folder.order,
         createdAt: now,
       });
       created++;
