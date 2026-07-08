@@ -4878,6 +4878,32 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "atoms.mergeEntities",
+    description:
+      "Operator hygiene: collapse a DUPLICATE existing entity into its canonical twin on the KNOWLEDGE GRAPH. Use when the SAME real thing exists under two ids — a client created twice (HubSpot/promotion), a '(175)'-suffixed duplicate contact, a company synced under two Companies House rows — and their atoms/facilities/scope tags are split across both. Re-points every knowledge-side reference from `fromId` to `toId` (BOTH must be the same `entityType`) and routes each atom through the SAME identity machinery Phase-2b candidate resolution uses: a re-pointed atom that now duplicates a live atom on the target MERGES (its observations move to the survivor, corroboration bumps, the duplicate is superseded); a value clash goes CONTESTED (both live, surfaced for adjudication — never a silent double). Also re-scopes the denormalized refs the subject/object re-point misses: atoms.clientId/projectId, the facilities mirror columns (lender/borrower/company/project), documentChunks scope tags, and appetiteSignals.lenderClientId. SCOPE: knowledge graph ONLY. This tool is CRM-BLIND — it does NOT reassign CRM tables (contacts/documents/tasks/notes/…) and does NOT delete or soft-delete the `from` entity row. For client duplicates run the CRM-side merge separately (migrations/mergeDuplicateClients — it is the atom-blind mirror of this tool); then remove the source row. `entityType`: client | project | contact | company | facility | candidate. For 'candidate' this RESOLVES the candidate to a real entity — pass `toType` (the resolved entity's type), and `toId` is that real entity's id. `reason` is a free-text audit note. Writes an auditLog row and returns {repointed, merged, contested, scope:{atomsRescoped, chunksRescoped, facilitiesRescoped, appetiteRescoped}} so you see exactly what moved.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate. fromId and toId are BOTH this type (except 'candidate', where toId is the resolved real entity named by toType)." },
+        fromId: { type: "string", description: "Convex id of the DUPLICATE to collapse (the entityCandidates id when entityType='candidate')." },
+        toId: { type: "string", description: "Convex id of the canonical entity to keep (the real entity's id when entityType='candidate')." },
+        reason: { type: "string", description: "Why these are the same entity (audit note)." },
+        toType: { type: "string", description: "Required ONLY when entityType='candidate': the resolved real entity's type (client | project | contact | company | facility)." },
+      },
+      required: ["entityType", "fromId", "toId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: args.entityType,
+        fromId: args.fromId,
+        toId: args.toId,
+        reason: args.reason,
+        toType: args.toType,
+      });
+      return asText(result);
+    },
+  },
 
   // ── graph.* — Knowledge Layer traversal (Spec 2 §9 / §14b) ───
   // Read-side of the graph. YOU (Claude) are the query planner — there is no
