@@ -75,7 +75,7 @@ Bulk document processing runs through the harness, not the API pipeline (operato
 
 Per document:
 
-1. **`document.extractText({documentId})`** — server-side parse only, zero LLM. Returns `{text (≤120K, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}`. Branch on the flags:
+1. **`document.extractText({documentId})`** — server-side parse only, zero LLM. Returns `{text (≤120K, truncation noted), fileName, mimeType, contentChecksum, source, parsedName, alreadyClassified, alreadyAtomized}`. Trust a `parsedName` with `confidence: "full"` as a STRONG classification prior: its `docType` comes from the client-confirmed V1.2 naming standard and maps to a specific `fileTypeDetected` via `src/lib/naming/filename_schema.json`'s `docTypes[].appFileType` — verify against the text rather than re-deriving from scratch (a `"partial"` parse is only a hint; `null` is no signal). Branch on the flags:
    - `alreadyClassified: true` and `alreadyAtomized: true` → skip the doc entirely.
    - `alreadyClassified: true`, `alreadyAtomized: false` → skip classification, atomize only (steps 4–7 of the main workflow). Do NOT re-classify unless the operator asked; a re-classification never moves the doc's folder anyway (first-classification-only placement).
    - both false → full pass below.

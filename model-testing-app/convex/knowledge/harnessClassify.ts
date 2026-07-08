@@ -13,6 +13,13 @@ import {
   SETTLE_MS,
 } from "../driveSync";
 import { resolvePlacement } from "../../src/v4/lib/placement-rules";
+// Same convex→src sharing idiom as the placement-rules import above: the
+// V1.2 naming-standard parser lives with the app code and is bundled in.
+// Schema single source of truth: src/lib/naming/filename_schema.json.
+import {
+  parseStandardName,
+  type ParsedStandardName,
+} from "../../src/lib/documentNaming";
 
 // Harness-lane document classification — the two halves that make bulk
 // document processing runnable end-to-end from Claude Code (MCP tools
@@ -210,6 +217,10 @@ export const extractText = internalAction({
         // mammoth) or "vision" (multimodal transcription of an image / scanned
         // image-only PDF). Provenance for the agent + downstream atomization.
         method: "parser" | "vision";
+        // V1.2 file-naming-standard parse of fileName (null when the name is
+        // not the standard). confidence:"full" DocType is a strong
+        // classification prior for the agent.
+        parsedName: ParsedStandardName | null;
         alreadyClassified: boolean;
         alreadyAtomized: boolean;
         note?: string;
@@ -393,6 +404,7 @@ export const extractText = internalAction({
       contentChecksum,
       source,
       method,
+      parsedName: parseStandardName(fileName),
       alreadyClassified,
       alreadyAtomized,
       ...(note ? { note } : {}),
