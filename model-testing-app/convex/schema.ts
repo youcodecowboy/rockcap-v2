@@ -1291,6 +1291,7 @@ export default defineSchema({
     description: v.optional(v.string()), // Optional description for the folder
     parentFolderId: v.optional(v.id("clientFolders")), // For nested folders
     depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
+    order: v.optional(v.number()), // Display order among siblings (lower first; unset sorts last)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
@@ -1307,6 +1308,7 @@ export default defineSchema({
     description: v.optional(v.string()), // Optional description for the folder
     parentFolderId: v.optional(v.id("projectFolders")), // For nested subfolders
     depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
+    order: v.optional(v.number()), // Display order among siblings (lower first; unset sorts last)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
@@ -4837,6 +4839,7 @@ export default defineSchema({
         v.literal("removed_from_source"),
         v.literal("document_trashed"),
         v.literal("operator"),
+        v.literal("version_precedence"), // auto-resolved: newer version of the same document series won (knowledge/versionPrecedence.ts)
       ),
     ),
     confidence: v.number(), // corroboration-adjusted (spec §7)

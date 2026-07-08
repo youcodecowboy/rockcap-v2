@@ -374,6 +374,13 @@ export default function FolderBrowser({
     return selectedFolder?.folderId === folderId && selectedFolder?.type === type;
   };
 
+
+  // Sibling ordering: explicit `order` first (template/backfill-stamped), unset
+  // orders last, name as the stable tie-break.
+  const byFolderOrder = (a: FolderWithCount, b: FolderWithCount) =>
+    ((a as any).order ?? Number.MAX_SAFE_INTEGER) - ((b as any).order ?? Number.MAX_SAFE_INTEGER) ||
+    a.name.localeCompare(b.name);
+
   // Build nested folder structure for client folders
   const { rootFolders, childFolders } = useMemo(() => {
     const root: FolderWithCount[] = [];
@@ -389,6 +396,9 @@ export default function FolderBrowser({
         root.push(folder);
       }
     }
+
+    root.sort(byFolderOrder);
+    for (const list of Object.values(children)) list.sort(byFolderOrder);
 
     return { rootFolders: root, childFolders: children };
   }, [clientFoldersWithCounts]);
@@ -408,6 +418,9 @@ export default function FolderBrowser({
         root.push(folder);
       }
     }
+
+    root.sort(byFolderOrder);
+    for (const list of Object.values(children)) list.sort(byFolderOrder);
 
     // Compute aggregated counts (bottom-up: include all descendant docs)
     const aggregatedCounts: Record<string, number> = {};

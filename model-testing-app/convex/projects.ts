@@ -262,6 +262,7 @@ export const create = mutation({
           description: folder.description,
           parentFolderId: parentId,
           depth,
+          order: folder.order,
           createdAt: now,
         });
         folderIdMap[folder.folderKey] = folderId;

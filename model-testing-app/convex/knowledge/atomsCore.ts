@@ -10,6 +10,7 @@ import {
   FACILITY_SHAPED_PREDICATES,
 } from "./vocabulary";
 import { mintFacilitiesForAtoms } from "./facilities";
+import { versionPrecedenceWinner } from "./versionPrecedence";
 
 // Knowledge-layer core engine — Spec 2 Phase 2a.1
 // (docs/spec-2-knowledge-layer.md §6.1 gates, §7 dedup/corroboration/
@@ -541,6 +542,27 @@ async function processCandidate(
     winner = "new";
   }
 
+  // Layer 0.5 — VERSION PRECEDENCE (knowledge/versionPrecedence.ts): when
+  // the incoming value and every live incumbent observation come from
+  // different VERSIONS OF THE SAME DOCUMENT SERIES, the later version wins
+  // automatically — never a contest. "new" = the incoming doc is the newer
+  // version (incumbent superseded); "incumbent" = the incoming doc is a
+  // backfilled OLDER version (its value lands born-superseded, incumbent
+  // stays active). Cross-series / cross-source conflicts return null and
+  // fall through to the existing layers unchanged.
+  let viaVersionPrecedence = false;
+  if (winner === null) {
+    const precedence = await versionPrecedenceWinner(
+      ctx,
+      cand.observation,
+      incumbentObs,
+    );
+    if (precedence !== null) {
+      winner = precedence;
+      viaVersionPrecedence = true;
+    }
+  }
+
   // Layer 1 — asOf materially newer wins: a temporal update, not a
   // contradiction (a newer valuation replaces an older one).
   const candAsOf = parseAsOf(cand.asOf);
@@ -578,7 +600,7 @@ async function processCandidate(
     await ctx.db.patch(incumbent._id, {
       status: "superseded",
       supersededBy: atomId,
-      supersessionReason: "revised",
+      supersessionReason: viaVersionPrecedence ? "version_precedence" : "revised",
     });
     return { type: "superseded", atomId, supersededAtomId: incumbent._id, winner };
   }
@@ -587,7 +609,7 @@ async function processCandidate(
   // it lands as a NEW atom born superseded, pointing at the incumbent.
   const atomId = await insertAtomWithObservation(ctx, cand, "superseded", now, {
     supersededBy: incumbent._id,
-    supersessionReason: "revised",
+    supersessionReason: viaVersionPrecedence ? "version_precedence" : "revised",
   });
   return { type: "superseded", atomId, supersededAtomId: atomId, winner };
 }
