@@ -466,6 +466,58 @@ export const backfillProjectFoldersV2 = mutation({
   },
 });
 
+// Mutation: Remove LEGACY (pre-Dark-Mills-taxonomy) project folders, but only
+// when genuinely empty — a folder is kept if any document still references its
+// folderType or it has child folders. notes/post_completion are shared between
+// old and new taxonomies and are never candidates. Returns what was deleted
+// vs kept (with reasons) so cleanup is auditable.
+export const removeEmptyLegacyProjectFolders = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const LEGACY_KEYS = [
+      "background",
+      "terms_comparison",
+      "terms_request",
+      "credit_submission",
+      "appraisals",
+      "operational_model",
+    ];
+
+    const folders = await ctx.db
+      .query("projectFolders")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+    const projectDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+
+    const deleted: string[] = [];
+    const kept: Array<{ key: string; reason: string }> = [];
+
+    for (const key of LEGACY_KEYS) {
+      const folder = folders.find((f) => f.folderType === key);
+      if (!folder) continue;
+      const docCount = projectDocs.filter(
+        (d) => d.folderType === "project" && d.folderId === key,
+      ).length;
+      if (docCount > 0) {
+        kept.push({ key, reason: `${docCount} document(s) still filed here` });
+        continue;
+      }
+      const children = folders.filter((f) => f.parentFolderId === folder._id);
+      if (children.length > 0) {
+        kept.push({ key, reason: `${children.length} child folder(s)` });
+        continue;
+      }
+      await ctx.db.delete(folder._id);
+      deleted.push(key);
+    }
+
+    return { deleted, kept };
+  },
+});
+
 // ============================================================================
 // VALIDATION HELPERS
 // These are internal helper functions for validating folder assignments
