@@ -55,6 +55,15 @@ interface GraphCanvasProps {
 
 /** Satellite render dot radius. */
 const SAT_RADIUS = 4.5;
+/** Max satellites of a selected host that get a persistent mini-label. Beyond
+ * this the host shows a muted "+N unlabeled" instead — keeps a mega-hub from
+ * carpeting the canvas in text the instant it's selected. */
+const SAT_LABEL_CAP = 24;
+/** Truncate a satellite value for the persistent mini-label (~18 chars). */
+function shortSatValue(v: string): string {
+  const s = (v ?? "").trim();
+  return s.length > 18 ? `${s.slice(0, 17)}…` : s;
+}
 // ── Phyllotaxis (sunflower) SEED slots ──
 // Satellites are now real force-sim particles (see SatSim + the satellite pass
 // in step()). But we still SEED each new leaf on its host's phyllotaxis spiral:
@@ -288,7 +297,7 @@ export default function GraphCanvas({
     const rendered: SatelliteVM[] = [];
     const meta = new Map<
       string,
-      { angle: number; slotRad: number; rest: number; ph: number; ph2: number; hostId: string }
+      { angle: number; slotRad: number; rest: number; ph: number; ph2: number; hostId: string; idx: number }
     >();
     const counts = new Map<string, number>();
     for (const [hostId, sats] of satsByHost) {
@@ -303,6 +312,7 @@ export default function GraphCanvas({
           ph: (hashStr(sat.id) % 628) / 100,
           ph2: (hashStr(`${sat.id}b`) % 628) / 100,
           hostId,
+          idx: i,
         });
         rendered.push(sat);
       });
@@ -351,10 +361,14 @@ export default function GraphCanvas({
     // through here, from the wheel/buttons/auto-fit paths), no React re-render:
     //   k > 1.15  → sub-labels appear (otherwise only on hover/selected/center)
     //   k < 0.55  → primary labels of tiny non-center nodes (r < 13) hide too
+    //   k ≥ 1.3   → persistent satellite mini-labels fade in (all clusters)
+    //   k ≥ 1.9   → satellite dots grow — deep-zoom "inspect" feel
     const svg = svgRef.current;
     if (svg) {
       svg.classList.toggle("rc-zoom-sub", k > 1.15);
       svg.classList.toggle("rc-zoom-far", k < 0.55);
+      svg.classList.toggle("rc-sat-labels-on", k >= 1.3);
+      svg.classList.toggle("rc-sat-zoom-deep", k >= 1.9);
     }
   }, []);
 
@@ -923,6 +937,26 @@ export default function GraphCanvas({
         .rc-sublabel { display: none; }
         .rc-zoom-sub .rc-sublabel, .rc-sublabel.rc-sub-on { display: inline; }
         .rc-zoom-far .rc-plabel-sm { display: none; }
+        /* Persistent satellite mini-labels — off by default (display:none = zero
+           per-frame paint when zoomed out). Shown when the svg carries
+           rc-sat-labels-on (zoom k ≥ 1.3, every cluster) OR when the satellite's
+           host is selected (rc-host-selected on the sat <g>, any zoom) and the
+           sat isn't over the per-host cap (rc-sat-capped). Fades in on appear. */
+        .rc-sat-label { display: none; }
+        .rc-sat-labels-on .rc-sat-label,
+        .rc-sat-g.rc-host-selected:not(.rc-sat-capped) .rc-sat-label {
+          display: block;
+          animation: rc-sat-fade .18s ease both;
+        }
+        @keyframes rc-sat-fade { from { opacity: 0; } to { opacity: 1; } }
+        /* Deep-zoom (k ≥ 1.9): grow the satellite dot in place. The scale sits on
+           an inner group so it never fights the outer per-frame translate. */
+        .rc-sat-scale { transform-box: fill-box; transform-origin: center; transition: transform .15s ease; }
+        .rc-sat-zoom-deep .rc-sat-scale { transform: scale(1.55); }
+        @media (prefers-reduced-motion: reduce) {
+          .rc-sat-label { animation: none !important; }
+          .rc-sat-scale { transition: none !important; }
+        }
       `}</style>
       <svg
         ref={svgRef}
@@ -1013,12 +1047,23 @@ export default function GraphCanvas({
             const isSelAtom = sat.id === selectedAtomId;
             const fill = colorForFamily(colors, sat.family);
             const contested = sat.status === "contested";
+            // Persistent mini-label visibility is CSS-driven (see the <style>
+            // block): rc-host-selected turns labels on for THIS host's leaves at
+            // any zoom (selection case); rc-sat-capped withholds the label past
+            // the per-host cap so a mega-hub shows "+N unlabeled" instead. The
+            // zoom case (k ≥ 1.3, all hosts) is a class on the svg root, so it
+            // needs no per-satellite state here.
+            const hostSelected = sat.hostId === selectedId;
+            const capped = (satMeta.get(sat.id)?.idx ?? 0) >= SAT_LABEL_CAP;
+            const gClass = `rc-sat-g${hostSelected ? " rc-host-selected" : ""}${capped ? " rc-sat-capped" : ""}`;
+            const labelValue = shortSatValue(sat.valueSnippet);
             return (
               <g
                 key={sat.id}
                 ref={(el) => {
                   satElRef.current.set(sat.id, el);
                 }}
+                className={gClass}
                 style={{ cursor: "pointer", opacity: dim ? 0.12 : 1, color: fill }}
                 onPointerEnter={() => showSatHover(sat.id)}
                 onPointerLeave={() => onSatLeave(sat.id)}
@@ -1030,15 +1075,30 @@ export default function GraphCanvas({
                   onSatelliteSelect(sat);
                 }}
               >
-                {isSelAtom && <circle r={SAT_RADIUS + 3.5} fill="none" stroke={fill} strokeWidth={1.4} />}
-                {contested && <circle r={SAT_RADIUS + 2} fill="none" stroke={colors.accent.red} strokeWidth={1.2} />}
-                <circle
-                  r={SAT_RADIUS}
-                  fill={fill}
-                  stroke={colors.bg.base}
-                  strokeWidth={1}
-                  style={{ filter: match ? "drop-shadow(0 0 5px currentColor)" : undefined }}
-                />
+                {/* Inner scale group — grows the dot at deep zoom without
+                    disturbing the outer per-frame translate. */}
+                <g className="rc-sat-scale">
+                  {isSelAtom && <circle r={SAT_RADIUS + 3.5} fill="none" stroke={fill} strokeWidth={1.4} />}
+                  {contested && <circle r={SAT_RADIUS + 2} fill="none" stroke={colors.accent.red} strokeWidth={1.2} />}
+                  <circle
+                    r={SAT_RADIUS}
+                    fill={fill}
+                    stroke={colors.bg.base}
+                    strokeWidth={1}
+                    style={{ filter: match ? "drop-shadow(0 0 5px currentColor)" : undefined }}
+                  />
+                </g>
+                {/* Persistent mini-label: `predicate: shortValue`, muted, static
+                    child of the moving <g> — no per-frame work. */}
+                <text
+                  className="rc-sat-label"
+                  textAnchor="middle"
+                  y={SAT_RADIUS + 10}
+                  style={{ fontSize: 8.5, fill: colors.text.muted, pointerEvents: "none" }}
+                >
+                  {sat.label}
+                  {labelValue ? <tspan style={{ fill: colors.text.dim }}>{`: ${labelValue}`}</tspan> : null}
+                </text>
               </g>
             );
           })}
@@ -1143,6 +1203,18 @@ export default function GraphCanvas({
                     style={{ fontSize: 8.5, fill: colors.text.dim, pointerEvents: "none" }}
                   >
                     {`+${satelliteTruncation[n.id]} more (capped)`}
+                  </text>
+                )}
+                {/* Selection-label cap overflow — when this host is selected and
+                    has more leaves than SAT_LABEL_CAP, the surplus stay unlabeled
+                    and are tallied here (muted, under the host's other labels). */}
+                {n.id === selectedId && (hostSatCount.get(n.id) ?? 0) > SAT_LABEL_CAP && (
+                  <text
+                    textAnchor="middle"
+                    y={r + (n.sub ? 45 : 33) + ((satelliteTruncation[n.id] ?? 0) > 0 ? 12 : 0)}
+                    style={{ fontSize: 8.5, fill: colors.text.dim, fontStyle: "italic", pointerEvents: "none" }}
+                  >
+                    {`+${(hostSatCount.get(n.id) ?? 0) - SAT_LABEL_CAP} unlabeled`}
                   </text>
                 )}
                 {n.isCenter && truncatedMore > 0 && (
