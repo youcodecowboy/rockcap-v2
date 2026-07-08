@@ -19,6 +19,7 @@ import {
   Calendar,
   Mail,
   Activity,
+  Waypoints,
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
@@ -66,6 +67,7 @@ export default function Sidebar() {
     { href: '/clients', label: 'Clients', icon: Building },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
     { href: '/rolodex', label: 'Rolodex', icon: ContactRound },
+    { href: '/knowledge', label: 'Knowledge', icon: Waypoints },
     { href: '/docs', label: 'Docs', icon: File },
     { href: '/notes', label: 'Notes', icon: FileText },
     { href: '/modeling', label: 'Modeling', icon: Calculator },

@@ -180,8 +180,9 @@ export type GraphAttribute = {
   atomId?: string;
 };
 
-/** Pre-name-resolution federated edge. */
-type FedEdge = {
+/** Pre-name-resolution federated edge. Exported for graphOverview.ts (the
+ * org-wide atlas snapshot), which reuses the native synthesizers below. */
+export type FedEdge = {
   predicate: string;
   direction: "out" | "in";
   otherType: GraphEntityType;
@@ -203,7 +204,7 @@ type FedEdge = {
 
 // ── Name resolution (batched per call via cache) ──
 
-class NameResolver {
+export class NameResolver {
   private cache = new Map<string, EntityRef>();
   constructor(private ctx: QueryCtx) {}
 
@@ -529,30 +530,30 @@ async function collectAtomAttributes(
 // sharedNeighbors) scans each table once, not once per node — keeps a
 // budgeted 200-expansion walk safely inside Convex read limits.
 
-type ScanCache = {
+export type ScanCache = {
   projects?: Doc<"projects">[];
   facilities?: Doc<"facilities">[];
   clients?: Doc<"clients">[];
   contacts?: Doc<"contacts">[];
 };
 
-async function allProjects(ctx: QueryCtx, cache: ScanCache) {
+export async function allProjects(ctx: QueryCtx, cache: ScanCache) {
   cache.projects ??= (await ctx.db.query("projects").collect()).filter(
     (p) => p.isDeleted !== true,
   );
   return cache.projects;
 }
-async function allFacilities(ctx: QueryCtx, cache: ScanCache) {
+export async function allFacilities(ctx: QueryCtx, cache: ScanCache) {
   cache.facilities ??= await ctx.db.query("facilities").collect();
   return cache.facilities;
 }
-async function allClients(ctx: QueryCtx, cache: ScanCache) {
+export async function allClients(ctx: QueryCtx, cache: ScanCache) {
   cache.clients ??= (await ctx.db.query("clients").collect()).filter(
     (c) => c.isDeleted !== true,
   );
   return cache.clients;
 }
-async function allContacts(ctx: QueryCtx, cache: ScanCache) {
+export async function allContacts(ctx: QueryCtx, cache: ScanCache) {
   cache.contacts ??= (await ctx.db.query("contacts").collect()).filter(
     (c) => c.isDeleted !== true,
   );
@@ -595,7 +596,7 @@ function rolePredicate(role: string): string {
   return role.toLowerCase() === "lender" ? "funds_project" : "developing";
 }
 
-async function nativeEdgesForClient(
+export async function nativeEdgesForClient(
   ctx: QueryCtx,
   clientId: Id<"clients">,
   client: Doc<"clients">,
@@ -742,7 +743,7 @@ async function nativeEdgesForContact(
   return edges;
 }
 
-async function nativeEdgesForCompany(
+export async function nativeEdgesForCompany(
   ctx: QueryCtx,
   companyId: Id<"companiesHouseCompanies">,
   company: Doc<"companiesHouseCompanies">,
@@ -829,7 +830,7 @@ async function nativeEdgesForCompany(
   return edges;
 }
 
-async function nativeEdgesForFacility(
+export async function nativeEdgesForFacility(
   ctx: QueryCtx,
   facility: Doc<"facilities">,
 ): Promise<FedEdge[]> {
