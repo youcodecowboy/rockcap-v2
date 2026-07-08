@@ -12,6 +12,10 @@
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "Bundler",
 
+    /* knowledge/harnessClassify imports src/lib/documentNaming, which loads
+     * the naming-standard schema JSON (src/lib/naming/filename_schema.json) */
+    "resolveJsonModule": true,
+
     /* convex/migrations imports src/lib code that uses the app's `@/` alias */
     "baseUrl": "..",
     "paths": { "@/*": ["src/*"] },
