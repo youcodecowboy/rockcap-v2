@@ -43,6 +43,38 @@ function asText(result: unknown): { content: Array<{ type: "text"; text: string 
   };
 }
 
+// Cap on how many atom ids a single retrievalLog batch records (spec §10).
+const RETRIEVAL_LOG_CAP = 100;
+
+/** Gather the atom ids a graph.expandEntity result actually surfaced — edge
+ * provenance refs (atom-lane only; native refs are table names and are
+ * dropped downstream by normalizeId anyway) plus attribute / ring-attribute
+ * atom ids. Used to feed retrievalLog fire-and-forget. */
+function collectExpandAtomIds(result: unknown): string[] {
+  const ids = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = result as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addEdge = (e: any) => {
+    if (e?.provenance?.sourceType !== "native" && typeof e?.provenance?.ref === "string") {
+      ids.add(e.provenance.ref);
+    }
+  };
+  (r?.edges ?? []).forEach(addEdge);
+  (r?.interEdges ?? []).forEach(addEdge);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (r?.attributes ?? []).forEach((a: any) => {
+    if (typeof a?.atomId === "string") ids.add(a.atomId);
+  });
+  for (const rows of Object.values(r?.ringAttributes ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of (rows as any[]) ?? []) {
+      if (typeof a?.atomId === "string") ids.add(a.atomId);
+    }
+  }
+  return [...ids].slice(0, RETRIEVAL_LOG_CAP);
+}
+
 // ── Tool catalogue ───────────────────────────────────────────
 
 const TOOLS: McpTool[] = [
@@ -3886,7 +3918,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.extractText",
     description:
-      "Harness classification step 1 — SERVER-SIDE PARSE ONLY, ZERO LLM: returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (≤120K chars, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
+      "Harness classification step 1 — returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Text-layer documents (PDF/DOCX/XLSX/CSV/EML/…) are parsed SERVER-SIDE with ZERO LLM. The ONE exception: image documents (PNG/JPG term sheets) and scanned image-only PDFs have no text layer, so they are transcribed faithfully via vision — method:'vision' in the result flags this (treat as best-effort OCR; [illegible] marks unreadable regions). Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (≤120K chars, truncation noted), fileName, mimeType, contentChecksum, source, method ('parser'|'vision'), alreadyClassified, alreadyAtomized}. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4760,6 +4792,21 @@ const TOOLS: McpTool[] = [
         limit: args.limit,
         includeProspectScoped: args.includeProspectScoped,
       });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget so the
+      // usage half of salience learns from real queries; off the latency path.
+      const atomIds = ((result.results ?? []) as Array<{ atomId?: unknown }>)
+        .map((row) => row.atomId)
+        .filter((id): id is string => typeof id === "string")
+        .slice(0, RETRIEVAL_LOG_CAP);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "search",
+          queryText: args.query,
+          clientId: args.clientId,
+          retrievedAt: Date.now(),
+        });
+      }
       return asText(result);
     },
   },
@@ -4831,6 +4878,32 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "atoms.mergeEntities",
+    description:
+      "Operator hygiene: collapse a DUPLICATE existing entity into its canonical twin on the KNOWLEDGE GRAPH. Use when the SAME real thing exists under two ids — a client created twice (HubSpot/promotion), a '(175)'-suffixed duplicate contact, a company synced under two Companies House rows — and their atoms/facilities/scope tags are split across both. Re-points every knowledge-side reference from `fromId` to `toId` (BOTH must be the same `entityType`) and routes each atom through the SAME identity machinery Phase-2b candidate resolution uses: a re-pointed atom that now duplicates a live atom on the target MERGES (its observations move to the survivor, corroboration bumps, the duplicate is superseded); a value clash goes CONTESTED (both live, surfaced for adjudication — never a silent double). Also re-scopes the denormalized refs the subject/object re-point misses: atoms.clientId/projectId, the facilities mirror columns (lender/borrower/company/project), documentChunks scope tags, and appetiteSignals.lenderClientId. SCOPE: knowledge graph ONLY. This tool is CRM-BLIND — it does NOT reassign CRM tables (contacts/documents/tasks/notes/…) and does NOT delete or soft-delete the `from` entity row. For client duplicates run the CRM-side merge separately (migrations/mergeDuplicateClients — it is the atom-blind mirror of this tool); then remove the source row. `entityType`: client | project | contact | company | facility | candidate. For 'candidate' this RESOLVES the candidate to a real entity — pass `toType` (the resolved entity's type), and `toId` is that real entity's id. `reason` is a free-text audit note. Writes an auditLog row and returns {repointed, merged, contested, scope:{atomsRescoped, chunksRescoped, facilitiesRescoped, appetiteRescoped}} so you see exactly what moved.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate. fromId and toId are BOTH this type (except 'candidate', where toId is the resolved real entity named by toType)." },
+        fromId: { type: "string", description: "Convex id of the DUPLICATE to collapse (the entityCandidates id when entityType='candidate')." },
+        toId: { type: "string", description: "Convex id of the canonical entity to keep (the real entity's id when entityType='candidate')." },
+        reason: { type: "string", description: "Why these are the same entity (audit note)." },
+        toType: { type: "string", description: "Required ONLY when entityType='candidate': the resolved real entity's type (client | project | contact | company | facility)." },
+      },
+      required: ["entityType", "fromId", "toId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: args.entityType,
+        fromId: args.fromId,
+        toId: args.toId,
+        reason: args.reason,
+        toType: args.toType,
+      });
+      return asText(result);
+    },
+  },
 
   // ── graph.* — Knowledge Layer traversal (Spec 2 §9 / §14b) ───
   // Read-side of the graph. YOU (Claude) are the query planner — there is no
@@ -4868,13 +4941,25 @@ const TOOLS: McpTool[] = [
         includeProspectScoped: args.includeProspectScoped,
         includeRingAttributes: args.includeRingAttributes,
       });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget.
+      const atomIds = collectExpandAtomIds(result);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "expand",
+          clientId: args.entityType === "client" ? args.entityId : undefined,
+          subjectType: args.entityType,
+          subjectId: args.entityId,
+          retrievedAt: Date.now(),
+        });
+      }
       return asText(result);
     },
   },
   {
     name: "graph.sharedNeighbors",
     description:
-      "The 'what connects these?' primitive: expand each input entity's federated neighborhood (atom + native edges, one hop) and INTERSECT the neighbor sets — returns only nodes connected to ALL inputs, each with the per-input connections ({fromInput, predicate, direction, provenance}) that make the link auditable. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; the inputs themselves never count as shared neighbors. One hop only — for longer chains use graph.findPaths.",
+      "The 'what connects these?' primitive: expand each input entity into a bounded structural GROUP (client → its role projects + facilities + CH group companies; project → its facilities + their SPV/borrower client; company → the client(s) it is a group SPV of + their mapped sibling companies; contact/facility/candidate → just themselves — ≤25 members/input, `capped` flagged per input in `groups`), then INTERSECT the UNION of each group's members' one-hop federated neighborhoods (atom + native edges) — a node counts as reached by an input if ANY of its group members has a direct edge to it. Returns only nodes reached by ALL inputs, each with per-input connections ({fromInput, groupMember?, predicate, direction, provenance}) — groupMember is set when the link runs input→member→node (the group hop), absent for a classic one-hop link. This closes the lender→facility→project→developer gap where the shared project sits two hops from a lender that anchors on the facility node. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; only the input entities THEMSELVES are excluded from results — a group member the other side reaches (a developer's own project reached by a lender) is a legitimate shared node. For longer indirect chains use graph.findPaths.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4905,7 +4990,7 @@ const TOOLS: McpTool[] = [
   {
     name: "graph.findPaths",
     description:
-      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop) comes back empty and you suspect an indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
+      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop plus its bounded group expansion) comes back empty and you suspect a longer indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
     inputSchema: {
       type: "object",
       properties: {

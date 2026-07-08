@@ -301,8 +301,13 @@ export function compareInSeries(a: SeriesDoc, b: SeriesDoc): number {
 
 /** Series test + ordering in one call. "not_same_series" is ALSO returned
  * for same-series documents that are an exact ordering tie (same date,
- * same version, same _creationTime) — an unorderable pair must never
- * auto-resolve, so callers fall through to contested either way. */
+ * same version, same _creationTime): an unorderable pair carries no
+ * version-precedence signal, so this returns the same "no signal" verdict as
+ * a genuine cross-series pair. It does NOT imply the conflict ends up
+ * contested — it only means version precedence abstains. On the write path
+ * that abstention returns null from versionPrecedenceWinner and falls through
+ * to Layers 1-3 (asOf / authority / confidence), which may still auto-resolve
+ * the conflict; contested is only the outcome when those layers also tie. */
 export function sameSeriesAndOrder(
   docA: SeriesDoc,
   docB: SeriesDoc,
@@ -351,18 +356,35 @@ export async function versionPrecedenceWinner(
 
   const newDoc = await ctx.db.get(newObservation.documentId);
   if (!newDoc) return null;
-  let sawOlder = false;
+
+  // Pass 1 — resolve EVERY backing doc and require the FULL set to share the
+  // incoming doc's series before any version comparison. Corroboration can
+  // leave an incumbent backed by MIXED-series documents (atomsCore.ts appends
+  // an observation from any equal-value document, cross-series included), so a
+  // single cross-series backer makes this a cross-source conflict — return
+  // null and let the normal layers decide. Checking the whole set up front
+  // (rather than short-circuiting on the first newer same-series doc) keeps
+  // the outcome independent of observation insertion order; this mirrors the
+  // retro pass's "ALL backing docs of every group member same-series" gate
+  // (applyVersionPrecedenceRetro above). Regression: a mixed [same-series,
+  // cross-series] incumbent must return null under BOTH orderings, never
+  // land the incoming atom born-superseded on version precedence.
+  const incumbentDocs: SeriesDoc[] = [];
   for (const docId of incumbentDocIds) {
     const doc = await ctx.db.get(docId);
     if (!doc) return null; // can't verify series — do not auto-resolve
     if (!isSameSeries(newDoc, doc)) return null;
+    incumbentDocs.push(doc);
+  }
+
+  // Pass 2 — every backer is same-series; honor the version comparison. Any
+  // same-series doc newer than the incoming one means the incoming value is a
+  // backfilled old version (order-independent: all are same-series now).
+  let sawOlder = false;
+  for (const doc of incumbentDocs) {
     const cmp = compareInSeries(newDoc, doc);
     if (cmp === 0) return null; // unorderable tie
-    if (cmp < 0) {
-      // A same-series document NEWER than the incoming one already backs
-      // the incumbent: the incoming value is a backfilled old version.
-      return "incumbent";
-    }
+    if (cmp < 0) return "incumbent";
     sawOlder = true;
   }
   return sawOlder ? "new" : null;

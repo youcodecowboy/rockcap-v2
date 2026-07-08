@@ -98,6 +98,13 @@ const RING_ATTR_CAP = 48;
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
+/** sharedNeighbors group-expansion cap (spec §9 group hop): max structural
+ * members a single input entity expands into (INCLUDING itself) before its
+ * neighborhoods are unioned. Bounds worst-case cost at GROUP_CAP × inputs
+ * federatedEdges calls, each still NEIGHBORHOOD_CAP-ranked. Overflow past the
+ * cap is dropped (self is always kept — inserted first) and flagged per input
+ * as `capped` in the result. */
+const GROUP_CAP = 25;
 /** findPaths bounds — this is a 3-person-firm graph; keep it simple + safe. */
 const MAX_HOPS = 3;
 const MAX_PATHS = 5;
@@ -161,6 +168,10 @@ export type GraphAttribute = {
   asOf?: string;
   status: "active" | "contested";
   confidence: number;
+  /** IDF·usage ranking weight (spec §6.2, Phase 2c). Undefined ⇒ neutral at
+   * rank time (an un-refreshed graph ranks as before). Absent on native
+   * attributes (they carry no atom). */
+  salience?: number;
   /** Set when the attribute is federated from a native lane
    * (today: "appetiteSignals" for lender clients). */
   native?: string;
@@ -181,6 +192,9 @@ type FedEdge = {
   status: "active" | "contested";
   provenance: EdgeProvenance;
   native: boolean;
+  /** IDF·usage ranking weight (spec §6.2). Undefined for native edges and
+   * un-refreshed atoms ⇒ neutral at rank time. */
+  salience?: number;
   /** The atom's owning clientId (scope tag) — drives the prospect-scope
    * visibility filter (spec §14b.6a). Unset for native edges and
    * company-wide atoms; never leaves this module (stripped by resolveEdges). */
@@ -318,18 +332,35 @@ function asOfMs(asOf: string | undefined): number {
   return Number.isNaN(t) ? -Infinity : t;
 }
 
-/** Contested first, then confidence desc, then asOf recency. */
+// Salience blend (spec §6.2, Phase 2c). Confidence stays primary; salience
+// nudges within it. Both live in [0,1], so a convex blend keeps the score in
+// [0,1]; undefined salience → SALIENCE_NEUTRAL, which makes the blend a strictly
+// increasing function of confidence alone — i.e. an un-refreshed graph (all
+// salience undefined) ranks byte-for-byte as it did before Phase 2c.
+const SALIENCE_NEUTRAL = 0.5;
+const SALIENCE_WEIGHT = 0.25;
+
+function rankScore(confidence: number, salience?: number): number {
+  const s = salience ?? SALIENCE_NEUTRAL;
+  return confidence * (1 - SALIENCE_WEIGHT) + s * SALIENCE_WEIGHT;
+}
+
+/** Contested first, then confidence·salience blend desc, then asOf recency. */
 function rankEdges(a: FedEdge, b: FedEdge): number {
   const contested = Number(b.status === "contested") - Number(a.status === "contested");
   if (contested !== 0) return contested;
-  if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+  const sa = rankScore(a.confidence, a.salience);
+  const sb = rankScore(b.confidence, b.salience);
+  if (sa !== sb) return sb - sa;
   return asOfMs(b.asOf) - asOfMs(a.asOf);
 }
 
 function rankAttributes(a: GraphAttribute, b: GraphAttribute): number {
   const contested = Number(b.status === "contested") - Number(a.status === "contested");
   if (contested !== 0) return contested;
-  if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+  const sa = rankScore(a.confidence, a.salience);
+  const sb = rankScore(b.confidence, b.salience);
+  if (sa !== sb) return sb - sa;
   return asOfMs(b.asOf) - asOfMs(a.asOf);
 }
 
@@ -439,6 +470,7 @@ async function collectAtomEdges(
         observationCount: await liveObservationCount(ctx, atom._id),
       },
       native: false,
+      salience: atom.salience,
       ownerClientId: atom.clientId as string | undefined,
     });
   }
@@ -480,6 +512,7 @@ async function collectAtomAttributes(
         asOf: atom.asOf,
         status: atom.status as "active" | "contested",
         confidence: atom.confidence,
+        salience: atom.salience,
         ownerClientId: atom.clientId as string | undefined,
         atomId: atom._id as string,
       });
@@ -1219,6 +1252,109 @@ export type SharedNeighborsArgs = {
   via?: "people" | "companies" | "lenders" | "any";
 };
 
+/** A group member: the structural entity itself plus how it joined the group
+ * (the field/relation that anchored it — provenance for the "why is this in
+ * the group?" question). `self` marks the input entity. */
+type GroupMember = { type: GraphEntityType; id: string; via: string };
+
+/** Expand one input entity into a bounded "group" of structurally-adjacent
+ * members (spec §9 group hop) so the shared-neighbor intersection reaches a
+ * node ANY member can touch — fixing the lender→facility→project→developer
+ * gap where the only common ground sits two hops from a lender that anchors
+ * on the facility node. Membership is the "same-side arm" relations only:
+ *   client  → its role projects, its (lender+borrower) facilities, its CH
+ *             group companies;
+ *   project → its facilities + those facilities' borrower (SPV) client;
+ *   company → the client(s) it is a group SPV of, and their other group
+ *             companies (mapped siblings).
+ * Leaf inputs (contact / facility / candidate) do not expand — the group is
+ * just the entity itself, so the intersection degenerates to the classic
+ * one-hop check. Self is inserted FIRST so the GROUP_CAP slice never drops it. */
+async function expandGroup(
+  ctx: QueryCtx,
+  type: GraphEntityType,
+  id: string,
+  cache: ScanCache,
+): Promise<{ members: GroupMember[]; capped: boolean }> {
+  const members = new Map<string, GroupMember>();
+  const add = (t: GraphEntityType, i: string, via: string) => {
+    const key = `${t}:${i}`;
+    if (!members.has(key)) members.set(key, { type: t, id: i, via });
+  };
+  add(type, id, "self");
+
+  switch (type) {
+    case "client": {
+      const clientId = ctx.db.normalizeId("clients", id);
+      const client = clientId && (await ctx.db.get(clientId));
+      if (!clientId || !client) break;
+      // Role projects (any clientRole) — the client's own deal footprint.
+      for (const p of await allProjects(ctx, cache)) {
+        if ((p.clientRoles ?? []).some((cr) => cr.clientId === clientId)) {
+          add("project", p._id as string, "projects.clientRoles");
+        }
+      }
+      // Facilities on either side (lender-arm or borrower-arm).
+      const lenderFacs = await ctx.db
+        .query("facilities")
+        .withIndex("by_lender", (q) => q.eq("lenderClientId", clientId))
+        .collect();
+      for (const f of lenderFacs) add("facility", f._id as string, "facilities.lenderClientId");
+      for (const f of await allFacilities(ctx, cache)) {
+        if (f.borrowerClientId === clientId) add("facility", f._id as string, "facilities.borrowerClientId");
+      }
+      // CH group companies.
+      for (const chNumber of client.relatedCompaniesHouseNumbers ?? []) {
+        const company = await ctx.db
+          .query("companiesHouseCompanies")
+          .withIndex("by_company_number", (q) => q.eq("companyNumber", chNumber))
+          .first();
+        if (company) add("company", company._id as string, "clients.relatedCompaniesHouseNumbers");
+      }
+      break;
+    }
+    case "project": {
+      const projectId = ctx.db.normalizeId("projects", id);
+      if (!projectId) break;
+      const facilities = await ctx.db
+        .query("facilities")
+        .withIndex("by_project", (q) => q.eq("projectId", projectId))
+        .collect();
+      for (const f of facilities) {
+        add("facility", f._id as string, "facilities.projectId");
+        // The borrower client is the project's SPV — its own arm of the group.
+        if (f.borrowerClientId) add("client", f.borrowerClientId as string, "facilities.borrowerClientId");
+      }
+      break;
+    }
+    case "company": {
+      const companyId = ctx.db.normalizeId("companiesHouseCompanies", id);
+      const company = companyId && (await ctx.db.get(companyId));
+      if (!companyId || !company) break;
+      // Client(s) this company is a group SPV of, plus their OTHER group
+      // companies (mapped siblings — the corporate group around this SPV).
+      for (const c of await allClients(ctx, cache)) {
+        const groupNumbers = c.relatedCompaniesHouseNumbers ?? [];
+        if (!groupNumbers.includes(company.companyNumber)) continue;
+        add("client", c._id as string, "clients.relatedCompaniesHouseNumbers");
+        for (const chNumber of groupNumbers) {
+          if (chNumber === company.companyNumber) continue;
+          const sibling = await ctx.db
+            .query("companiesHouseCompanies")
+            .withIndex("by_company_number", (q) => q.eq("companyNumber", chNumber))
+            .first();
+          if (sibling) add("company", sibling._id as string, "clients.relatedCompaniesHouseNumbers");
+        }
+      }
+      break;
+    }
+    // contact / facility / candidate → leaf inputs, no expansion (see header).
+  }
+
+  const all = [...members.values()];
+  return { members: all.slice(0, GROUP_CAP), capped: all.length > GROUP_CAP };
+}
+
 export async function sharedNeighborsCore(ctx: QueryCtx, args: SharedNeighborsArgs) {
   const inputs = args.entities.slice(0, 5);
   if (inputs.length < 2) {
@@ -1231,6 +1367,11 @@ export async function sharedNeighborsCore(ctx: QueryCtx, args: SharedNeighborsAr
 
   type Connection = {
     fromInput: EntityRef;
+    /** The group member that actually held the edge to the shared node.
+     * Absent when the input entity itself held it (a classic one-hop link);
+     * present ⇒ the link runs input → groupMember → sharedNode (the group hop
+     * that makes the connection auditable). */
+    groupMember?: EntityRef;
     predicate: string;
     direction: "out" | "in";
     qualifier?: string;
@@ -1240,32 +1381,52 @@ export async function sharedNeighborsCore(ctx: QueryCtx, args: SharedNeighborsAr
   const reach = new Map<string, Map<number, Connection[]>>();
 
   const cache: ScanCache = {};
-  for (let i = 0; i < inputs.length; i++) {
-    const { atomEdges, nativeEdges } = await federatedEdges(
-      ctx,
-      inputs[i].type,
-      inputs[i].id,
-      undefined,
-      cache,
-    );
+  // Expand each input into its bounded group up front (spec §9 group hop).
+  const groups: Array<{ members: GroupMember[]; capped: boolean }> = [];
+  for (const e of inputs) groups.push(await expandGroup(ctx, e.type, e.id, cache));
+
+  // Memoized member expansion — a member shared across two inputs' groups
+  // (e.g. a co-exposure facility) is federated once, not per group.
+  const neighborCache = new Map<string, FedEdge[]>();
+  const expandMember = async (t: GraphEntityType, i: string): Promise<FedEdge[]> => {
+    const key = `${t}:${i}`;
+    const hit = neighborCache.get(key);
+    if (hit) return hit;
+    const { atomEdges, nativeEdges } = await federatedEdges(ctx, t, i, undefined, cache);
     const all = [...atomEdges, ...nativeEdges].sort(rankEdges).slice(0, NEIGHBORHOOD_CAP);
-    for (const e of all) {
-      const key = `${e.otherType}:${e.otherId}`;
-      if (inputKeys.has(key)) continue; // the inputs themselves are not "shared neighbors"
-      let perInput = reach.get(key);
-      if (!perInput) {
-        perInput = new Map();
-        reach.set(key, perInput);
+    neighborCache.set(key, all);
+    return all;
+  };
+
+  for (let i = 0; i < inputs.length; i++) {
+    const inputKey = `${inputs[i].type}:${inputs[i].id}`;
+    for (const member of groups[i].members) {
+      const memberKey = `${member.type}:${member.id}`;
+      const isSelf = memberKey === inputKey;
+      const memberRef = isSelf ? undefined : await names.ref(member.type, member.id);
+      for (const e of await expandMember(member.type, member.id)) {
+        const key = `${e.otherType}:${e.otherId}`;
+        // Only the INPUT entities themselves are never shared neighbors. A
+        // group member that the OTHER side reaches (e.g. a developer's own
+        // project reached by a lender via its facility) IS a legitimate
+        // shared node — that is exactly the group-hop answer.
+        if (inputKeys.has(key)) continue;
+        let perInput = reach.get(key);
+        if (!perInput) {
+          perInput = new Map();
+          reach.set(key, perInput);
+        }
+        const list = perInput.get(i) ?? [];
+        list.push({
+          fromInput: inputRefs[i],
+          groupMember: memberRef,
+          predicate: e.predicate,
+          direction: e.direction,
+          qualifier: e.qualifier,
+          provenance: e.provenance,
+        });
+        perInput.set(i, list);
       }
-      const list = perInput.get(i) ?? [];
-      list.push({
-        fromInput: inputRefs[i],
-        predicate: e.predicate,
-        direction: e.direction,
-        qualifier: e.qualifier,
-        provenance: e.provenance,
-      });
-      perInput.set(i, list);
     }
   }
 
@@ -1292,6 +1453,13 @@ export async function sharedNeighborsCore(ctx: QueryCtx, args: SharedNeighborsAr
   return {
     inputs: inputRefs,
     via: args.via ?? "any",
+    // Per-input group provenance — the members each input expanded into
+    // (self plus its structural arms) and whether GROUP_CAP truncated it.
+    groups: inputRefs.map((input, i) => ({
+      input,
+      memberCount: groups[i].members.length,
+      capped: groups[i].capped,
+    })),
     shared,
     counts: { shared: shared.length },
   };
@@ -1445,6 +1613,7 @@ async function enrichSearchAtom(
     asOf: atom.asOf,
     status: atom.status,
     confidence: atom.confidence,
+    salience: atom.salience, // Phase 2c — folded into the fused score post-RRF
     primarySourceType: atom.primarySourceType,
     observationCount: await liveObservationCount(ctx, atom._id),
   };

@@ -4840,16 +4840,25 @@ export default defineSchema({
         v.literal("document_trashed"),
         v.literal("operator"),
         v.literal("version_precedence"), // auto-resolved: newer version of the same document series won (knowledge/versionPrecedence.ts)
+        v.literal("dangling_entity"), // nightly integrity sweep retired an atom whose subject/object entity row no longer resolves (knowledge/integritySweep.ts)
       ),
     ),
     confidence: v.number(), // corroboration-adjusted (spec §7)
     salience: v.optional(v.number()), // IDF-informed ranking weight (spec §6.2, Phase 2c)
+    // Set by the nightly integrity sweep when a contested atom has outlived the
+    // stale-contest window (default 14d) without version precedence resolving
+    // it — the marker operators filter on to triage aged contests. Cleared
+    // implicitly when the atom leaves "contested" (resolved / superseded).
+    contestFlaggedAt: v.optional(v.string()),
     primarySourceType: v.string(), // most-authoritative observation's sourceType (display convenience)
     embedding: v.optional(v.array(v.float64())), // 1024-dim (spec §13); optional until 2a.2 embeds
   })
     .index("by_subject", ["subjectType", "subjectId", "status"])
     .index("by_object", ["objectEntityType", "objectEntityId", "status"])
     .index("by_client_status", ["clientId", "status"])
+    // Owning-project scope — lets mergeEntities re-scope a project's atoms with a
+    // bounded index scan instead of a full-table .collect() (Convex per-txn read cap).
+    .index("by_project", ["projectId"])
     .index("by_predicate", ["predicate", "status"])
     .searchIndex("search_statement", {
       searchField: "statement",
@@ -4925,6 +4934,9 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_lender", ["lenderClientId"])
     .index("by_lender_company", ["lenderCompanyId"])
+    // Borrower scope — lets mergeEntities re-scope a client's borrower facilities
+    // with a bounded index scan instead of a full-table .collect().
+    .index("by_borrower", ["borrowerClientId"])
     .index("by_dedupe", ["dedupeKey"]),
 
   // The narrative dual index — spec §3.4. Chunks are disposable derivatives
@@ -4948,6 +4960,11 @@ export default defineSchema({
     embedding: v.optional(v.array(v.float64())), // optional until 2a.2 embeds
   })
     .index("by_document", ["documentId"])
+    // Scope indexes — let mergeEntities re-scope a client's / project's chunks with
+    // a bounded index scan instead of a full-table .collect() (search/vector filter
+    // fields cannot serve a plain equality read inside a mutation).
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
     .searchIndex("search_text", { searchField: "text", filterFields: ["clientId"] })
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
@@ -4977,5 +4994,24 @@ export default defineSchema({
   })
     .index("by_normalized_name", ["normalizedName"])
     .index("by_status", ["status"]),
+
+  // Retrieval instrumentation — spec §10, Phase 2c. One thin row per (atom,
+  // retrieval occurrence): which atoms a search / graph expansion actually
+  // surfaced. Written fire-and-forget from the MCP action layer (queries
+  // cannot write), so retrieval latency is unaffected. Feeds two things:
+  // (1) the usage component of atoms.salience (refreshSalience reads by_atom
+  // counts), (2) the utilization / dead-weight health metrics. Pruned by
+  // age via by_retrievedAt — this is disposable telemetry, not provenance.
+  retrievalLog: defineTable({
+    atomId: v.id("atoms"),
+    source: v.union(v.literal("search"), v.literal("expand")),
+    queryText: v.optional(v.string()), // the search query (truncated); absent for expands
+    clientId: v.optional(v.id("clients")), // scope the retrieval ran under, when known
+    subjectType: v.optional(v.string()), // entity type of the expand center, when source="expand"
+    subjectId: v.optional(v.string()), // entity id of the expand center, when source="expand"
+    retrievedAt: v.number(), // Date.now() at log time
+  })
+    .index("by_atom", ["atomId"])
+    .index("by_retrievedAt", ["retrievedAt"]),
 });
 
