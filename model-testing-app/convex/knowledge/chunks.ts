@@ -6,7 +6,11 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { chunkProseText, isProseDocument } from "./chunker";
+import {
+  chunkProseText,
+  isProseDocument,
+  textFallbackChecksum,
+} from "./chunker";
 
 // Prose chunking POLICY layer — the automated caller the chunk write-path
 // (atomsCore.upsertChunks) never had. When a document is classified as PROSE,
@@ -41,10 +45,12 @@ export const chunkDocument = internalMutation({
     if (textContent.trim().length === 0) {
       return { chunked: false, reason: "no_text" };
     }
-    // Chunks key the revision by checksum (mirrors atoms' provenance). No
-    // checksum → we can't stamp the revision, so skip rather than guess.
-    const contentChecksum: string | undefined = doc.contentChecksum ?? undefined;
-    if (!contentChecksum) return { chunked: false, reason: "no_checksum" };
+    // Chunks key the revision by checksum (mirrors atoms' provenance). Docs
+    // ingested outside the Drive hydration lane have no byte checksum — derive
+    // a revision stamp from the text instead of skipping them (Kinspire pilot:
+    // 49 text-bearing docs, incl. a 104K-char RedBook, were silently dropped).
+    const contentChecksum: string =
+      doc.contentChecksum ?? textFallbackChecksum(textContent);
 
     // mimeType: prefer the Drive mirror's true type, fall back to the upload's.
     const driveRow = await ctx.db
@@ -113,7 +119,9 @@ export const proseDocsNeedingChunksPage = internalQuery({
         d.fileTypeDetected !== "Unclassified";
       const hasText =
         typeof d.textContent === "string" && d.textContent.trim().length > 0;
-      if (!classified || !hasText || !d.contentChecksum) continue;
+      // No contentChecksum requirement: chunkDocument derives a text-based
+      // revision stamp for docs the Drive lane never checksummed.
+      if (!classified || !hasText) continue;
 
       // Authoritative prose decision — mirrors chunkDocument so a non-prose doc
       // (spreadsheet/CSV/image with vision text, etc.) is never a candidate and

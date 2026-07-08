@@ -56,9 +56,11 @@ export type ProseChunk = {
 // Dark Mills taxonomy values (src/v4/lib/placement-rules.ts) and the parser's
 // mime types (src/lib/fileProcessor.ts).
 
-/** Categories whose members are tabular/numeric/image — never prose. */
+/** Categories whose members are tabular/numeric/image — never prose.
+ * NOTE: "Appraisals" is deliberately NOT here — the category mixes spreadsheet
+ * models (excluded by fileType/mime below) with narrative RedBook Valuation
+ * PDFs, whose assumptions/caveats are exactly what chunking exists for. */
 const NON_PROSE_CATEGORIES = new Set<string>([
-  "Appraisals", // financial models — spreadsheets
   "Financial Documents", // bank statements / accounts — tabular
   "Plans", // drawings
   "Photographs", // images
@@ -119,6 +121,26 @@ export function isProseDocument(args: {
   if (NON_PROSE_CATEGORIES.has(normType(args.category))) return false;
 
   return true;
+}
+
+// ── textFallbackChecksum ──
+//
+// Documents ingested outside the Drive hydration lane never get a byte-level
+// contentChecksum stamped (driveHydration is the only writer), yet many carry
+// perfectly good textContent. Chunks only need the checksum as a REVISION
+// stamp, so for those docs we derive one from the text itself. The "text-"
+// prefix keeps it distinguishable from Drive byte checksums; when hydration
+// later stamps the real one, upsertChunks' delete-and-recreate refreshes the
+// chunks under the new stamp automatically.
+
+/** Stable FNV-1a (32-bit) hex checksum over extracted text. */
+export function textFallbackChecksum(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `text-fnv1a:${(h >>> 0).toString(16).padStart(8, "0")}:${text.length}`;
 }
 
 // ── chunkProseText ──
