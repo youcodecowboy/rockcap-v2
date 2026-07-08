@@ -5,6 +5,7 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { resolveDriveMirrorFolderKey } from "./driveMirrorPlacement";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   ensureAccessToken,
@@ -408,6 +409,17 @@ export const applyExtraction = internalMutation({
       | { folderId: string; folderType: "client" | "project" }
       | undefined;
     if (!existingDoc.folderId) {
+      // Drive-mirror authority first: the client's own Drive folder placement
+      // (matched by folder name against the app taxonomy) wins over the
+      // pipeline's content-classification target folder.
+      placementPatch =
+        (await resolveDriveMirrorFolderKey(ctx, {
+          driveFileId: existingDoc.driveFileId ?? args.driveFileId,
+          projectId: existingDoc.projectId ?? undefined,
+          clientId: effectiveClientId ?? undefined,
+        })) ?? undefined;
+    }
+    if (!existingDoc.folderId && !placementPatch) {
       const targetFolder: string | undefined =
         typeof m.targetFolder === "string" && m.targetFolder
           ? m.targetFolder
