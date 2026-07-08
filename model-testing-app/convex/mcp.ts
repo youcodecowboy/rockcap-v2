@@ -46,6 +46,15 @@ function asText(result: unknown): { content: Array<{ type: "text"; text: string 
 // Cap on how many atom ids a single retrievalLog batch records (spec §10).
 const RETRIEVAL_LOG_CAP = 100;
 
+// Chunk text cap in the atoms.search tool response — full text stays in the
+// documentChunks row; the tool trims to keep the response bounded and marks
+// the cut with `truncated: true`. 2,200 chars covers a full target-size chunk
+// (~320 words ≈ 2,000 chars, chunker.ts TARGET_WORDS) — the earlier 700-char
+// cap ate the operative clause in 5/12 prose eval questions where the right
+// chunk ranked #1. Worst case stays bounded: 20 chunks (CHUNK_LIMIT_MAX) ×
+// 2.2K = 44K chars.
+const CHUNK_TEXT_CAP = 2200;
+
 /** Gather the atom ids a graph.expandEntity result actually surfaced — edge
  * provenance refs (atom-lane only; native refs are table names and are
  * dropped downstream by normalizeId anyway) plus attribute / ring-attribute
@@ -4770,7 +4779,7 @@ const TOOLS: McpTool[] = [
   {
     name: "atoms.search",
     description:
-      "Search stored atoms by a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). Filters: clientId (owning scope), subjectType, status (default: live atoms only — active + contested). Each hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable the call degrades to the text lane alone (vectorLaneDisabled:true).",
+      "Search the knowledge layer in TWO RESULT LANES at once. `results` = ATOMS: discrete facts with provenance — a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). `chunks` = PROSE PASSAGES from the narrative dual index (documentChunks, spec §3.4): the same hybrid+RRF over chunk text, each hit carrying documentId + parent document {displayName, fileName, fileTypeDetected} + locator {page/sheet/section} + chunkIndex — use chunks for the nuance atoms flatten (caveats, conditions, reasoning, surrounding context in legal opinions / reports); chunk text is trimmed to ~700 chars with `truncated:true` when cut (read the full doc via document.get if you need more). includeChunks defaults TRUE; set false to skip the chunk lane. Atom filters: clientId (owning scope; also scopes chunks), subjectType, status (default: live atoms only — active + contested). Each atom hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable both lanes degrade to full-text alone (vectorLaneDisabled:true).",
     inputSchema: {
       type: "object",
       properties: {
@@ -4780,6 +4789,8 @@ const TOOLS: McpTool[] = [
         status: { type: "string", description: "Optional: active | contested | superseded | retired. Default: live (active + contested)." },
         limit: { type: "number", description: "Default 20, max 50." },
         includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide hits whose owning clientId is a prospect-status clients row; counts.prospectScopedHidden reports how many were hidden." },
+        includeChunks: { type: "boolean", description: "Default true: also run the prose-chunk lane (same query + clientId) and return a `chunks` array (documentChunks hits with parent-document metadata + locator). Set false for atoms only." },
+        chunkLimit: { type: "number", description: "Max chunk hits. Default 8, max 20." },
       },
       required: ["query"],
     },
@@ -4792,22 +4803,49 @@ const TOOLS: McpTool[] = [
         limit: args.limit,
         includeProspectScoped: args.includeProspectScoped,
       });
+
+      // Chunk lane (default ON) — prose passages from the narrative dual
+      // index, same query + client scope. Trimmed to ~2,200 chars per hit so
+      // the tool response stays bounded; `truncated:true` flags a cut.
+      let chunksSection: Record<string, unknown> = {};
+      let chunkIds: string[] = [];
+      if (args.includeChunks !== false) {
+        const chunkResult = await ctx.runAction(
+          internal.knowledge.embeddings.chunksSearchHybrid,
+          { query: args.query, clientId: args.clientId, limit: args.chunkLimit },
+        );
+        const chunks = chunkResult.results.map((c) => {
+          const truncated = c.text.length > CHUNK_TEXT_CAP;
+          return {
+            ...c,
+            text: truncated ? c.text.slice(0, CHUNK_TEXT_CAP) : c.text,
+            ...(truncated ? { truncated: true as const } : {}),
+          };
+        });
+        chunkIds = chunks
+          .map((c) => c.chunkId as string)
+          .slice(0, RETRIEVAL_LOG_CAP);
+        chunksSection = { chunks, chunkCounts: chunkResult.counts };
+      }
+
       // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget so the
       // usage half of salience learns from real queries; off the latency path.
+      // Chunk hits log in the same batch (chunkId rows; salience-inert).
       const atomIds = ((result.results ?? []) as Array<{ atomId?: unknown }>)
         .map((row) => row.atomId)
         .filter((id): id is string => typeof id === "string")
         .slice(0, RETRIEVAL_LOG_CAP);
-      if (atomIds.length > 0) {
+      if (atomIds.length > 0 || chunkIds.length > 0) {
         await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
           atomIds,
+          chunkIds,
           source: "search",
           queryText: args.query,
           clientId: args.clientId,
           retrievedAt: Date.now(),
         });
       }
-      return asText(result);
+      return asText({ ...result, ...chunksSection });
     },
   },
 
@@ -5013,6 +5051,25 @@ const TOOLS: McpTool[] = [
         from: args.from,
         to: args.to,
         maxHops: args.maxHops,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.overview",
+    description:
+      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxNodes: { type: "number", description: "Node cap (default and max 2500). Lowest-degree contact/company/candidate leaves drop first." },
+        maxEdges: { type: "number", description: "Edge cap (default and max 6000). Kept by contested-first → atom-over-native → confidence ranking." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphOverview.overviewInternal, {
+        maxNodes: args.maxNodes,
+        maxEdges: args.maxEdges,
       });
       return asText(result);
     },

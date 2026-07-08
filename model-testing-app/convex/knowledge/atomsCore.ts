@@ -1,5 +1,9 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "../_generated/server";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "../_generated/server";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -11,6 +15,13 @@ import {
 } from "./vocabulary";
 import { mintFacilitiesForAtoms } from "./facilities";
 import { versionPrecedenceWinner } from "./versionPrecedence";
+import {
+  isLenderEdgeSource,
+  LENDER_EDGE_SOURCE_PREDICATES,
+  matchRosteredLenders,
+  type LenderMatch,
+  type RosteredLender,
+} from "./lenderMatch";
 
 // Knowledge-layer core engine — Spec 2 Phase 2a.1
 // (docs/spec-2-knowledge-layer.md §6.1 gates, §7 dedup/corroboration/
@@ -141,7 +152,7 @@ const locatorValidator = v.object({
   section: v.optional(v.string()),
 });
 
-const observationInputValidator = v.object({
+export const observationInputValidator = v.object({
   sourceType: v.union(
     v.literal("document"),
     v.literal("companies_house"),
@@ -174,7 +185,7 @@ const candidateValidator = v.object({
   observation: observationInputValidator,
 });
 
-type ObservationInput = {
+export type ObservationInput = {
   sourceType: Doc<"atomObservations">["sourceType"];
   documentId?: Id<"documents">;
   contentChecksum?: string;
@@ -410,7 +421,7 @@ async function insertAtomWithObservation(
 
 /** Live (non-superseded) observations for an atom. */
 async function liveObservations(
-  ctx: MutationCtx,
+  ctx: MutationCtx | QueryCtx,
   atomId: Id<"atoms">,
 ): Promise<Doc<"atomObservations">[]> {
   const all = await ctx.db
@@ -621,7 +632,7 @@ async function processCandidate(
  * Superseded LOSERS (winner "incumbent") and corroborations are deliberately
  * excluded: no new statement, so no re-embed (the embed action also skips any
  * row that already has a vector). */
-function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
+export function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
   const ids: Id<"atoms">[] = [];
   for (const o of outcomes) {
     if (o.type === "created") ids.push(o.atomId);
@@ -629,6 +640,229 @@ function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
     else if (o.type === "superseded" && o.winner === "new") ids.push(o.atomId);
   }
   return ids;
+}
+
+// ── Companion lender edges (funds_project inference) ──
+//
+// Live-eval gap (2026-07, operator-approved fix): lender indicative-terms
+// atoms anchor at the PROJECT with the lender named only in free text
+// (qualifier "UTB indicative", statement "United Trust Bank's 2026-03-09
+// indicative Dark Mills facility…"), so no funds_project EDGE exists between
+// the lender client and the project — graph.sharedNeighbors returned 0 for
+// Kinspire × UTB / × HTB / × Triple Point even after group expansion. When a
+// FINANCING attribute atom lands with subjectType=project and its
+// statement/qualifier names exactly ONE rostered lender client
+// (knowledge/lenderMatch.ts — conservative full-name / initials-acronym
+// matching, ambiguity always skips), the engine ensures a companion
+// lender —funds_project→ project edge atom exists: created through the
+// normal identity machinery if missing, corroborated if present. The
+// companion inherits the source observation's provenance / authorityTier /
+// asOf with confidence modestly discounted (it is inferred, not asserted).
+// Borrower-side (subjectType=client) atoms never fire — see
+// isLenderEdgeSource.
+
+export const INFERRED_LENDER_EDGE_QUALIFIER = "inferred from indicative terms";
+export const INFERRED_LENDER_EDGE_CONFIDENCE_FACTOR = 0.85;
+
+/** One project-anchored financing attribute occurrence that may name a
+ * lender. Built from an accepted candidate (write path) or a live atom plus
+ * its best live observation (backfill). */
+export type LenderEdgeSource = {
+  statement: string;
+  qualifier?: string;
+  /** The financing atom's subjectId — a stringified projects._id. */
+  subjectProjectId: string;
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  asOf?: string;
+  confidence: number;
+  observation: ObservationInput;
+};
+
+export type LenderEdgeEmission =
+  | {
+      kind: "emitted";
+      lenderClientId: string;
+      lenderName: string;
+      via: "name" | "acronym";
+      projectId: string;
+      atomId: Id<"atoms">;
+      outcome: Outcome["type"];
+    }
+  | {
+      kind: "ambiguous_skipped";
+      projectId: string;
+      lenderNames: string[];
+      statement: string;
+    }
+  | {
+      kind: "rejected";
+      lenderName: string;
+      projectId: string;
+      reason: string;
+    };
+
+/** Rostered lender clients — clients rows with type="lender", soft-deleted
+ * excluded. The clients table is CRM-scale; a filtered collect matches the
+ * existing pattern (appetiteSignals.ts). */
+export async function loadRosteredLenders(
+  ctx: MutationCtx | QueryCtx,
+): Promise<RosteredLender[]> {
+  const all = await ctx.db.query("clients").collect();
+  return all
+    .filter((c) => c.type === "lender" && c.isDeleted !== true)
+    .map((c) => ({ clientId: String(c._id), name: c.name }));
+}
+
+/** Emit (create-or-corroborate) companion funds_project edges for the given
+ * sources. Shared verbatim by the createAtomsBatch / reatomizeDiff write
+ * hooks and the knowledge/lenderEdges backfill — the single code path for
+ * inferred lender edges. Returns the emissions (for reporting) and the raw
+ * outcomes (so callers can feed the embeddings hook). */
+export async function emitLenderCompanionEdges(
+  ctx: MutationCtx,
+  sources: LenderEdgeSource[],
+  now: string,
+): Promise<{ emissions: LenderEdgeEmission[]; outcomes: Outcome[] }> {
+  const emissions: LenderEdgeEmission[] = [];
+  const outcomes: Outcome[] = [];
+  if (sources.length === 0) return { emissions, outcomes };
+  const lenders = await loadRosteredLenders(ctx);
+  if (lenders.length === 0) return { emissions, outcomes };
+
+  // One emission per (lender, project, source-document) per call — several
+  // attribute atoms from the same document restate the same lender.
+  const handled = new Set<string>();
+
+  for (const src of sources) {
+    const text = src.qualifier
+      ? `${src.statement} ${src.qualifier}`
+      : src.statement;
+    const matches = matchRosteredLenders(text, lenders);
+    if (matches.length === 0) continue;
+    if (matches.length > 1) {
+      emissions.push({
+        kind: "ambiguous_skipped",
+        projectId: src.subjectProjectId,
+        lenderNames: matches.map((m) => m.name),
+        statement: src.statement,
+      });
+      console.log(
+        `[lenderEdges] ambiguous lender mention — skipped (${matches
+          .map((m) => m.name)
+          .join(" | ")}): "${src.statement}"`,
+      );
+      continue;
+    }
+    const lender = matches[0];
+    // Defensive: never a self-edge (the subject gate already guarantees the
+    // subject is a project, so the named lender can never be the subject).
+    if (lender.clientId === src.subjectProjectId) continue;
+
+    const dedupeKey = `${lender.clientId}|${src.subjectProjectId}|${
+      src.observation.documentId ?? src.observation.externalRef ?? ""
+    }`;
+    if (handled.has(dedupeKey)) continue;
+    handled.add(dedupeKey);
+
+    // Qualifier is part of atom identity: reuse an existing live edge's
+    // qualifier so this emission CORROBORATES it instead of minting a
+    // parallel row; only a genuinely new edge gets the inferred qualifier.
+    let qualifier: string | undefined = INFERRED_LENDER_EDGE_QUALIFIER;
+    const existing: Doc<"atoms">[] = [];
+    for (const status of ["active", "contested"] as const) {
+      const rows = await ctx.db
+        .query("atoms")
+        .withIndex("by_subject", (q) =>
+          q
+            .eq("subjectType", "client")
+            .eq("subjectId", lender.clientId)
+            .eq("status", status),
+        )
+        .collect();
+      for (const row of rows) {
+        if (
+          row.predicate === "funds_project" &&
+          row.objectEntityId === src.subjectProjectId
+        ) {
+          existing.push(row);
+        }
+      }
+    }
+    if (existing.length > 0) {
+      const best =
+        existing
+          .filter((a) => a.status === "active")
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? existing[0];
+      qualifier = best.qualifier;
+    }
+
+    const projectDbId = ctx.db.normalizeId("projects", src.subjectProjectId);
+    const project = projectDbId ? await ctx.db.get(projectDbId) : null;
+    if (!project) continue; // dangling subject — validateCandidate would reject
+
+    const cand: Candidate = {
+      statement: `${lender.name} funds the ${project.name} scheme (inferred from indicative terms naming the lender).`,
+      subjectType: "client",
+      subjectId: lender.clientId,
+      predicate: "funds_project",
+      objectEntityType: "project",
+      objectEntityId: src.subjectProjectId,
+      qualifier,
+      clientId: src.clientId,
+      projectId: src.projectId ?? projectDbId ?? undefined,
+      asOf: src.asOf,
+      confidence:
+        Math.round(
+          Math.min(
+            CONFIDENCE_CAP,
+            src.confidence * INFERRED_LENDER_EDGE_CONFIDENCE_FACTOR,
+          ) * 100,
+        ) / 100,
+      observation: src.observation,
+    };
+    const reason = await validateCandidate(ctx, cand);
+    if (reason !== null) {
+      emissions.push({
+        kind: "rejected",
+        lenderName: lender.name,
+        projectId: src.subjectProjectId,
+        reason,
+      });
+      continue;
+    }
+    const outcome = await processCandidate(ctx, cand, now);
+    outcomes.push(outcome);
+    emissions.push({
+      kind: "emitted",
+      lenderClientId: lender.clientId,
+      lenderName: lender.name,
+      via: lender.via,
+      projectId: src.subjectProjectId,
+      atomId: outcome.atomId,
+      outcome: outcome.type,
+    });
+  }
+  return { emissions, outcomes };
+}
+
+/** Collect the companion-edge source from an accepted candidate, when
+ * eligible (project-anchored financing attribute — see isLenderEdgeSource). */
+function collectLenderEdgeSource(
+  sources: LenderEdgeSource[],
+  cand: Candidate,
+): void {
+  if (!isLenderEdgeSource(cand.subjectType, cand.predicate)) return;
+  sources.push({
+    statement: cand.statement,
+    qualifier: cand.qualifier,
+    subjectProjectId: cand.subjectId,
+    clientId: cand.clientId,
+    projectId: cand.projectId,
+    asOf: cand.asOf,
+    confidence: cand.confidence,
+    observation: cand.observation,
+  });
 }
 
 /** Atoms relevant to facility minting from a batch's outcomes: any live
@@ -688,6 +922,7 @@ export const createAtomsBatch = internalMutation({
     const rejected: Array<{ index: number; statement: string; reason: string }> =
       [];
     const outcomes: Outcome[] = [];
+    const lenderEdgeSources: LenderEdgeSource[] = [];
 
     for (let i = 0; i < args.candidates.length; i++) {
       const cand = args.candidates[i] as Candidate;
@@ -699,6 +934,7 @@ export const createAtomsBatch = internalMutation({
       }
       const outcome = await processCandidate(ctx, cand, now);
       outcomes.push(outcome);
+      collectLenderEdgeSource(lenderEdgeSources, cand);
       switch (outcome.type) {
         case "created":
           created.push({ index: i, atomId: outcome.atomId });
@@ -728,6 +964,18 @@ export const createAtomsBatch = internalMutation({
       }
     }
 
+    // Companion lender edges: project-anchored financing attribute atoms whose
+    // text names exactly one rostered lender get a funds_project edge
+    // (created or corroborated) so graph traversal reaches lender ↔ project
+    // without free-text parsing. Outcomes join the batch's, so the new edges
+    // flow into the embeddings hook below.
+    const lenderEdges = await emitLenderCompanionEdges(
+      ctx,
+      lenderEdgeSources,
+      now,
+    );
+    outcomes.push(...lenderEdges.outcomes);
+
     // Deterministic facility minting (spec §3.3) — same transaction.
     const facilityAtoms = await collectFacilityAtoms(ctx, outcomes);
     const facilities =
@@ -747,7 +995,15 @@ export const createAtomsBatch = internalMutation({
       );
     }
 
-    return { created, corroborated, superseded, contested, rejected, facilities };
+    return {
+      created,
+      corroborated,
+      superseded,
+      contested,
+      rejected,
+      facilities,
+      lenderEdges: lenderEdges.emissions,
+    };
   },
 });
 
@@ -1350,6 +1606,7 @@ export const reatomizeDiff = internalMutation({
     const outcomes: Outcome[] = [];
     const rejected: Array<{ index: number; statement: string; reason: string }> =
       [];
+    const lenderEdgeSources: LenderEdgeSource[] = [];
     for (let i = 0; i < args.candidates.length; i++) {
       const raw = args.candidates[i] as Candidate;
       const cand: Candidate = {
@@ -1367,7 +1624,20 @@ export const reatomizeDiff = internalMutation({
         continue;
       }
       outcomes.push(await processCandidate(ctx, cand, now));
+      collectLenderEdgeSource(lenderEdgeSources, cand);
     }
+
+    // 2b. Companion lender edges — BEFORE the prior-revision classification,
+    //     so a re-asserted lender mention corroborates the companion edge
+    //     (its prior observation from this document was superseded in step 1)
+    //     and a dropped mention lets step 4 close the edge out as
+    //     removed_from_source when no other live source supports it.
+    const lenderEdges = await emitLenderCompanionEdges(
+      ctx,
+      lenderEdgeSources,
+      now,
+    );
+    outcomes.push(...lenderEdges.outcomes);
 
     // 3. Classify the prior revision's atoms.
     const keptIds = new Set<Id<"atoms">>();
@@ -1439,6 +1709,7 @@ export const reatomizeDiff = internalMutation({
       ),
       rejected,
       facilities,
+      lenderEdges: lenderEdges.emissions,
     };
   },
 });
@@ -1577,5 +1848,367 @@ export const getAtomsByDocument = internalQuery({
       if (atom) out.push({ atom, observations: obs });
     }
     return out;
+  },
+});
+
+// ── Lender-edge backfill — knowledge/atomsCore:backfillLenderEdges ──
+//
+// The write-path hook above only covers atoms created from now on. This
+// paginated internalAction walks the EXISTING live financing attribute atoms
+// anchored at projects, applies the SAME conservative matcher
+// (knowledge/lenderMatch.ts), and — dryRun=false — emits the missing
+// lender —funds_project→ project companion edges through the SAME code path
+// (emitLenderCompanionEdges). dryRun=true reports the would-be edges (lender
+// matched, source atom, project, whether the edge already exists) WITHOUT
+// writing.
+//
+// Lives in atomsCore rather than its own module: a NEW registered module in
+// this codebase trips tsc's instantiation-depth cliff (TS2589 on every
+// registration — the versionPrecedence/integritySweep baseline errors), while
+// registrations added to this long-standing module typecheck clean. The
+// engine hook and its backfill sharing a module is also the honest grouping.
+//
+// Invocation (orchestrator runs this; never self-run against the deployment):
+//   npx convex run knowledge/atomsCore:backfillLenderEdges '{"dryRun": true}'
+//   npx convex run knowledge/atomsCore:backfillLenderEdges '{"dryRun": false}'
+//   … optionally scoped: '{"clientId": "<clients id>", "dryRun": true}'
+//
+// Explicit handler return types throughout — the action calls queries and a
+// mutation in its OWN module, which makes TypeScript's inference of the
+// generated `internal` api type self-referential (the TS2589 trap
+// embeddings.ts documents); annotating breaks the cycle.
+
+const BACKFILL_PAGE_SIZE = 200;
+const BACKFILL_EMIT_CHUNK = 20;
+
+type EligibleFinancingAtom = {
+  atomId: Id<"atoms">;
+  predicate: string;
+  statement: string;
+  qualifier?: string;
+  subjectProjectId: string;
+  projectName: string | null;
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  asOf?: string;
+  confidence: number;
+  observation: ObservationInput;
+};
+
+type FinancingAtomsPage = {
+  eligible: EligibleFinancingAtom[];
+  scanned: number;
+  isDone: boolean;
+  continueCursor: string;
+};
+
+type BackfillAmbiguousRow = {
+  atomId: Id<"atoms">;
+  statement: string;
+  lenderNames: string[];
+};
+
+type BackfillWouldBeEdge = {
+  lenderClientId: string;
+  lenderName: string;
+  projectId: string;
+  projectName: string | null;
+  sourceAtomIds: Id<"atoms">[];
+  edgeAlreadyExists: boolean;
+};
+
+type BackfillReport = {
+  dryRun: boolean;
+  scanned: number;
+  eligible: number;
+  matches: Array<{
+    atomId: Id<"atoms">;
+    predicate: string;
+    statement: string;
+    lenderName: string;
+    lenderClientId: string;
+    via: "name" | "acronym";
+    projectId: string;
+    projectName: string | null;
+  }>;
+  edges: BackfillWouldBeEdge[];
+  ambiguousSkipped: BackfillAmbiguousRow[];
+  emissions?: LenderEdgeEmission[];
+};
+
+/** Rostered lender clients (type="lender", not soft-deleted). */
+export const rosteredLenders = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<RosteredLender[]> => loadRosteredLenders(ctx),
+});
+
+/** One page of live (active/contested) project-anchored financing attribute
+ * atoms, each with the best live observation (max authorityTier) — the
+ * provenance a companion edge inherits. clientId scopes to one owning
+ * client's atoms. */
+export const pageFinancingProjectAtoms = internalQuery({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    cursor: v.union(v.string(), v.null()),
+    numItems: v.number(),
+  },
+  handler: async (ctx, args): Promise<FinancingAtomsPage> => {
+    const scopeClientId = args.clientId;
+    const result = scopeClientId
+      ? await ctx.db
+          .query("atoms")
+          .withIndex("by_client_status", (q) => q.eq("clientId", scopeClientId))
+          .paginate({ cursor: args.cursor, numItems: args.numItems })
+      : await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) => q.eq("subjectType", "project"))
+          .paginate({ cursor: args.cursor, numItems: args.numItems });
+
+    const eligible: EligibleFinancingAtom[] = [];
+    for (const atom of result.page) {
+      if (atom.subjectType !== "project") continue;
+      if (atom.status !== "active" && atom.status !== "contested") continue;
+      if (!LENDER_EDGE_SOURCE_PREDICATES.has(atom.predicate)) continue;
+      const live = await liveObservations(ctx, atom._id);
+      if (live.length === 0) continue; // no live provenance to inherit
+      const best = [...live].sort(
+        (a, b) => b.authorityTier - a.authorityTier,
+      )[0];
+      const projectDbId = ctx.db.normalizeId("projects", atom.subjectId);
+      const project = projectDbId ? await ctx.db.get(projectDbId) : null;
+      eligible.push({
+        atomId: atom._id,
+        predicate: atom.predicate,
+        statement: atom.statement,
+        qualifier: atom.qualifier,
+        subjectProjectId: atom.subjectId,
+        projectName: project?.name ?? null,
+        clientId: atom.clientId,
+        projectId: atom.projectId,
+        asOf: atom.asOf,
+        confidence: atom.confidence,
+        observation: {
+          sourceType: best.sourceType,
+          documentId: best.documentId,
+          contentChecksum: best.contentChecksum,
+          locator: best.locator,
+          sourceText: best.sourceText,
+          externalRef: best.externalRef,
+          authorityTier: best.authorityTier,
+        },
+      });
+    }
+    return {
+      eligible,
+      scanned: result.page.length,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+/** Which (lender, project) pairs already have a live funds_project edge —
+ * dry-run reporting only (the emitter corroborates existing edges anyway). */
+export const checkExistingLenderEdges = internalQuery({
+  args: {
+    pairs: v.array(
+      v.object({ lenderClientId: v.string(), projectId: v.string() }),
+    ),
+  },
+  handler: async (ctx, args): Promise<boolean[]> => {
+    const out: boolean[] = [];
+    for (const pair of args.pairs) {
+      let exists = false;
+      for (const status of ["active", "contested"] as const) {
+        if (exists) break;
+        const rows = await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) =>
+            q
+              .eq("subjectType", "client")
+              .eq("subjectId", pair.lenderClientId)
+              .eq("status", status),
+          )
+          .collect();
+        exists = rows.some(
+          (r) =>
+            r.predicate === "funds_project" &&
+            r.objectEntityId === pair.projectId,
+        );
+      }
+      out.push(exists);
+    }
+    return out;
+  },
+});
+
+const lenderEdgeSourceValidator = v.object({
+  statement: v.string(),
+  qualifier: v.optional(v.string()),
+  subjectProjectId: v.string(),
+  clientId: v.optional(v.id("clients")),
+  projectId: v.optional(v.id("projects")),
+  asOf: v.optional(v.string()),
+  confidence: v.number(),
+  observation: observationInputValidator,
+});
+
+/** Emit companion edges for a chunk of sources — the same code path as the
+ * write hook (emitLenderCompanionEdges re-runs the matcher server-side, so a
+ * stale pre-match can never emit a wrong edge), plus the same embeddings
+ * scheduling for newly created edge atoms. */
+export const emitCompanionEdges = internalMutation({
+  args: { sources: v.array(lenderEdgeSourceValidator) },
+  handler: async (ctx, args): Promise<LenderEdgeEmission[]> => {
+    if (args.sources.length > BACKFILL_EMIT_CHUNK) {
+      throw new Error(
+        `chunk_too_large: ${args.sources.length} sources (max ${BACKFILL_EMIT_CHUNK}); chunk the call`,
+      );
+    }
+    const now = new Date().toISOString();
+    const { emissions, outcomes } = await emitLenderCompanionEdges(
+      ctx,
+      args.sources as LenderEdgeSource[],
+      now,
+    );
+    const embedIds = embedTargetIds(outcomes);
+    if (embedIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.knowledge.embeddings.embedAtoms, {
+        atomIds: embedIds,
+      });
+    }
+    return emissions;
+  },
+});
+
+/** Walk existing live financing atoms (optionally scoped to one owning
+ * clientId), match rostered lenders conservatively, and emit the missing
+ * funds_project companion edges. dryRun=true returns the would-be edges
+ * without writing. */
+export const backfillLenderEdges = internalAction({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    dryRun: v.boolean(),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<BackfillReport> => {
+    const numItems = Math.min(
+      Math.max(args.pageSize ?? BACKFILL_PAGE_SIZE, 1),
+      500,
+    );
+    const lenders: RosteredLender[] = await ctx.runQuery(
+      internal.knowledge.atomsCore.rosteredLenders,
+      {},
+    );
+
+    let cursor: string | null = null;
+    let scanned = 0;
+    let eligibleCount = 0;
+    const matched: Array<{
+      row: EligibleFinancingAtom;
+      lender: LenderMatch;
+    }> = [];
+    const ambiguousSkipped: BackfillAmbiguousRow[] = [];
+
+    for (;;) {
+      const page: FinancingAtomsPage = await ctx.runQuery(
+        internal.knowledge.atomsCore.pageFinancingProjectAtoms,
+        { clientId: args.clientId, cursor, numItems },
+      );
+      scanned += page.scanned;
+      for (const row of page.eligible) {
+        eligibleCount++;
+        const text = row.qualifier
+          ? `${row.statement} ${row.qualifier}`
+          : row.statement;
+        const hits = matchRosteredLenders(text, lenders);
+        if (hits.length === 1) {
+          matched.push({ row, lender: hits[0] });
+        } else if (hits.length > 1) {
+          ambiguousSkipped.push({
+            atomId: row.atomId,
+            statement: row.statement,
+            lenderNames: hits.map((h) => h.name),
+          });
+        }
+      }
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+
+    // Distinct would-be edges, with existence check for the report.
+    const edgeMap = new Map<string, BackfillWouldBeEdge>();
+    for (const { row, lender } of matched) {
+      const key = `${lender.clientId}|${row.subjectProjectId}`;
+      const entry = edgeMap.get(key) ?? {
+        lenderClientId: lender.clientId,
+        lenderName: lender.name,
+        projectId: row.subjectProjectId,
+        projectName: row.projectName,
+        sourceAtomIds: [],
+        edgeAlreadyExists: false,
+      };
+      entry.sourceAtomIds.push(row.atomId);
+      edgeMap.set(key, entry);
+    }
+    const edges = [...edgeMap.values()];
+    if (edges.length > 0) {
+      const existsFlags: boolean[] = await ctx.runQuery(
+        internal.knowledge.atomsCore.checkExistingLenderEdges,
+        {
+          pairs: edges.map((e) => ({
+            lenderClientId: e.lenderClientId,
+            projectId: e.projectId,
+          })),
+        },
+      );
+      edges.forEach((e, i) => {
+        e.edgeAlreadyExists = existsFlags[i] ?? false;
+      });
+    }
+
+    const report: BackfillReport = {
+      dryRun: args.dryRun,
+      scanned,
+      eligible: eligibleCount,
+      matches: matched.map(({ row, lender }) => ({
+        atomId: row.atomId,
+        predicate: row.predicate,
+        statement: row.statement,
+        lenderName: lender.name,
+        lenderClientId: lender.clientId,
+        via: lender.via,
+        projectId: row.subjectProjectId,
+        projectName: row.projectName,
+      })),
+      edges,
+      ambiguousSkipped,
+    };
+
+    if (args.dryRun) return report;
+
+    // Real run — same code path as the write hook, chunked per mutation.
+    const emissions: LenderEdgeEmission[] = [];
+    for (let i = 0; i < matched.length; i += BACKFILL_EMIT_CHUNK) {
+      const chunk = matched.slice(i, i + BACKFILL_EMIT_CHUNK);
+      const res: LenderEdgeEmission[] = await ctx.runMutation(
+        internal.knowledge.atomsCore.emitCompanionEdges,
+        {
+          sources: chunk.map(({ row }) => ({
+            statement: row.statement,
+            qualifier: row.qualifier,
+            subjectProjectId: row.subjectProjectId,
+            clientId: row.clientId,
+            projectId: row.projectId,
+            asOf: row.asOf,
+            confidence: row.confidence,
+            observation: row.observation,
+          })),
+        },
+      );
+      emissions.push(...res);
+    }
+    report.emissions = emissions;
+    return report;
   },
 });
