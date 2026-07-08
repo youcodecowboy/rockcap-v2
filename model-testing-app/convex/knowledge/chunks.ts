@@ -87,14 +87,16 @@ export const chunkDocument = internalMutation({
 
 // ── Backfill ──────────────────────────────────────────────────────────────
 //
-// Walk already-classified prose docs that carry stored textContent but have no
-// chunks yet, and chunk each. Coarse pre-filter (classified + has text + zero
-// chunks) lives in the query; chunkDocument makes the authoritative prose
-// decision, so the two never disagree. Paginated for manual invocation or a
-// future sweep.
+// Walk already-classified PROSE docs that carry stored textContent but have no
+// chunks yet, and chunk each. The prose decision is made IN the candidate query
+// (same isProseDocument predicate chunkDocument applies), so non-prose docs —
+// which never acquire chunks and would otherwise reappear in the frontier every
+// night — are excluded up front. That keeps the walk's work bounded to genuine
+// prose stragglers and stops non-prose docs from starving the candidate budget.
 
-/** One page of documents that MIGHT need chunking: classified, has stored
- * text, and has no documentChunks yet. Prose is decided downstream. */
+/** One page of documents that need chunking: classified PROSE, has stored text,
+ * and has no documentChunks yet. `examined` reports how many docs the page
+ * walked (candidate or not) so the driver can bound the nightly scan. */
 export const proseDocsNeedingChunksPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), limit: v.number() },
   handler: async (ctx, args) => {
@@ -112,6 +114,27 @@ export const proseDocsNeedingChunksPage = internalQuery({
       const hasText =
         typeof d.textContent === "string" && d.textContent.trim().length > 0;
       if (!classified || !hasText || !d.contentChecksum) continue;
+
+      // Authoritative prose decision — mirrors chunkDocument so a non-prose doc
+      // (spreadsheet/CSV/image with vision text, etc.) is never a candidate and
+      // thus never lingers in the frontier consuming the budget forever.
+      const driveRow = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_document", (q) => q.eq("documentId", doc._id))
+        .first();
+      const mimeType: string | undefined =
+        (driveRow as any)?.mimeType ?? d.fileType ?? undefined;
+      if (
+        !isProseDocument({
+          category: d.category ?? null,
+          fileType: d.fileTypeDetected ?? null,
+          mimeType,
+          textLength: (d.textContent as string).length,
+        })
+      ) {
+        continue;
+      }
+
       const existingChunk = await ctx.db
         .query("documentChunks")
         .withIndex("by_document", (q) => q.eq("documentId", doc._id))
@@ -119,14 +142,32 @@ export const proseDocsNeedingChunksPage = internalQuery({
       if (existingChunk) continue;
       docs.push({ _id: doc._id });
     }
-    return { docs, cursor: page.continueCursor, isDone: page.isDone };
+    return {
+      docs,
+      examined: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
+// Bounds the nightly scan. The candidate query already excludes non-prose and
+// already-chunked docs, so the frontier advances every run (chunked docs leave
+// it) and no doc is stuck forever. This page cap is the belt-and-braces bound so
+// a single run can never walk the documents table unboundedly — matching the
+// paginated MAX_PAGES pattern the rest of the integrity sweep uses. 500 × 50 =
+// 25k docs, i.e. a realistic corpus in one pass.
+const BACKFILL_MAX_PAGES = 500;
+
 /**
  * Backfill chunks for prose documents that have none. Suitable for manual
- * invocation (`internal.knowledge.chunks.backfillChunksForProseDocs`) or a
- * future cron sweep. Pages through the corpus, chunking each prose doc.
+ * invocation (`internal.knowledge.chunks.backfillChunksForProseDocs`) or the
+ * nightly integrity sweep. Walks the corpus in pages (bounded by
+ * BACKFILL_MAX_PAGES), chunking each prose straggler until it has chunked
+ * `maxDocs` of them or run out of documents.
+ *
+ * `maxDocs` caps the CHUNKING WORK per run (candidates acted on), NOT the number
+ * of documents scanned — scanning is bounded separately by BACKFILL_MAX_PAGES.
  */
 export const backfillChunksForProseDocs = internalAction({
   args: {
@@ -138,18 +179,23 @@ export const backfillChunksForProseDocs = internalAction({
     const batchSize = args.batchSize ?? 50;
     const maxDocs = args.maxDocs ?? 500;
     let cursor: string | null = args.cursor ?? null;
-    let scanned = 0;
+    let walked = 0; // documents examined (candidate or not)
+    let acted = 0; // candidates passed to chunkDocument
     let chunked = 0;
     let skipped = 0;
+    let pages = 0;
+    let capped = false;
 
-    while (scanned < maxDocs) {
+    for (let i = 0; i < BACKFILL_MAX_PAGES; i++) {
       const page = await ctx.runQuery(
         internal.knowledge.chunks.proseDocsNeedingChunksPage,
         { cursor, limit: batchSize },
       );
+      walked += page.examined;
+      pages++;
       for (const d of page.docs) {
-        if (scanned >= maxDocs) break;
-        scanned++;
+        if (acted >= maxDocs) break;
+        acted++;
         const res = await ctx.runMutation(
           internal.knowledge.chunks.chunkDocument,
           { documentId: d._id },
@@ -162,8 +208,19 @@ export const backfillChunksForProseDocs = internalAction({
         break;
       }
       cursor = page.cursor;
+      if (acted >= maxDocs) break;
+      if (i === BACKFILL_MAX_PAGES - 1) capped = true;
     }
 
-    return { scanned, chunked, skipped, nextCursor: cursor };
+    // `scanned` kept for the sweep's existing log line (== candidates acted on).
+    return {
+      walked,
+      scanned: acted,
+      chunked,
+      skipped,
+      pages,
+      capped,
+      nextCursor: cursor,
+    };
   },
 });

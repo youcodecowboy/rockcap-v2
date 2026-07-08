@@ -82,10 +82,17 @@ const USAGE_WEIGHT = 0.3;
 // Half-saturation of the usage curve: at ~10 retrievals usageNorm ≈ 0.5.
 const USAGE_SATURATION = Math.log(1 + 10);
 const GATHER_PAGE = 500;
-const APPLY_PAGE = 200;
+// salienceApplyPage reads, in ONE mutation, up to APPLY_PAGE atoms plus
+// APPLY_PAGE × RETRIEVAL_COUNT_CAP retrievalLog rows (countRetrievals per atom).
+// Convex caps a single transaction at ~16,384 document reads, so this product
+// MUST stay comfortably under that ceiling. 50 × 200 = 10,000 (+50 atoms) leaves
+// headroom; the per-atom cap barely affects salience (log(1+n) has flattened by
+// n≈200), and the smaller page just means more — still bounded — apply pages.
+const APPLY_PAGE = 50;
 // Bounds the per-atom retrievalLog read; log(1+n) has already flattened well
-// before this, so counting past the cap changes salience imperceptibly.
-const RETRIEVAL_COUNT_CAP = 500;
+// before this, so counting past the cap changes salience imperceptibly. Kept
+// low enough that APPLY_PAGE × RETRIEVAL_COUNT_CAP stays under the per-txn cap.
+const RETRIEVAL_COUNT_CAP = 200;
 
 function clamp01(x: number): number {
   return Math.min(1, Math.max(0, x));

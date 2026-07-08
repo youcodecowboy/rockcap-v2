@@ -4856,6 +4856,9 @@ export default defineSchema({
     .index("by_subject", ["subjectType", "subjectId", "status"])
     .index("by_object", ["objectEntityType", "objectEntityId", "status"])
     .index("by_client_status", ["clientId", "status"])
+    // Owning-project scope — lets mergeEntities re-scope a project's atoms with a
+    // bounded index scan instead of a full-table .collect() (Convex per-txn read cap).
+    .index("by_project", ["projectId"])
     .index("by_predicate", ["predicate", "status"])
     .searchIndex("search_statement", {
       searchField: "statement",
@@ -4931,6 +4934,9 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_lender", ["lenderClientId"])
     .index("by_lender_company", ["lenderCompanyId"])
+    // Borrower scope — lets mergeEntities re-scope a client's borrower facilities
+    // with a bounded index scan instead of a full-table .collect().
+    .index("by_borrower", ["borrowerClientId"])
     .index("by_dedupe", ["dedupeKey"]),
 
   // The narrative dual index — spec §3.4. Chunks are disposable derivatives
@@ -4954,6 +4960,11 @@ export default defineSchema({
     embedding: v.optional(v.array(v.float64())), // optional until 2a.2 embeds
   })
     .index("by_document", ["documentId"])
+    // Scope indexes — let mergeEntities re-scope a client's / project's chunks with
+    // a bounded index scan instead of a full-table .collect() (search/vector filter
+    // fields cannot serve a plain equality read inside a mutation).
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
     .searchIndex("search_text", { searchField: "text", filterFields: ["clientId"] })
     .vectorIndex("by_embedding", {
       vectorField: "embedding",

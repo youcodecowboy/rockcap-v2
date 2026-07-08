@@ -475,16 +475,10 @@ export const nightlyIntegritySweep = internalAction({
       `[integritySweep] tombstone: scanned=${tombstone.scanned} dangling=${tombstone.dangling} pages=${tombstone.pages} capped=${tombstone.capped}`,
     );
 
-    // 4. Salience / IDF refresh (self-paginates internally).
-    const salience = await ctx.runAction(
-      internal.knowledge.salience.refreshSalience,
-      {},
-    );
-    console.log(
-      `[integritySweep] salience: totalLive=${salience.totalLive} predicates=${salience.predicates} patched=${salience.patched}`,
-    );
-
-    // 5a. retrievalLog pruning (age-out disposable telemetry).
+    // 4. retrievalLog pruning (age-out disposable telemetry). Runs BEFORE the
+    //    salience refresh on purpose: pruning is cheap and independent, so doing
+    //    it first means a salience failure can never starve the prune, and the
+    //    refresh then counts a trimmed (rolling-window) retrievalLog.
     const prune = { deleted: 0, pages: 0, capped: false };
     {
       let cursor: string | null = null;
@@ -508,13 +502,23 @@ export const nightlyIntegritySweep = internalAction({
       `[integritySweep] retrievalPrune: deleted=${prune.deleted} pages=${prune.pages} capped=${prune.capped}`,
     );
 
-    // 5b. Chunk-backfill tick (self-bounds at maxDocs; one pass per night).
+    // 5. Salience / IDF refresh (self-paginates internally; each apply page is a
+    //    bounded transaction — see APPLY_PAGE × RETRIEVAL_COUNT_CAP in salience.ts).
+    const salience = await ctx.runAction(
+      internal.knowledge.salience.refreshSalience,
+      {},
+    );
+    console.log(
+      `[integritySweep] salience: totalLive=${salience.totalLive} predicates=${salience.predicates} patched=${salience.patched}`,
+    );
+
+    // 5b. Chunk-backfill tick (bounded walk — see backfillChunksForProseDocs).
     const chunks = await ctx.runAction(
       internal.knowledge.chunks.backfillChunksForProseDocs,
       {},
     );
     console.log(
-      `[integritySweep] chunkBackfill: scanned=${chunks.scanned} chunked=${chunks.chunked} skipped=${chunks.skipped}`,
+      `[integritySweep] chunkBackfill: walked=${chunks.walked} chunked=${chunks.chunked} skipped=${chunks.skipped} pages=${chunks.pages} capped=${chunks.capped}`,
     );
 
     const finishedAt = new Date().toISOString();

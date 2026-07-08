@@ -1223,9 +1223,10 @@ export const mergeEntities = internalMutation({
         await ctx.db.patch(a._id, { clientId: to });
         scope.atomsRescoped++;
       }
-      const chunks = (await ctx.db.query("documentChunks").collect()).filter(
-        (c) => c.clientId === from,
-      );
+      const chunks = await ctx.db
+        .query("documentChunks")
+        .withIndex("by_client", (q) => q.eq("clientId", from))
+        .collect();
       for (const c of chunks) {
         await ctx.db.patch(c._id, { clientId: to });
         scope.chunksRescoped++;
@@ -1238,9 +1239,10 @@ export const mergeEntities = internalMutation({
         await ctx.db.patch(f._id, { lenderClientId: to });
         scope.facilitiesRescoped++;
       }
-      const borrowerFacs = (await ctx.db.query("facilities").collect()).filter(
-        (f) => f.borrowerClientId === from,
-      );
+      const borrowerFacs = await ctx.db
+        .query("facilities")
+        .withIndex("by_borrower", (q) => q.eq("borrowerClientId", from))
+        .collect();
       for (const f of borrowerFacs) {
         await ctx.db.patch(f._id, { borrowerClientId: to });
         scope.facilitiesRescoped++;
@@ -1256,17 +1258,18 @@ export const mergeEntities = internalMutation({
     } else if (entityType === "project") {
       const from = fromId as Id<"projects">;
       const to = toId as Id<"projects">;
-      // Atoms carry no dedicated projectId index — scan and filter.
-      const scopedAtoms = (await ctx.db.query("atoms").collect()).filter(
-        (a) => a.projectId === from,
-      );
+      const scopedAtoms = await ctx.db
+        .query("atoms")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .collect();
       for (const a of scopedAtoms) {
         await ctx.db.patch(a._id, { projectId: to });
         scope.atomsRescoped++;
       }
-      const chunks = (await ctx.db.query("documentChunks").collect()).filter(
-        (c) => c.projectId === from,
-      );
+      const chunks = await ctx.db
+        .query("documentChunks")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .collect();
       for (const c of chunks) {
         await ctx.db.patch(c._id, { projectId: to });
         scope.chunksRescoped++;
