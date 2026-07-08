@@ -4995,15 +4995,21 @@ export default defineSchema({
     .index("by_normalized_name", ["normalizedName"])
     .index("by_status", ["status"]),
 
-  // Retrieval instrumentation — spec §10, Phase 2c. One thin row per (atom,
-  // retrieval occurrence): which atoms a search / graph expansion actually
-  // surfaced. Written fire-and-forget from the MCP action layer (queries
-  // cannot write), so retrieval latency is unaffected. Feeds two things:
+  // Retrieval instrumentation — spec §10, Phase 2c. One thin row per (atom
+  // OR chunk, retrieval occurrence): which atoms/chunks a search / graph
+  // expansion actually surfaced. Written fire-and-forget from the MCP action
+  // layer (queries cannot write), so retrieval latency is unaffected. Feeds:
   // (1) the usage component of atoms.salience (refreshSalience reads by_atom
-  // counts), (2) the utilization / dead-weight health metrics. Pruned by
-  // age via by_retrievedAt — this is disposable telemetry, not provenance.
+  // counts — chunk rows have no atomId and never match), (2) the utilization
+  // / dead-weight health metrics; chunk rows are reserved for future chunk-
+  // level stats + pruning. Pruned by age via by_retrievedAt (covers BOTH row
+  // kinds) — this is disposable telemetry, not provenance.
   retrievalLog: defineTable({
-    atomId: v.id("atoms"),
+    // Exactly ONE of atomId / chunkId is set per row. Convex validators can't
+    // express XOR, so the invariant is enforced in knowledge/salience
+    // logRetrieval (the only writer).
+    atomId: v.optional(v.id("atoms")),
+    chunkId: v.optional(v.id("documentChunks")),
     source: v.union(v.literal("search"), v.literal("expand")),
     queryText: v.optional(v.string()), // the search query (truncated); absent for expands
     clientId: v.optional(v.id("clients")), // scope the retrieval ran under, when known

@@ -38,10 +38,16 @@ import type { Id } from "../_generated/dataModel";
 // have the results — one batched insert, off the retrieval latency path. Atom
 // ids are normalized here, so callers may pass raw provenance refs loosely:
 // native-edge refs (table names) and stale ids simply fail normalization and
-// are dropped.
+// are dropped. Chunk retrievals (the atoms.search `chunks` lane) log through
+// the same mutation via chunkIds — each inserted row sets EXACTLY ONE of
+// atomId / chunkId (the schema-documented XOR invariant lives here, the only
+// writer). Chunk rows never feed salience (countRetrievals walks by_atom with
+// a concrete atomId, which chunk rows lack); they exist for future chunk-level
+// usage stats + pruning and age out with the by_retrievedAt prune like any row.
 export const logRetrieval = internalMutation({
   args: {
-    atomIds: v.array(v.string()),
+    atomIds: v.optional(v.array(v.string())),
+    chunkIds: v.optional(v.array(v.string())),
     source: v.union(v.literal("search"), v.literal("expand")),
     queryText: v.optional(v.string()),
     clientId: v.optional(v.string()),
@@ -56,12 +62,27 @@ export const logRetrieval = internalMutation({
     const queryText = args.queryText?.slice(0, 200);
     const seen = new Set<string>();
     let written = 0;
-    for (const raw of args.atomIds) {
+    for (const raw of args.atomIds ?? []) {
       const atomId = ctx.db.normalizeId("atoms", raw);
       if (!atomId || seen.has(atomId)) continue;
       seen.add(atomId);
       await ctx.db.insert("retrievalLog", {
-        atomId,
+        atomId, // chunkId deliberately absent — exactly one per row
+        source: args.source,
+        queryText,
+        clientId,
+        subjectType: args.subjectType,
+        subjectId: args.subjectId,
+        retrievedAt: args.retrievedAt,
+      });
+      written++;
+    }
+    for (const raw of args.chunkIds ?? []) {
+      const chunkId = ctx.db.normalizeId("documentChunks", raw);
+      if (!chunkId || seen.has(chunkId)) continue;
+      seen.add(chunkId);
+      await ctx.db.insert("retrievalLog", {
+        chunkId, // atomId deliberately absent — exactly one per row
         source: args.source,
         queryText,
         clientId,

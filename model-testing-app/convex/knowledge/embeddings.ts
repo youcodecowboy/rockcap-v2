@@ -275,6 +275,33 @@ type HybridResult = {
   };
   vectorLaneDisabled: boolean;
 };
+type ChunkHit = {
+  chunkId: Id<"documentChunks">;
+  documentId: Id<"documents">;
+  chunkIndex: number;
+  locator?: { page?: number; sheet?: string; section?: string };
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  text: string;
+};
+type ChunkDocumentMeta = {
+  documentId: Id<"documents">;
+  displayName?: string;
+  fileName: string;
+  fileTypeDetected: string;
+};
+type ChunksHybridResult = {
+  query: string;
+  results: Array<
+    ChunkHit & {
+      rrfScore: number;
+      lane: "text" | "vector" | "both";
+      document?: Omit<ChunkDocumentMeta, "documentId">;
+    }
+  >;
+  counts: { textLane: number; vectorLane: number; merged: number };
+  vectorLaneDisabled: boolean;
+};
 
 // ── Write-path embed actions (scheduled from atomsCore) ──
 
@@ -677,5 +704,264 @@ export const atomsSearchHybridPublic = action({
       internal.knowledge.embeddings.atomsSearchHybrid,
       args,
     );
+  },
+});
+
+// ── Chunk hybrid search (the narrative dual index's READ path) ──
+//
+// The retrieval side of atoms.upsertChunks / embedChunks: documentChunks rows
+// (prose passages of narrative docs, spec §3.4) were previously write-only.
+// Same two-lane RRF shape as atomsSearchHybrid — full-text over `search_text`
+// + vector over `by_embedding` (both filtered by clientId, the only filter
+// field either index carries), fused at k=60 — with one difference: chunks
+// have no status/subjectType/prospect machinery, so the lanes are thinner.
+// Each hit is made self-describing with its parent document's displayName /
+// fileName / fileTypeDetected, resolved in ONE batched query over the merged
+// page's distinct documentIds.
+
+const CHUNK_LIMIT_DEFAULT = 8;
+const CHUNK_LIMIT_MAX = 20;
+const CHUNK_VECTOR_OVERFETCH = 24; // mirror the atoms lane's over-fetch
+
+const chunksHybridArgs = {
+  query: v.string(),
+  clientId: v.optional(v.string()),
+  limit: v.optional(v.number()),
+};
+
+function toChunkHit(c: {
+  _id: Id<"documentChunks">;
+  documentId: Id<"documents">;
+  chunkIndex: number;
+  locator?: { page?: number; sheet?: string; section?: string };
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  text: string;
+}): ChunkHit {
+  return {
+    chunkId: c._id,
+    documentId: c.documentId,
+    chunkIndex: c.chunkIndex,
+    locator: c.locator,
+    clientId: c.clientId,
+    projectId: c.projectId,
+    text: c.text,
+  };
+}
+
+/** Text lane — full-text over documentChunks.search_text, clientId-scoped. */
+export const chunksSearchText = internalQuery({
+  args: { query: v.string(), clientId: v.optional(v.string()), limit: v.number() },
+  handler: async (ctx, args): Promise<ChunkHit[]> => {
+    const clientId = args.clientId
+      ? ctx.db.normalizeId("clients", args.clientId)
+      : undefined;
+    if (args.clientId && !clientId) {
+      throw new Error(`invalid_client_id: "${args.clientId}" is not a clients id`);
+    }
+    const rows = await ctx.db
+      .query("documentChunks")
+      .withSearchIndex("search_text", (q) => {
+        let s = q.search("text", args.query);
+        if (clientId) s = s.eq("clientId", clientId);
+        return s;
+      })
+      .take(args.limit);
+    return rows.map(toChunkHit);
+  },
+});
+
+/** Vector lane's row loader — loads vectorSearch hit ids IN ORDER (= vector
+ * rank), re-applies the clientId scope (defense-in-depth; the vector filter
+ * already narrowed when clientId was set) and shapes the hits. */
+export const chunksVectorLoad = internalQuery({
+  args: {
+    chunkIds: v.array(v.id("documentChunks")),
+    clientId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ChunkHit[]> => {
+    const clientId = args.clientId
+      ? ctx.db.normalizeId("clients", args.clientId)
+      : undefined;
+    if (args.clientId && !clientId) {
+      throw new Error(`invalid_client_id: "${args.clientId}" is not a clients id`);
+    }
+    const results: ChunkHit[] = [];
+    for (const id of args.chunkIds) {
+      const c = await ctx.db.get(id);
+      if (!c) continue;
+      if (clientId && c.clientId !== clientId) continue;
+      results.push(toChunkHit(c));
+    }
+    return results;
+  },
+});
+
+/** ONE batched lookup of parent-document metadata for the merged page, so
+ * every chunk hit is self-describing (which doc, what kind of doc). */
+export const getChunkDocumentMeta = internalQuery({
+  args: { documentIds: v.array(v.id("documents")) },
+  handler: async (ctx, args): Promise<ChunkDocumentMeta[]> => {
+    const seen = new Set<string>();
+    const out: ChunkDocumentMeta[] = [];
+    for (const id of args.documentIds) {
+      if (seen.has(id as string)) continue;
+      seen.add(id as string);
+      // The documents Doc type is too wide for inference here (same reason
+      // knowledge/chunks.ts casts); narrow to the three fields we read.
+      const d = (await ctx.db.get(id)) as {
+        _id: Id<"documents">;
+        displayName?: string;
+        fileName: string;
+        fileTypeDetected: string;
+      } | null;
+      if (!d) continue;
+      out.push({
+        documentId: d._id,
+        displayName: d.displayName,
+        fileName: d.fileName,
+        fileTypeDetected: d.fileTypeDetected,
+      });
+    }
+    return out;
+  },
+});
+
+/** Internal action — chunk retrieval core (the MCP atoms.search `chunks`
+ * lane calls this; callable directly for pilot testing). Degrades to the
+ * text lane alone when embeddings are unavailable, exactly like atoms. */
+export const chunksSearchHybrid = internalAction({
+  args: chunksHybridArgs,
+  handler: async (ctx, args): Promise<ChunksHybridResult> => {
+    const limit = Math.min(
+      Math.max(args.limit ?? CHUNK_LIMIT_DEFAULT, 1),
+      CHUNK_LIMIT_MAX,
+    );
+
+    // (a) Text lane.
+    const textResults = await ctx.runQuery(
+      internal.knowledge.embeddings.chunksSearchText,
+      { query: args.query, clientId: args.clientId, limit },
+    );
+
+    // Attach parent-document metadata to a merged page (one batched query).
+    const withDocMeta = async (
+      rows: Array<ChunkHit & { rrfScore: number; lane: "text" | "vector" | "both" }>,
+    ): Promise<ChunksHybridResult["results"]> => {
+      // Annotated — the same-module runQuery's return type degrades through
+      // the self-referential `internal` api type (see the note above
+      // EmbedAtomsResult; explicit types are the standard Convex fix).
+      const meta = (await ctx.runQuery(
+        internal.knowledge.embeddings.getChunkDocumentMeta,
+        { documentIds: rows.map((r) => r.documentId) },
+      )) as ChunkDocumentMeta[];
+      const byId = new Map(meta.map((m) => [m.documentId as string, m]));
+      return rows.map((r) => {
+        const m = byId.get(r.documentId as string);
+        return {
+          ...r,
+          document: m
+            ? {
+                displayName: m.displayName,
+                fileName: m.fileName,
+                fileTypeDetected: m.fileTypeDetected,
+              }
+            : undefined,
+        };
+      });
+    };
+
+    // (b) Embed the query — key missing / Voyage down → text lane alone.
+    let queryVec: number[] | null = null;
+    try {
+      const [vec] = await embedTexts([args.query], "query");
+      queryVec = vec ?? null;
+    } catch (e) {
+      if (!(e instanceof VoyageKeyMissingError)) {
+        console.warn(
+          "[embeddings] chunk hybrid vector lane error:",
+          (e as Error).message,
+        );
+      }
+      queryVec = null;
+    }
+    if (!queryVec) {
+      const results = await withDocMeta(
+        textResults.map((r, i) => ({
+          ...r,
+          lane: "text" as const,
+          rrfScore: 1 / (RRF_K + i + 1),
+        })),
+      );
+      return {
+        query: args.query,
+        results,
+        counts: {
+          textLane: textResults.length,
+          vectorLane: 0,
+          merged: results.length,
+        },
+        vectorLaneDisabled: true as const,
+      };
+    }
+
+    // (c) Vector lane — over-fetch, then load + scope-check in a query.
+    //     `by_embedding` on documentChunks filters on clientId ONLY.
+    const clientFilter = args.clientId
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (q: any) => q.eq("clientId", args.clientId as Id<"clients">)
+      : undefined;
+    const hits = await ctx.vectorSearch("documentChunks", "by_embedding", {
+      vector: queryVec,
+      limit: CHUNK_VECTOR_OVERFETCH,
+      ...(clientFilter ? { filter: clientFilter } : {}),
+    });
+    const vectorResults = await ctx.runQuery(
+      internal.knowledge.embeddings.chunksVectorLoad,
+      { chunkIds: hits.map((h) => h._id), clientId: args.clientId },
+    );
+
+    // (d) RRF merge (k=60), dedupe by chunkId — both-lane hits sum both terms.
+    //     No salience fold here: chunks carry no salience (atoms only).
+    type Acc = { row: ChunkHit; score: number; inText: boolean; inVec: boolean };
+    const acc = new Map<string, Acc>();
+    textResults.forEach((r, i) => {
+      const id = r.chunkId as string;
+      const e = acc.get(id) ?? { row: r, score: 0, inText: false, inVec: false };
+      e.score += 1 / (RRF_K + i + 1);
+      e.inText = true;
+      acc.set(id, e);
+    });
+    vectorResults.forEach((r, i) => {
+      const id = r.chunkId as string;
+      const e = acc.get(id) ?? { row: r, score: 0, inText: false, inVec: false };
+      e.score += 1 / (RRF_K + i + 1);
+      e.inVec = true;
+      acc.set(id, e);
+    });
+    const merged = [...acc.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((e) => ({
+        ...e.row,
+        lane: (e.inText && e.inVec
+          ? "both"
+          : e.inText
+            ? "text"
+            : "vector") as "text" | "vector" | "both",
+        rrfScore: e.score,
+      }));
+    const results = await withDocMeta(merged);
+
+    return {
+      query: args.query,
+      results,
+      counts: {
+        textLane: textResults.length,
+        vectorLane: vectorResults.length,
+        merged: results.length,
+      },
+      vectorLaneDisabled: false as const,
+    };
   },
 });
