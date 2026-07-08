@@ -43,6 +43,38 @@ function asText(result: unknown): { content: Array<{ type: "text"; text: string 
   };
 }
 
+// Cap on how many atom ids a single retrievalLog batch records (spec §10).
+const RETRIEVAL_LOG_CAP = 100;
+
+/** Gather the atom ids a graph.expandEntity result actually surfaced — edge
+ * provenance refs (atom-lane only; native refs are table names and are
+ * dropped downstream by normalizeId anyway) plus attribute / ring-attribute
+ * atom ids. Used to feed retrievalLog fire-and-forget. */
+function collectExpandAtomIds(result: unknown): string[] {
+  const ids = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = result as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addEdge = (e: any) => {
+    if (e?.provenance?.sourceType !== "native" && typeof e?.provenance?.ref === "string") {
+      ids.add(e.provenance.ref);
+    }
+  };
+  (r?.edges ?? []).forEach(addEdge);
+  (r?.interEdges ?? []).forEach(addEdge);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (r?.attributes ?? []).forEach((a: any) => {
+    if (typeof a?.atomId === "string") ids.add(a.atomId);
+  });
+  for (const rows of Object.values(r?.ringAttributes ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of (rows as any[]) ?? []) {
+      if (typeof a?.atomId === "string") ids.add(a.atomId);
+    }
+  }
+  return [...ids].slice(0, RETRIEVAL_LOG_CAP);
+}
+
 // ── Tool catalogue ───────────────────────────────────────────
 
 const TOOLS: McpTool[] = [
@@ -4760,6 +4792,21 @@ const TOOLS: McpTool[] = [
         limit: args.limit,
         includeProspectScoped: args.includeProspectScoped,
       });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget so the
+      // usage half of salience learns from real queries; off the latency path.
+      const atomIds = ((result.results ?? []) as Array<{ atomId?: unknown }>)
+        .map((row) => row.atomId)
+        .filter((id): id is string => typeof id === "string")
+        .slice(0, RETRIEVAL_LOG_CAP);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "search",
+          queryText: args.query,
+          clientId: args.clientId,
+          retrievedAt: Date.now(),
+        });
+      }
       return asText(result);
     },
   },
@@ -4868,6 +4915,18 @@ const TOOLS: McpTool[] = [
         includeProspectScoped: args.includeProspectScoped,
         includeRingAttributes: args.includeRingAttributes,
       });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget.
+      const atomIds = collectExpandAtomIds(result);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "expand",
+          clientId: args.entityType === "client" ? args.entityId : undefined,
+          subjectType: args.entityType,
+          subjectId: args.entityId,
+          retrievedAt: Date.now(),
+        });
+      }
       return asText(result);
     },
   },

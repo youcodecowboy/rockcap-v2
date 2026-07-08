@@ -48,6 +48,12 @@ const VOYAGE_BATCH = 128; // Voyage caps `input` at 128 texts per call
 const BACKFILL_PAGE = 128;
 const PATCH_CHUNK = 50; // ≤50 patches per mutation (write-limit headroom)
 const RRF_K = 60; // reciprocal-rank fusion constant (standard)
+// Salience fold (spec §6.2, Phase 2c): multiply the fused RRF score by
+// (1 + SALIENCE_WEIGHT·(salience − SALIENCE_NEUTRAL)) — a ±0.25 swing at the
+// extremes, no swing at neutral. Undefined salience → neutral, so the order is
+// byte-for-byte the pre-2c RRF order until refreshSalience has run.
+const SALIENCE_NEUTRAL = 0.5;
+const SALIENCE_WEIGHT = 0.5;
 
 /** Thrown when VOYAGE_API_KEY is unset. Callers catch this specific error and
  * treat the embeddings lane as disabled (never crash a pipeline). */
@@ -625,13 +631,26 @@ export const atomsSearchHybrid = internalAction({
       if (!e.inText) e.row = r; // enrichment is identical either way
       acc.set(id, e);
     });
+    // (f) Salience fold — reweight the fused RRF score by the atom's IDF·usage
+    //     salience, then re-sort. `fusedScore` is the value the page is ranked
+    //     by; `rrfScore` is preserved for transparency.
     const merged = [...acc.values()]
-      .sort((a, b) => b.score - a.score)
+      .map((e) => {
+        const salience =
+          typeof e.row.salience === "number"
+            ? (e.row.salience as number)
+            : SALIENCE_NEUTRAL;
+        const fusedScore =
+          e.score * (1 + SALIENCE_WEIGHT * (salience - SALIENCE_NEUTRAL));
+        return { e, fusedScore };
+      })
+      .sort((a, b) => b.fusedScore - a.fusedScore)
       .slice(0, limit)
-      .map((e) => ({
+      .map(({ e, fusedScore }) => ({
         ...e.row,
         lane: e.inText && e.inVec ? "both" : e.inText ? "text" : "vector",
         rrfScore: e.score,
+        fusedScore,
       }));
 
     return {

@@ -4977,5 +4977,24 @@ export default defineSchema({
   })
     .index("by_normalized_name", ["normalizedName"])
     .index("by_status", ["status"]),
+
+  // Retrieval instrumentation — spec §10, Phase 2c. One thin row per (atom,
+  // retrieval occurrence): which atoms a search / graph expansion actually
+  // surfaced. Written fire-and-forget from the MCP action layer (queries
+  // cannot write), so retrieval latency is unaffected. Feeds two things:
+  // (1) the usage component of atoms.salience (refreshSalience reads by_atom
+  // counts), (2) the utilization / dead-weight health metrics. Pruned by
+  // age via by_retrievedAt — this is disposable telemetry, not provenance.
+  retrievalLog: defineTable({
+    atomId: v.id("atoms"),
+    source: v.union(v.literal("search"), v.literal("expand")),
+    queryText: v.optional(v.string()), // the search query (truncated); absent for expands
+    clientId: v.optional(v.id("clients")), // scope the retrieval ran under, when known
+    subjectType: v.optional(v.string()), // entity type of the expand center, when source="expand"
+    subjectId: v.optional(v.string()), // entity id of the expand center, when source="expand"
+    retrievedAt: v.number(), // Date.now() at log time
+  })
+    .index("by_atom", ["atomId"])
+    .index("by_retrievedAt", ["retrievedAt"]),
 });
 
