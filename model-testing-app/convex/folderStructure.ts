@@ -383,6 +383,78 @@ export const ensureProjectFolders = mutation({
   },
 });
 
+// Mutation: Backfill the Dark Mills taxonomy onto a project that ALREADY has
+// folders (ensureProjectFolders early-returns in that case). Idempotent:
+// inserts missing new-taxonomy folders with correct nesting/depth, renames
+// folders whose folderType is shared between old and new taxonomies
+// (notes, post_completion) to the new display names, and leaves all other
+// legacy folders untouched — documents are moved out separately and legacy
+// folders cleaned up after.
+export const backfillProjectFoldersV2 = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const NEW_TAXONOMY: Array<{ type: string; name: string; parentKey?: string }> = [
+      { type: "modelling_info", name: "1. Modelling Info and Terms Request" },
+      { type: "client_appraisals", name: "Client Appraisals", parentKey: "modelling_info" },
+      { type: "lender_pack", name: "Lender Pack", parentKey: "modelling_info" },
+      { type: "rockcap_appraisals", name: "Rockcap Appraisals", parentKey: "modelling_info" },
+      { type: "terms_received", name: "2. Terms Received" },
+      { type: "terms_analysis", name: "3. Terms Analysis" },
+      { type: "comps", name: "4. Comps" },
+      { type: "comps_appendix", name: "Appendix", parentKey: "comps" },
+      { type: "credit", name: "5. Credit" },
+      { type: "post_completion", name: "6. Post Completion" },
+      { type: "notes", name: "Notes" },
+    ];
+
+    const existing = await ctx.db
+      .query("projectFolders")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+    const byType = new Map(existing.map((f) => [f.folderType, f]));
+
+    const now = new Date().toISOString();
+    let created = 0;
+    let renamed = 0;
+    const idByType: Record<string, Id<"projectFolders">> = {};
+    for (const f of existing) idByType[f.folderType] = f._id;
+
+    // Top-level first so children can resolve parentFolderId.
+    for (const folder of NEW_TAXONOMY.filter((f) => !f.parentKey)) {
+      const hit = byType.get(folder.type);
+      if (hit) {
+        if (hit.name !== folder.name) {
+          await ctx.db.patch(hit._id, { name: folder.name });
+          renamed++;
+        }
+      } else {
+        idByType[folder.type] = await ctx.db.insert("projectFolders", {
+          projectId: args.projectId,
+          folderType: folder.type,
+          name: folder.name,
+          depth: 0,
+          createdAt: now,
+        });
+        created++;
+      }
+    }
+    for (const folder of NEW_TAXONOMY.filter((f) => f.parentKey)) {
+      if (byType.has(folder.type)) continue;
+      await ctx.db.insert("projectFolders", {
+        projectId: args.projectId,
+        folderType: folder.type,
+        name: folder.name,
+        parentFolderId: idByType[folder.parentKey!],
+        depth: 1,
+        createdAt: now,
+      });
+      created++;
+    }
+
+    return { created, renamed, totalFolders: existing.length + created };
+  },
+});
+
 // ============================================================================
 // VALIDATION HELPERS
 // These are internal helper functions for validating folder assignments
