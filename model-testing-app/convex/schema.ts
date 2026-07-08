@@ -461,6 +461,13 @@ export default defineSchema({
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+    // Duplicate consolidation breadcrumb (knowledge/docDedupe.ts): set when
+    // this row was soft-archived because it duplicated the canonical document
+    // it points at. Reversal: clear this + the soft-delete trio, then re-run
+    // knowledge/chunks.chunkDocument on this row (its chunks were deleted as
+    // disposable derivatives; atom observations moved to the canonical are
+    // listed in the consolidation's auditLog row).
+    duplicateOf: v.optional(v.id("documents")),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -471,7 +478,8 @@ export default defineSchema({
     .index("by_has_notes", ["hasNotes"])
     .index("by_scope", ["scope"])
     .index("by_owner", ["ownerId"])
-    .index("by_scope_owner", ["scope", "ownerId"]),
+    .index("by_scope_owner", ["scope", "ownerId"])
+    .index("by_duplicate_of", ["duplicateOf"]),
 
   // Document Notes - User annotations on specific documents (for document reader)
   documentNotes: defineTable({

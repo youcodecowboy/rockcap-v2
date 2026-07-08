@@ -124,8 +124,13 @@ export const proseDocsNeedingChunksPage = internalQuery({
       if (!classified || !hasText) continue;
 
       // Authoritative prose decision — mirrors chunkDocument so a non-prose doc
-      // (spreadsheet/CSV/image with vision text, etc.) is never a candidate and
-      // thus never lingers in the frontier consuming the budget forever.
+      // (spreadsheet/CSV/tabular fileType, etc.) is never a candidate and thus
+      // never lingers in the frontier consuming the budget forever. NOTE:
+      // images whose text came from vision extraction DO chunk, by design —
+      // isProseDocument excludes spreadsheet mimes and tabular/drawing types,
+      // not image mimes, so a term-sheet screenshot in a lender pack (which
+      // carries finalized terms) gets verbatim quote-block backup like any
+      // other prose document.
       const driveRow = await ctx.db
         .query("driveFiles")
         .withIndex("by_document", (q) => q.eq("documentId", doc._id))
