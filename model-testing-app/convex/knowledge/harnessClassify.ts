@@ -206,6 +206,10 @@ export const extractText = internalAction({
         mimeType: string;
         contentChecksum: string | null;
         source: "upload" | "storage" | "drive-cache" | "drive-fetch";
+        // How the text was produced: "parser" (server-side pdf-parse/xlsx/
+        // mammoth) or "vision" (multimodal transcription of an image / scanned
+        // image-only PDF). Provenance for the agent + downstream atomization.
+        method: "parser" | "vision";
         alreadyClassified: boolean;
         alreadyAtomized: boolean;
         note?: string;
@@ -367,6 +371,19 @@ export const extractText = internalAction({
 
     const fullTextChars: number = payload.text.length;
     const truncated = fullTextChars > TEXT_RETURN_CAP;
+    // Provenance from the parse route: "vision" means the text was transcribed
+    // from an image / scanned image-only PDF rather than parsed from a text
+    // layer. Default to "parser" for older route responses without the field.
+    const method: "parser" | "vision" =
+      payload.method === "vision" ? "vision" : "parser";
+    const visionNote =
+      method === "vision"
+        ? "Text was transcribed from an image / scanned image-only PDF via vision (not a text layer) — treat as best-effort OCR and note any [illegible] regions."
+        : undefined;
+    const truncationNote = truncated
+      ? `Text truncated to ${TEXT_RETURN_CAP} chars (full length ${fullTextChars}). Classify from what you have; note the truncation in your reasoning.`
+      : undefined;
+    const note = [visionNote, truncationNote].filter(Boolean).join(" ");
     return {
       text: truncated ? payload.text.slice(0, TEXT_RETURN_CAP) : payload.text,
       truncated,
@@ -375,13 +392,10 @@ export const extractText = internalAction({
       mimeType,
       contentChecksum,
       source,
+      method,
       alreadyClassified,
       alreadyAtomized,
-      ...(truncated
-        ? {
-            note: `Text truncated to ${TEXT_RETURN_CAP} chars (full length ${fullTextChars}). Classify from what you have; note the truncation in your reasoning.`,
-          }
-        : {}),
+      ...(note ? { note } : {}),
     };
   },
 });
