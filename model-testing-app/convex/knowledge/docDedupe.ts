@@ -88,13 +88,32 @@ export function dedupeGroupKey(d: {
   ownerId: string | null;
   textChecksum: string | null;
   fileStorageId: string | null;
+  fileName: string;
 }): string | null {
   const scopeKey =
     d.clientId ??
     (d.scope === "personal" && d.ownerId ? `personal:${d.ownerId}` : "unscoped");
-  if (d.textChecksum) return `text|${scopeKey}|${d.textChecksum}`;
-  if (d.fileStorageId) return `storage|${scopeKey}|${d.fileStorageId}`;
+  const nameKey = normalizedNameKey(d.fileName);
+  if (d.textChecksum) return `text|${scopeKey}|${nameKey}|${d.textChecksum}`;
+  if (d.fileStorageId) return `storage|${scopeKey}|${nameKey}|${d.fileStorageId}`;
   return null;
+}
+
+/**
+ * Filename component of the grouping key. Identical CONTENT under genuinely
+ * different names is NOT a duplicate — the naming standard deliberately keeps
+ * e.g. …_INTERNAL_V2.0 (working copy) and …_EXTERNAL_V2.0 (the copy that went
+ * out) as distinct records even when byte-identical (Kinspire pilot caught
+ * exactly this pair). Only download artifacts are normalized away so
+ * "X.pdf" / "X (1).pdf" / "x.PDF" still group.
+ */
+export function normalizedNameKey(fileName: string): string {
+  return fileName
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{1,5}$/i, "") // extension
+    .replace(/\s*(\(\d+\)|- \d+)\s*$/, "") // " (1)" / " - 2" copy suffixes
+    .replace(/(%20|_20(?=\D)|[\s_]+)/g, " ") // URL-mangling + whitespace runs
+    .trim();
 }
 
 /**

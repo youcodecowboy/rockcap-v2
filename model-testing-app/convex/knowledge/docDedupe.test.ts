@@ -19,13 +19,16 @@ const baseDigest = {
   ownerId: null as string | null,
   textChecksum: "text-fnv1a:deadbeef:1042" as string | null,
   fileStorageId: null as string | null,
+  fileName: "LintonLane_LenderBrief_RC_INTERNAL_V1.3_20260608.docx",
 };
 
 describe("dedupeGroupKey", () => {
   it("groups text-bearing docs by client scope + text checksum", () => {
     const a = dedupeGroupKey({ ...baseDigest });
     const b = dedupeGroupKey({ ...baseDigest, fileStorageId: "st2" });
-    expect(a).toBe("text|client1|text-fnv1a:deadbeef:1042");
+    expect(a).toBe(
+      "text|client1|lintonlane lenderbrief rc internal v1.3 20260608|text-fnv1a:deadbeef:1042",
+    );
     // Differing fileStorageId does NOT split a text group (dupes routinely
     // carry distinct storage ids for the same bytes).
     expect(b).toBe(a);
@@ -314,5 +317,24 @@ describe("observationIdentityKey", () => {
         extractedValue: undefined,
       }),
     );
+  });
+});
+
+describe("normalizedNameKey / filename gate", () => {
+  it("splits byte-identical INTERNAL vs EXTERNAL copies (naming standard)", () => {
+    const internal = dedupeGroupKey({ ...baseDigest });
+    const external = dedupeGroupKey({
+      ...baseDigest,
+      fileName: "LintonLane_LenderBrief_RC_EXTERNAL_V1.3_20260608.docx",
+    });
+    expect(internal).not.toBe(external);
+  });
+
+  it("still groups download artifacts and case variants of one file", () => {
+    const a = dedupeGroupKey({ ...baseDigest, fileName: "Valuation Report.pdf" });
+    const b = dedupeGroupKey({ ...baseDigest, fileName: "valuation report (1).PDF" });
+    const c = dedupeGroupKey({ ...baseDigest, fileName: "Valuation%20Report.pdf" });
+    expect(a).toBe(b);
+    expect(a).toBe(c);
   });
 });
