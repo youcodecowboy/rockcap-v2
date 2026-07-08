@@ -161,6 +161,10 @@ export type GraphAttribute = {
   asOf?: string;
   status: "active" | "contested";
   confidence: number;
+  /** IDF·usage ranking weight (spec §6.2, Phase 2c). Undefined ⇒ neutral at
+   * rank time (an un-refreshed graph ranks as before). Absent on native
+   * attributes (they carry no atom). */
+  salience?: number;
   /** Set when the attribute is federated from a native lane
    * (today: "appetiteSignals" for lender clients). */
   native?: string;
@@ -181,6 +185,9 @@ type FedEdge = {
   status: "active" | "contested";
   provenance: EdgeProvenance;
   native: boolean;
+  /** IDF·usage ranking weight (spec §6.2). Undefined for native edges and
+   * un-refreshed atoms ⇒ neutral at rank time. */
+  salience?: number;
   /** The atom's owning clientId (scope tag) — drives the prospect-scope
    * visibility filter (spec §14b.6a). Unset for native edges and
    * company-wide atoms; never leaves this module (stripped by resolveEdges). */
@@ -318,18 +325,35 @@ function asOfMs(asOf: string | undefined): number {
   return Number.isNaN(t) ? -Infinity : t;
 }
 
-/** Contested first, then confidence desc, then asOf recency. */
+// Salience blend (spec §6.2, Phase 2c). Confidence stays primary; salience
+// nudges within it. Both live in [0,1], so a convex blend keeps the score in
+// [0,1]; undefined salience → SALIENCE_NEUTRAL, which makes the blend a strictly
+// increasing function of confidence alone — i.e. an un-refreshed graph (all
+// salience undefined) ranks byte-for-byte as it did before Phase 2c.
+const SALIENCE_NEUTRAL = 0.5;
+const SALIENCE_WEIGHT = 0.25;
+
+function rankScore(confidence: number, salience?: number): number {
+  const s = salience ?? SALIENCE_NEUTRAL;
+  return confidence * (1 - SALIENCE_WEIGHT) + s * SALIENCE_WEIGHT;
+}
+
+/** Contested first, then confidence·salience blend desc, then asOf recency. */
 function rankEdges(a: FedEdge, b: FedEdge): number {
   const contested = Number(b.status === "contested") - Number(a.status === "contested");
   if (contested !== 0) return contested;
-  if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+  const sa = rankScore(a.confidence, a.salience);
+  const sb = rankScore(b.confidence, b.salience);
+  if (sa !== sb) return sb - sa;
   return asOfMs(b.asOf) - asOfMs(a.asOf);
 }
 
 function rankAttributes(a: GraphAttribute, b: GraphAttribute): number {
   const contested = Number(b.status === "contested") - Number(a.status === "contested");
   if (contested !== 0) return contested;
-  if (a.confidence !== b.confidence) return b.confidence - a.confidence;
+  const sa = rankScore(a.confidence, a.salience);
+  const sb = rankScore(b.confidence, b.salience);
+  if (sa !== sb) return sb - sa;
   return asOfMs(b.asOf) - asOfMs(a.asOf);
 }
 
@@ -439,6 +463,7 @@ async function collectAtomEdges(
         observationCount: await liveObservationCount(ctx, atom._id),
       },
       native: false,
+      salience: atom.salience,
       ownerClientId: atom.clientId as string | undefined,
     });
   }
@@ -480,6 +505,7 @@ async function collectAtomAttributes(
         asOf: atom.asOf,
         status: atom.status as "active" | "contested",
         confidence: atom.confidence,
+        salience: atom.salience,
         ownerClientId: atom.clientId as string | undefined,
         atomId: atom._id as string,
       });
@@ -1445,6 +1471,7 @@ async function enrichSearchAtom(
     asOf: atom.asOf,
     status: atom.status,
     confidence: atom.confidence,
+    salience: atom.salience, // Phase 2c — folded into the fused score post-RRF
     primarySourceType: atom.primarySourceType,
     observationCount: await liveObservationCount(ctx, atom._id),
   };
