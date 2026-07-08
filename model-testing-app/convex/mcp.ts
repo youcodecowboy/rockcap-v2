@@ -5017,6 +5017,25 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+  {
+    name: "graph.overview",
+    description:
+      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxNodes: { type: "number", description: "Node cap (default and max 2500). Lowest-degree contact/company/candidate leaves drop first." },
+        maxEdges: { type: "number", description: "Edge cap (default and max 6000). Kept by contested-first → atom-over-native → confidence ranking." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphOverview.overviewInternal, {
+        maxNodes: args.maxNodes,
+        maxEdges: args.maxEdges,
+      });
+      return asText(result);
+    },
+  },
 
   // ── Meta / introspection ─────────────────────────────────────
   // Self-describing catalogue. The skills repo lives separately from this app,
