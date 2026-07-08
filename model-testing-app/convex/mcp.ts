@@ -916,16 +916,20 @@ const TOOLS: McpTool[] = [
       required: ["lenderClientId", "fieldPath", "value", "valueType", "sourceType"],
     },
     handler: async (ctx, userId, args) => {
-      const result = await ctx.runMutation(api.appetiteSignals.record, {
+      // MCP handlers have no Clerk session — use the internal variant with the
+      // bearer-resolved userId (bug: was wired to the Clerk-authed public
+      // mutation and threw "Unauthenticated" on every MCP call).
+      const result = await ctx.runMutation(internal.appetiteSignals.recordInternal, {
         lenderClientId: args.lenderClientId,
         fieldPath: args.fieldPath,
         value: args.value,
         valueType: args.valueType,
         sourceType: args.sourceType,
         sourceRef: args.sourceRef,
-        asOfDate: args.asOfDate,
+        asOfDate: args.asOfDate ?? new Date().toISOString().slice(0, 10),
         confidence: args.confidence,
         notes: args.notes,
+        userId,
       });
       return asText(result);
     },
