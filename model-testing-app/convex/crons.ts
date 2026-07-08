@@ -164,4 +164,19 @@ crons.interval(
   internal.knowledge.atomizerLane.sweep,
 );
 
+// Entity-candidate enrichment worker (Spec 2 Phase 2b, §3.5). Every 2 hours,
+// process up to 10 pending entityCandidates: companies via CH name search
+// (exact-normalized-name matches only → sync profile+charges+officers+PSCs),
+// people via client-scoped contact match then Apollo (conservative). On
+// resolution, atomsCore.repointCandidateAtoms re-points every referencing
+// atom through the identity machinery (duplicates merge). Failed attempts
+// cap at 3 — the candidate then stays pending for operator triage
+// (atoms.listCandidates / atoms.dismissCandidate); never auto-dismissed.
+// Infra errors (missing CH/Apollo keys, rate limits) don't burn attempts.
+crons.interval(
+  "entity-candidate-enrichment",
+  { hours: 2 },
+  internal.knowledge.candidates.enrichmentSweep,
+);
+
 export default crons;

@@ -868,6 +868,191 @@ export const resolveContested = internalMutation({
   handler: async (ctx, args) => resolveContestedCore(ctx, args),
 });
 
+// ── repointCandidateAtoms — Phase 2b candidate resolution (spec §3.5) ──
+//
+// A candidate resolved to a real entity: re-point every atom that references
+// the candidate (subject OR object side) to the resolved entity, THROUGH the
+// identity machinery — after re-pointing, an atom may share canonical
+// identity with an existing live atom (the fact was already known against
+// the real entity). In that case MERGE: move the re-pointed atom's
+// observations to the survivor (same-source duplicates land superseded, no
+// bump), bump corroboration per independent moved observation, and supersede
+// the duplicate pointing at the survivor. The schema's supersessionReason
+// union has no dedicated merge value, so the machine merge records "revised"
+// (the closest existing reason; "operator" would misattribute an automated
+// action). Identity clash with a DIFFERENT literal value → both rows go
+// contested, exactly like a §7 layer-3 conflict.
+//
+// Non-live (superseded / retired) candidate atoms are re-pointed too — the
+// history stays coherent — but never merged (they're already out of the
+// live graph). Statements are left untouched: they name the mention, which
+// remains what the source said.
+//
+// Finally the candidate row itself becomes the tombstone: status "resolved"
+// + resolvedToType/resolvedToId, so re-extraction of the same mention
+// resolves instantly via createCandidate's reuse path.
+
+const resolvedEntityTypeValidator = v.union(
+  v.literal("client"),
+  v.literal("project"),
+  v.literal("contact"),
+  v.literal("company"),
+  v.literal("facility"),
+);
+
+export const repointCandidateAtoms = internalMutation({
+  args: {
+    candidateId: v.id("entityCandidates"),
+    toType: resolvedEntityTypeValidator,
+    toId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const candidate = await ctx.db.get(args.candidateId);
+    if (!candidate) throw new Error("candidate_not_found");
+    if (!(await entityExists(ctx, args.toType, args.toId))) {
+      throw new Error(
+        `target_not_found: no ${ENTITY_TABLES[args.toType]} row for "${args.toId}"`,
+      );
+    }
+
+    const now = new Date().toISOString();
+    const candKey = String(args.candidateId);
+
+    // Referencing atoms — subject side + object side, ALL statuses (index
+    // prefix without the status component). An atom could reference the
+    // candidate on both sides; dedupe by id.
+    const subjectSide = await ctx.db
+      .query("atoms")
+      .withIndex("by_subject", (q) =>
+        q.eq("subjectType", "candidate").eq("subjectId", candKey),
+      )
+      .collect();
+    const objectSide = await ctx.db
+      .query("atoms")
+      .withIndex("by_object", (q) =>
+        q.eq("objectEntityType", "candidate").eq("objectEntityId", candKey),
+      )
+      .collect();
+    const byId = new Map<Id<"atoms">, Doc<"atoms">>();
+    for (const a of [...subjectSide, ...objectSide]) byId.set(a._id, a);
+
+    let repointed = 0;
+    let merged = 0;
+    let contested = 0;
+
+    for (const atom of byId.values()) {
+      // 1. Re-point the candidate reference(s) to the resolved entity.
+      const patch: Partial<Doc<"atoms">> = {};
+      if (atom.subjectType === "candidate" && atom.subjectId === candKey) {
+        patch.subjectType = args.toType;
+        patch.subjectId = args.toId;
+      }
+      if (
+        atom.objectEntityType === "candidate" &&
+        atom.objectEntityId === candKey
+      ) {
+        patch.objectEntityType = args.toType;
+        patch.objectEntityId = args.toId;
+      }
+      await ctx.db.patch(atom._id, patch);
+      repointed++;
+
+      // 2. Only LIVE atoms participate in identity merging.
+      if (atom.status !== "active" && atom.status !== "contested") continue;
+
+      const updated = (await ctx.db.get(atom._id))!;
+      const liveSameSubject = await ctx.db
+        .query("atoms")
+        .withIndex("by_subject", (q) =>
+          q
+            .eq("subjectType", updated.subjectType)
+            .eq("subjectId", updated.subjectId),
+        )
+        .collect();
+      const dupes = liveSameSubject.filter(
+        (a) =>
+          a._id !== updated._id &&
+          (a.status === "active" || a.status === "contested") &&
+          atomsShareIdentity(a, updated),
+      );
+      if (dupes.length === 0) continue;
+
+      const sameValue = dupes.find((d) => valuesEqual(d, updated));
+      if (sameValue) {
+        // ── MERGE: the fact was already known against the real entity. ──
+        // Survivor = the pre-existing atom; move the re-pointed atom's
+        // observations across, corroboration-bump per independent live
+        // observation, supersede the duplicate.
+        const survivor = sameValue;
+        const survivorObs = await liveObservations(ctx, survivor._id);
+        const movingObs = await ctx.db
+          .query("atomObservations")
+          .withIndex("by_atom", (q) => q.eq("atomId", updated._id))
+          .collect();
+        let confidence = survivor.confidence;
+        for (const obs of movingObs) {
+          const isLiveObs = obs.superseded !== true;
+          const sameSource = isLiveObs
+            ? findSameSourceObservation(survivorObs, {
+                sourceType: obs.sourceType,
+                documentId: obs.documentId,
+                externalRef: obs.externalRef,
+                authorityTier: obs.authorityTier,
+              })
+            : undefined;
+          await ctx.db.patch(obs._id, {
+            atomId: survivor._id,
+            ...(sameSource ? { superseded: true } : {}),
+          });
+          if (isLiveObs && !sameSource) {
+            confidence = Math.min(
+              CONFIDENCE_CAP,
+              confidence + CORROBORATION_BUMP,
+            );
+          }
+        }
+        await ctx.db.patch(survivor._id, { confidence, observedAt: now });
+        await ctx.db.patch(updated._id, {
+          status: "superseded",
+          supersededBy: survivor._id,
+          supersessionReason: "revised",
+        });
+        merged++;
+        console.log(
+          `[repointCandidateAtoms] merged atom ${updated._id} into ${survivor._id} (candidate ${candKey} → ${args.toType}:${args.toId})`,
+        );
+      } else {
+        // Identity clash, different value → a genuine §7 layer-3 conflict
+        // surfaced by the resolution. Both sides go contested; retrieval
+        // returns the contest instead of silently picking one.
+        await ctx.db.patch(updated._id, { status: "contested" });
+        for (const d of dupes) {
+          if (d.status !== "contested") {
+            await ctx.db.patch(d._id, { status: "contested" });
+          }
+        }
+        contested++;
+        console.log(
+          `[repointCandidateAtoms] contest: atom ${updated._id} vs ${dupes.map((d) => d._id).join(",")} after re-point (candidate ${candKey})`,
+        );
+      }
+    }
+
+    // 3. Tombstone the candidate — createCandidate's reuse path returns the
+    // real entity directly from here on.
+    await ctx.db.patch(args.candidateId, {
+      status: "resolved",
+      resolvedToType: args.toType,
+      resolvedToId: args.toId,
+    });
+
+    console.log(
+      `[repointCandidateAtoms] candidate ${candKey} resolved → ${args.toType}:${args.toId}; repointed=${repointed} merged=${merged} contested=${contested}`,
+    );
+    return { repointed, merged, contested, candidateId: args.candidateId };
+  },
+});
+
 // ── reatomizeDiff — same-lineage supersession (spec §7) ──
 //
 // Document D re-extracted at a new checksum. The prior revision's

@@ -4764,6 +4764,74 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── atoms.*Candidate — provisional entities (Spec 2 Phase 2b, §3.5) ──
+  // The repair path for unresolvable mentions: mint a candidate, anchor the
+  // atom to it (subjectType/objectEntityType "candidate") — facts are never
+  // dropped. The 2-hourly enrichment worker resolves candidates (companies →
+  // CH, people → contacts/Apollo) and re-points referencing atoms through
+  // the identity machinery.
+  {
+    name: "atoms.createCandidate",
+    description:
+      "Mint (or reuse) a PROVISIONAL entity for a person/company mention that doesn't resolve to any roster id — the atomize-document repair path for `unresolved_subject`/`unresolved_object` rejects. Anchor the rejected atom to the returned candidateId with subjectType/objectEntityType 'candidate' and resubmit: the fact is NEVER dropped, and the background enrichment worker (2-hourly) resolves the candidate (companies → Companies House exact-name search + full sync; people → client-scoped contact match, then Apollo) and re-points every referencing atom to the real entity through the identity machinery (duplicates merge automatically). Dedup is built in: the same normalized mention (lowercased, punctuation-stripped) with the same guessedType reuses ONE candidate row across documents — `reused:true` tells you it already existed. If the candidate was ALREADY RESOLVED you get `{status:'resolved', resolvedType, resolvedId}` — anchor your atom to THAT real entity directly instead of the candidate. Pass `clientId` as a scope hint whenever you know the owning client (it is what lets the worker scan the right contact roster and give Apollo a company context; stored inside contextSnippet as 'client:<id>|<snippet>' — the schema is frozen). Returns {candidateId, reused, status} or the resolved-entity ref.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mentionText: { type: "string", description: "The mention verbatim, e.g. 'Land at Willersey SPV Ltd' or 'Jason Buttler'." },
+        guessedType: { type: "string", description: "'person' or 'company'." },
+        contextSnippet: { type: "string", description: "Optional verbatim source snippet around the mention — helps the worker and the operator judge who/what this is." },
+        sourceDocumentId: { type: "string", description: "Optional Convex id of the document the mention came from." },
+        clientId: { type: "string", description: "Optional owning-client scope hint (Convex id). STRONGLY recommended — person resolution is client-scoped." },
+      },
+      required: ["mentionText", "guessedType"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.createCandidate, {
+        mentionText: args.mentionText,
+        guessedType: args.guessedType,
+        contextSnippet: args.contextSnippet,
+        sourceDocumentId: args.sourceDocumentId,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.listCandidates",
+    description:
+      "List entityCandidates rows (provisional entities minted for unresolvable mentions) with referencing-atom counts. Optional status filter: 'pending' (awaiting enrichment — the default operator triage view), 'resolved' (tombstones pointing at the real entity via resolvedToType/resolvedToId), 'dismissed'. Each row carries mentionText, guessedType, enrichmentAttempts (the worker stops retrying after 3 failed attempts but NEVER auto-dismisses — a pending row with attempts=3 is waiting for the operator), scopeClientId (parsed from the stored scope hint), sourceDocumentId, and referencingAtoms {asSubject, asObject, total} so you can see how much of the graph hangs off each unresolved mention. Use with atoms.dismissCandidate to clear noise (typos, generic phrases wrongly minted as entities).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Optional: pending | resolved | dismissed. Omit for all." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.candidates.listCandidates, {
+        status: args?.status,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.dismissCandidate",
+    description:
+      "Operator hygiene: mark an entityCandidates row 'dismissed' — this mention is not a real resolvable entity (a typo, a generic phrase, an out-of-scope party) and the enrichment worker should never chase it again. Atoms anchored to the candidate stay anchored (the facts survive, flagged as unconfirmed via their candidate reference); a later atomization pass re-encountering the same mention reuses the dismissed row rather than resurrecting it as fresh pending noise. Errors on an already-resolved candidate (the tombstone must survive so re-extraction keeps resolving instantly). This is the ONLY dismissal path — the worker itself never auto-dismisses, it just stops retrying after 3 failed attempts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        candidateId: { type: "string", description: "Convex id of the entityCandidates row." },
+      },
+      required: ["candidateId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.dismissCandidate, {
+        candidateId: args.candidateId,
+      });
+      return asText(result);
+    },
+  },
+
   // ── graph.* — Knowledge Layer traversal (Spec 2 §9 / §14b) ───
   // Read-side of the graph. YOU (Claude) are the query planner — there is no
   // retrieval router: a hop is one tool call, and multi-hop reasoning is a
