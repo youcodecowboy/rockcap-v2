@@ -97,6 +97,7 @@ import type * as keywordLearning from "../keywordLearning.js";
 import type * as knowledge_atomizerLane from "../knowledge/atomizerLane.js";
 import type * as knowledge_atomsCore from "../knowledge/atomsCore.js";
 import type * as knowledge_candidates from "../knowledge/candidates.js";
+import type * as knowledge_chunkDedupe from "../knowledge/chunkDedupe.js";
 import type * as knowledge_chunker from "../knowledge/chunker.js";
 import type * as knowledge_chunks from "../knowledge/chunks.js";
 import type * as knowledge_embeddings from "../knowledge/embeddings.js";
@@ -272,6 +273,7 @@ declare const fullApi: ApiFromModules<{
   "knowledge/atomizerLane": typeof knowledge_atomizerLane;
   "knowledge/atomsCore": typeof knowledge_atomsCore;
   "knowledge/candidates": typeof knowledge_candidates;
+  "knowledge/chunkDedupe": typeof knowledge_chunkDedupe;
   "knowledge/chunker": typeof knowledge_chunker;
   "knowledge/chunks": typeof knowledge_chunks;
   "knowledge/embeddings": typeof knowledge_embeddings;

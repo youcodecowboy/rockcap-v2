@@ -7,6 +7,7 @@ import {
 } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { dedupeChunksByText } from "./chunkDedupe";
 
 // Knowledge-layer embeddings + hybrid retrieval — Spec 2 Phase 2a.2
 // (docs/spec-2-knowledge-layer.md §9, §13).
@@ -721,7 +722,13 @@ export const atomsSearchHybridPublic = action({
 
 const CHUNK_LIMIT_DEFAULT = 8;
 const CHUNK_LIMIT_MAX = 20;
-const CHUNK_VECTOR_OVERFETCH = 24; // mirror the atoms lane's over-fetch
+// Per-lane over-fetch: duplicate document rows (same file ingested 2-4x)
+// yield near-identical chunks that the post-merge text dedupe collapses, so
+// each lane fetches 3x the requested limit — floored at 24, the atoms lane's
+// over-fetch — to keep the deduped page full. Bounded: limit caps at 20, so a
+// lane never takes more than 60.
+const CHUNK_LANE_OVERFETCH_FACTOR = 3;
+const CHUNK_LANE_OVERFETCH_MIN = 24;
 
 const chunksHybridArgs = {
   query: v.string(),
@@ -837,11 +844,15 @@ export const chunksSearchHybrid = internalAction({
       Math.max(args.limit ?? CHUNK_LIMIT_DEFAULT, 1),
       CHUNK_LIMIT_MAX,
     );
+    const laneTake = Math.max(
+      CHUNK_LANE_OVERFETCH_MIN,
+      limit * CHUNK_LANE_OVERFETCH_FACTOR,
+    );
 
-    // (a) Text lane.
+    // (a) Text lane (over-fetched; the post-merge dedupe thins the page).
     const textResults = await ctx.runQuery(
       internal.knowledge.embeddings.chunksSearchText,
-      { query: args.query, clientId: args.clientId, limit },
+      { query: args.query, clientId: args.clientId, limit: laneTake },
     );
 
     // Attach parent-document metadata to a merged page (one batched query).
@@ -886,12 +897,17 @@ export const chunksSearchHybrid = internalAction({
       queryVec = null;
     }
     if (!queryVec) {
+      // Annotated — same runQuery type degradation as withDocMeta above;
+      // without this the dedupe generic infers its bare constraint.
+      const rankedText: Array<
+        ChunkHit & { rrfScore: number; lane: "text" | "vector" | "both" }
+      > = textResults.map((r, i) => ({
+        ...r,
+        lane: "text" as const,
+        rrfScore: 1 / (RRF_K + i + 1),
+      }));
       const results = await withDocMeta(
-        textResults.map((r, i) => ({
-          ...r,
-          lane: "text" as const,
-          rrfScore: 1 / (RRF_K + i + 1),
-        })),
+        dedupeChunksByText(rankedText).slice(0, limit),
       );
       return {
         query: args.query,
@@ -913,7 +929,7 @@ export const chunksSearchHybrid = internalAction({
       : undefined;
     const hits = await ctx.vectorSearch("documentChunks", "by_embedding", {
       vector: queryVec,
-      limit: CHUNK_VECTOR_OVERFETCH,
+      limit: laneTake,
       ...(clientFilter ? { filter: clientFilter } : {}),
     });
     const vectorResults = await ctx.runQuery(
@@ -923,6 +939,11 @@ export const chunksSearchHybrid = internalAction({
 
     // (d) RRF merge (k=60), dedupe by chunkId — both-lane hits sum both terms.
     //     No salience fold here: chunks carry no salience (atoms only).
+    //     Then dedupe by normalized chunk TEXT before slicing: duplicate
+    //     document rows (same file ingested 2-4x, possibly under different
+    //     contentChecksums) yield near-identical chunks that burned 23% of
+    //     top-8 slots in the retrieval eval; the sort order keeps the
+    //     highest-scoring instance of each.
     type Acc = { row: ChunkHit; score: number; inText: boolean; inVec: boolean };
     const acc = new Map<string, Acc>();
     textResults.forEach((r, i) => {
@@ -939,9 +960,8 @@ export const chunksSearchHybrid = internalAction({
       e.inVec = true;
       acc.set(id, e);
     });
-    const merged = [...acc.values()]
+    const ranked = [...acc.values()]
       .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
       .map((e) => ({
         ...e.row,
         lane: (e.inText && e.inVec
@@ -951,6 +971,7 @@ export const chunksSearchHybrid = internalAction({
             : "vector") as "text" | "vector" | "both",
         rrfScore: e.score,
       }));
+    const merged = dedupeChunksByText(ranked).slice(0, limit);
     const results = await withDocMeta(merged);
 
     return {

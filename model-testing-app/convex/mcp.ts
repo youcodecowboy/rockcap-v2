@@ -48,8 +48,12 @@ const RETRIEVAL_LOG_CAP = 100;
 
 // Chunk text cap in the atoms.search tool response — full text stays in the
 // documentChunks row; the tool trims to keep the response bounded and marks
-// the cut with `truncated: true`.
-const CHUNK_TEXT_CAP = 700;
+// the cut with `truncated: true`. 2,200 chars covers a full target-size chunk
+// (~320 words ≈ 2,000 chars, chunker.ts TARGET_WORDS) — the earlier 700-char
+// cap ate the operative clause in 5/12 prose eval questions where the right
+// chunk ranked #1. Worst case stays bounded: 20 chunks (CHUNK_LIMIT_MAX) ×
+// 2.2K = 44K chars.
+const CHUNK_TEXT_CAP = 2200;
 
 /** Gather the atom ids a graph.expandEntity result actually surfaced — edge
  * provenance refs (atom-lane only; native refs are table names and are
@@ -4801,7 +4805,7 @@ const TOOLS: McpTool[] = [
       });
 
       // Chunk lane (default ON) — prose passages from the narrative dual
-      // index, same query + client scope. Trimmed to ~700 chars per hit so
+      // index, same query + client scope. Trimmed to ~2,200 chars per hit so
       // the tool response stays bounded; `truncated:true` flags a cut.
       let chunksSection: Record<string, unknown> = {};
       let chunkIds: string[] = [];
