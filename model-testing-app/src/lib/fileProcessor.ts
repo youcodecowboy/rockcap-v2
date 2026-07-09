@@ -21,6 +21,39 @@ export type TextExtractionResult =
   | { status: 'needs_vision'; kind: 'image' | 'pdf'; reason: string; pages?: number }
   | { status: 'no_text'; kind: 'media'; reason: string };
 
+// ── Spreadsheet extraction budgets (2026-07 Wave A fix) ──
+// Multi-sheet workbooks (RockCap appraisal models: 30+ tabs, ~12MB) used to
+// render only their first 10 sheets under one shared 50K cap that sheet 1
+// could exhaust alone — most of the workbook was silently unread. Every
+// sheet now gets its own slice of a much larger total, and high-signal
+// sheets render first so the 120K-per-page agent window sees them.
+const SPREADSHEET_SHEET_ROWS = 400; // rows parsed per sheet (decompression bound)
+const SPREADSHEET_TOTAL_BUDGET = 400_000; // target chars across all sheets
+const SPREADSHEET_HARD_MAX = 600_000; // absolute output ceiling (documents row budget is 900K)
+
+/** Sheets whose names suggest deal facts — rendered before the rest. */
+export const SHEET_PRIORITY_RE =
+  /control|summary|input|assumption|lender|terms|funding|finance|appraisal|cash ?flow|cost|dashboard|output|scenario|sensitivit/i;
+
+/** Priority sheets first (original order within each group preserved). */
+export function orderSheetsByPriority(names: string[]): string[] {
+  const prioritized: string[] = [];
+  const rest: string[] = [];
+  for (const n of names) (SHEET_PRIORITY_RE.test(n) ? prioritized : rest).push(n);
+  return [...prioritized, ...rest];
+}
+
+/** Per-sheet char budget: fair share of the total, clamped so a 3-sheet
+ * workbook still gets depth (≤40K each) and a 100-sheet one still gets a
+ * readable floor (≥3K each). */
+export function perSheetBudget(
+  sheetCount: number,
+  total: number = SPREADSHEET_TOTAL_BUDGET,
+): number {
+  if (sheetCount <= 0) return total;
+  return Math.max(3_000, Math.min(40_000, Math.floor(total / sheetCount)));
+}
+
 /**
  * Extract text with a typed signal for the images / textless-PDF cases.
  *
@@ -154,51 +187,78 @@ export async function extractTextFromFileEx(file: File): Promise<TextExtractionR
   ) {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      // Limit parsing: only read first 200 rows per sheet to avoid slow decompression
-      // of massive XLSM files (30+ tabs × 1000s rows). Classification only needs
-      // enough content to identify the document type.
-      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: 200 });
+      // Row cap bounds decompression of massive XLSM files (30+ tabs ×
+      // 1000s of rows); 400 rows covers real appraisal/sensitivity tables.
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: SPREADSHEET_SHEET_ROWS });
 
-      // Extract text from up to 10 sheets, capped at 50K chars
-      const MAX_EXTRACT_LENGTH = 50_000;
-      const MAX_SHEETS = 10;
-      let fullText = '';
-      const sheetNames = workbook.SheetNames.slice(0, MAX_SHEETS);
+      // 2026-07 Wave A fix: the previous walk (first 10 sheets, one global
+      // 50K cap that sheet 1 could exhaust alone) left 30-sheet RockCap
+      // models 90% unread on every client. Now EVERY sheet renders under a
+      // per-sheet budget (early sheets can't starve later ones), ordered so
+      // fact-bearing sheets (control/summary/lender/terms/…) come FIRST —
+      // the downstream extractText return pages 120K chars at a time, so
+      // output order decides what an agent sees on page one. A manifest
+      // header lists every sheet with its rendered size, so truncation is
+      // visible instead of silent.
+      const allSheetNames: string[] = workbook.SheetNames;
+      const ordered = orderSheetsByPriority(allSheetNames);
+      const budget = perSheetBudget(ordered.length);
 
-      // Include a summary of all sheet names for classification context
-      if (workbook.SheetNames.length > MAX_SHEETS) {
-        fullText += `[Workbook has ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(', ')}]\n`;
-        fullText += `[Showing first ${MAX_SHEETS} sheets]\n`;
+      const rendered: Array<{ name: string; text: string; note: string }> = [];
+      for (const sheetName of ordered) {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = worksheet
+          ? XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+          : [];
+        let sheetText = '';
+        let renderedRows = 0;
+        let nonEmptyRows = 0;
+        let capped = false;
+        for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
+          const row = jsonData[rowIndex] as any[];
+          if (!Array.isArray(row) || !row.some(cell => cell !== '')) continue;
+          nonEmptyRows++;
+          if (capped) continue; // keep counting rows for the manifest
+          const rowText = row
+            .map(cell => (cell === null || cell === undefined ? '' : String(cell).trim()))
+            .filter(cell => cell !== '')
+            .join(' | ');
+          if (!rowText) continue;
+          const line = `Row ${rowIndex + 1}: ${rowText}\n`;
+          if (sheetText.length + line.length > budget) {
+            capped = true;
+            continue;
+          }
+          sheetText += line;
+          renderedRows++;
+        }
+        const note = capped
+          ? `${renderedRows}/${nonEmptyRows} rows (sheet capped at ${budget} chars)`
+          : nonEmptyRows === 0
+            ? 'empty'
+            : `${renderedRows} rows`;
+        rendered.push({ name: sheetName, text: sheetText, note });
       }
 
-      for (const sheetName of sheetNames) {
-        if (fullText.length >= MAX_EXTRACT_LENGTH) break;
+      const manifest =
+        `[Workbook: ${allSheetNames.length} sheets, ALL rendered below in priority order ` +
+        `(per-sheet cap ${budget} chars). Sheets: ` +
+        rendered.map(s => `${s.name} (${s.note})`).join('; ') +
+        `]\n`;
 
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-
-        fullText += `\n=== Sheet: ${sheetName} ===\n`;
-
-        for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
-          if (fullText.length >= MAX_EXTRACT_LENGTH) break;
-
-          const row = jsonData[rowIndex] as any[];
-          if (Array.isArray(row) && row.some(cell => cell !== '')) {
-            const rowText = row
-              .map(cell => {
-                if (cell === null || cell === undefined) return '';
-                return String(cell).trim();
-              })
-              .filter(cell => cell !== '')
-              .join(' | ');
-
-            if (rowText) {
-              fullText += `Row ${rowIndex + 1}: ${rowText}\n`;
-            }
-          }
+      let fullText = manifest;
+      for (const s of rendered) {
+        if (fullText.length >= SPREADSHEET_HARD_MAX) {
+          fullText += `\n[Output hard cap ${SPREADSHEET_HARD_MAX} chars reached — remaining sheets listed in the manifest were rendered but dropped]\n`;
+          break;
+        }
+        fullText += `\n=== Sheet: ${s.name} ===\n`;
+        fullText += s.text.length > 0 ? s.text : '(no non-empty rows)\n';
+        if (s.note.includes('capped')) {
+          fullText += `[Sheet "${s.name}" truncated: ${s.note}]\n`;
         }
       }
-      
+
       return { status: 'text', text: fullText.trim() };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
