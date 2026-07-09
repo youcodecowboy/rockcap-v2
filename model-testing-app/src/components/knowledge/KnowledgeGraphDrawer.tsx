@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
@@ -24,6 +24,11 @@ interface KnowledgeGraphDrawerProps {
    * this false/undefined: prospect-scoped atoms are hidden by default and the
    * toolbar toggle reveals them. */
   entryIsProspect?: boolean;
+  /** When true the entry entity opens pre-selected, so its satellite mini-labels
+   * are lit immediately (the "all labels on host selection" path). Used by the
+   * atlas Focus entry point — land on the entity and read its atoms at once.
+   * Later pivots inside the drawer clear the selection as usual. */
+  selectEntryOnMount?: boolean;
   onClose: () => void;
 }
 
@@ -90,14 +95,16 @@ function attrProvenance(a: RawAttr): string {
   return a.asOf ? `atom · ${a.asOf}` : "atom";
 }
 
-export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, entryName, entryIsProspect, onClose }: KnowledgeGraphDrawerProps) {
+export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, entryName, entryIsProspect, selectEntryOnMount, onClose }: KnowledgeGraphDrawerProps) {
   const colors = useColors();
 
   // Breadcrumb / pivot stack — bottom is the entry entity, top is the current center.
   const [stack, setStack] = useState<Crumb[]>([{ type: entryEntityType, id: entryEntityId, name: entryName }]);
   const center = stack[stack.length - 1];
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    selectEntryOnMount ? entryEntityId : null,
+  );
   const [selectedAtomId, setSelectedAtomId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeFamily, setActiveFamily] = useState<GraphFamily | "all">("all");
@@ -124,8 +131,15 @@ export default function KnowledgeGraphDrawer({ entryEntityType, entryEntityId, e
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
 
-  // Reset selection when the center changes (pivot / pop).
+  // Reset selection when the center changes (pivot / pop). The first run is
+  // skipped so a `selectEntryOnMount` pre-selection survives mount (the effect
+  // fires once on mount even though the center hasn't actually changed).
+  const centerChangeSeen = useRef(false);
   useEffect(() => {
+    if (!centerChangeSeen.current) {
+      centerChangeSeen.current = true;
+      return;
+    }
     setSelectedNodeId(null);
     setSelectedAtomId(null);
   }, [center.id]);

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Focus } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import type { ColorPalette } from "@/lib/colors";
 import { colorForDisplayType, displayTypeOf, type AtlasNode } from "./atlasTypes";
@@ -57,9 +57,12 @@ interface AtlasSidePanelProps {
   node: AtlasNode;
   colors: ColorPalette;
   onClose: () => void;
+  /** Open the focused knowledge-graph drawer centered on this node — the
+   * entity fanned out with its own atoms as labeled satellites. */
+  onFocus: (node: AtlasNode) => void;
 }
 
-export default function AtlasSidePanel({ node, colors, onClose }: AtlasSidePanelProps) {
+export default function AtlasSidePanel({ node, colors, onClose, onFocus }: AtlasSidePanelProps) {
   const dt = displayTypeOf(node);
   const c = colorForDisplayType(colors, dt);
 
@@ -190,6 +193,31 @@ export default function AtlasSidePanel({ node, colors, onClose }: AtlasSidePanel
             {node.contestedCount > 0 ? ` · ${node.contestedCount} contested` : ""} · {node.degree} link{node.degree === 1 ? "" : "s"}
           </span>
         </div>
+        {/* Focus — the primary action: land on this entity and read its atoms
+            as a labeled satellite fan. Prominent, tinted in the entity's hue. */}
+        <button
+          onClick={() => onFocus(node)}
+          title={`Focus — open ${node.name} and its atoms in the knowledge graph`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            width: "100%",
+            marginTop: 12,
+            background: `${c}22`,
+            color: c,
+            border: `1px solid ${c}`,
+            borderRadius: 6,
+            padding: "8px 12px",
+            fontSize: 13,
+            fontWeight: 650,
+            cursor: "pointer",
+          }}
+        >
+          <Focus style={{ width: 14, height: 14 }} />
+          Focus this {dt}
+        </button>
         {clientHref && (
           <Link
             href={clientHref}

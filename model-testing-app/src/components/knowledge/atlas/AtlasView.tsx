@@ -8,6 +8,7 @@ import { DARK } from "@/lib/colors";
 import { EmptyState } from "@/components/layouts";
 import AtlasCanvas, { type AtlasHover } from "./AtlasCanvas";
 import AtlasSidePanel from "./AtlasSidePanel";
+import KnowledgeGraphDrawer from "../KnowledgeGraphDrawer";
 import {
   ATLAS_DISPLAY_TYPES,
   colorForDisplayType,
@@ -62,6 +63,16 @@ export default function AtlasView() {
   const [hover, setHover] = useState<AtlasHover | null>(null);
   const flyNonceRef = useRef(0);
 
+  // Focus overlay: the entity clicked "Focus" in the side panel, opened in the
+  // reusable KnowledgeGraphDrawer centered on itself. Kept separate from
+  // focusKey (the board selection) so closing the drawer returns to the atlas
+  // with the selection intact.
+  const [focusTarget, setFocusTarget] = useState<AtlasNode | null>(null);
+  const focusTargetRef = useRef<AtlasNode | null>(null);
+  useEffect(() => {
+    focusTargetRef.current = focusTarget;
+  }, [focusTarget]);
+
   const [reducedMotion, setReducedMotion] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -75,6 +86,9 @@ export default function AtlasView() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // While the Focus drawer is open it owns Escape (its own handler closes
+      // it) — leave the board selection untouched so we return to it.
+      if (focusTargetRef.current) return;
       setSearchOpen(false);
       setFocusKey(null);
     };
@@ -464,10 +478,26 @@ export default function AtlasView() {
               );
             })()}
 
-            {focusNode && <AtlasSidePanel node={focusNode} colors={colors} onClose={() => setFocusKey(null)} />}
+            {focusNode && (
+              <AtlasSidePanel node={focusNode} colors={colors} onClose={() => setFocusKey(null)} onFocus={setFocusTarget} />
+            )}
           </>
         )}
       </div>
+
+      {/* Focus overlay — the clicked entity fanned out with its own atoms, via
+          the reusable knowledge-graph drawer (self-contained fixed overlay,
+          z-index 1000). Closing returns to the atlas with the selection kept. */}
+      {focusTarget && (
+        <KnowledgeGraphDrawer
+          entryEntityType={focusTarget.type}
+          entryEntityId={focusTarget.id}
+          entryName={focusTarget.name}
+          entryIsProspect={focusTarget.type === "client" && focusTarget.clientStatus === "prospect"}
+          selectEntryOnMount
+          onClose={() => setFocusTarget(null)}
+        />
+      )}
     </div>
   );
 }
