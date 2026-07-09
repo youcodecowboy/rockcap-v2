@@ -93,6 +93,13 @@ export async function POST(request: NextRequest) {
           { status: 422 },
         );
       }
+    } else if (extraction.status === 'no_text') {
+      // Video/audio: no text layer and no vision path. Fail fast with a clear
+      // message instead of falling through to raw-byte garbage.
+      return NextResponse.json(
+        { ok: false, error: extraction.reason },
+        { status: 422 },
+      );
     } else {
       // needs_vision — image or scanned/image-only PDF. On vision failure
       // (missing key, oversize, over page cap, unsupported image, empty

@@ -65,6 +65,50 @@ export const findDuplicatesByName = query({
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Tables whose `clientId` FK is covered by a `by_client` index. Every
+// clientId table in the merge sweep has one EXCEPT `activities` (and
+// `companies`, which joins on promotedToClientId) — those two full-scan.
+// The index matters: full-scanning `documents` (fat extracted-text rows)
+// across a 17-table sweep blows Convex's 16MiB per-transaction read cap
+// (hit live, 2026-07-09 lender merges).
+const BY_CLIENT_INDEXED = new Set([
+  "contacts",
+  "documents",
+  "tasks",
+  "flags",
+  "notes",
+  "meetings",
+  "chatSessions",
+  "enrichmentSuggestions",
+  "reminders",
+  "events",
+  "knowledgeBankEntries",
+  "knowledgeChecklistItems",
+  "knowledgeEmailLogs",
+  "knowledgeItems",
+  "prospectingContext",
+  "prospectingEmails",
+  "intelligenceConflicts",
+  "clientFolders",
+  "clientIntelligence",
+]);
+
+async function rowsByClientField(
+  ctx: any,
+  table: string,
+  field: string,
+  clientId: Id<"clients">,
+): Promise<any[]> {
+  if (field === "clientId" && BY_CLIENT_INDEXED.has(table)) {
+    return await ctx.db
+      .query(table)
+      .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
+      .collect();
+  }
+  const rows = await ctx.db.query(table).collect();
+  return rows.filter((r: any) => r[field] === clientId);
+}
+
 // Reassign a flat `clientId` field on every doc in a table that matches
 // source → target. Used for the simple one-to-many FK tables.
 async function reassignField(
@@ -74,8 +118,7 @@ async function reassignField(
   sourceId: Id<"clients">,
   targetId: Id<"clients">,
 ): Promise<number> {
-  const rows = await ctx.db.query(table).collect();
-  const matches = rows.filter((r: any) => r[field] === sourceId);
+  const matches = await rowsByClientField(ctx, table, field, sourceId);
   for (const row of matches) {
     await ctx.db.patch(row._id, { [field]: targetId });
   }
@@ -91,8 +134,7 @@ async function deleteByClientId(
   table: string,
   clientId: Id<"clients">,
 ): Promise<number> {
-  const rows = await ctx.db.query(table).collect();
-  const matches = rows.filter((r: any) => r.clientId === clientId);
+  const matches = await rowsByClientField(ctx, table, "clientId", clientId);
   for (const row of matches) {
     await ctx.db.delete(row._id);
   }
@@ -199,17 +241,12 @@ export const mergeTwo = internalMutation({
       args.sourceId,
     );
 
-    // Activities — schema has `clientId` via company promotion, not direct,
-    // so reassigning companies.promotedToClientId above already redirects
-    // derived client linkage. Any activity rows that DO carry clientId
-    // directly get updated for completeness.
-    counts.activities = await reassignField(
-      ctx,
-      "activities",
-      "clientId",
-      args.sourceId,
-      args.targetId,
-    );
+    // Activities link to clients via companies.promotedToClientId (already
+    // reassigned above) — the schema has no direct activities.clientId field,
+    // so there is nothing to repoint. The old "for completeness" full scan
+    // here read the entire activity log for zero matches and blew the 16MiB
+    // per-transaction read cap once the table grew (hit live, 2026-07-09).
+    counts.activities = 0;
 
     // Soft-delete source. Matches clients.remove's shape so the
     // restoration banner recognises it if the user realises we picked

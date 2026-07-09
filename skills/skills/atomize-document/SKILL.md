@@ -125,6 +125,16 @@ The engine resolves cross-document contradictions on this scale (matching `atoms
 | 2 | Internal briefs / memos |
 | 1 | Emails and everything else |
 
+## Facility, lender, and appetite discipline
+
+Three rules that stop the two failure modes seen at wave scale (duplicate lenders, fragmented facilities) and make every wave silently feed `lender.matchForDeal`.
+
+1. **Qualifier discipline (facilities are not document versions).** The atom `qualifier` on financing atoms (`lends_to` and other facility-shaped predicates) is ONLY for tranche: `senior`, `mezzanine`, `bridge`, `equity`, or omitted. Successive revisions of the same lender's terms on the same project are the SAME facility, not new ones. Record a changed rate, fee, or LTV as a new attribute atom on that facility; version precedence supersedes the prior value automatically. Never encode a document version ("indicative terms 2026-07-02") or a pricing variant ("0.75% fee variant") as a qualifier: non-tranche qualifier text no longer mints a facility, and misusing it this way is exactly what fragmented one Allica Bank negotiation into 8 duplicate facility rows on one project. Facility `status` is stamped server-side from the source document class (term sheet / HOTs / DIP / AIP → indicative; facility agreement / facility letter / completion → live); you never set it.
+
+2. **Lender rostering (upsert, never duplicate).** When a document names a lender quoting or lending, call `lender.create` — it now UPSERTS: it normalises the name (case, punctuation, legal suffixes ltd/limited/llp/plc/inc) and matches existing lenders by `name`/`companyName`/`aliases`, enriches the match, and returns it with `deduped: true`. Treat `deduped: true` as success, not a collision. ALWAYS pass `sourceDocumentIds` (the document(s) that evidence the lender); when both a brand and a legal name appear, pass `aliases` (e.g. brand "Paragon" plus legal "Paragon Development Finance Limited"). Never create a lender twice for name variants — the "Funding 365 ×2", "Downing vs Downing LLP", "Paragon vs Paragon Bank" duplicates all came from this. If you later discover an existing duplicate pair, consolidate with `lender.merge({fromClientId, toClientId, dryRun?})`: it repoints atoms, contacts, appetite signals, and facilities onto the survivor and soft-deletes the duplicate.
+
+3. **Appetite extraction (structured, not prose).** When a lender document (term sheet, DIP, HOTs, appetite packet) reveals appetite-shaped facts — deal-size band, LTV / LTGDV ceilings, product types, geography, rates — ALSO call `lender.recordAppetite` with the standard fieldPaths from `../lender-intel/references/appetite-signal-catalogue.md` (reference it; do not reproduce the paths here). Set `sourceType: "lender_doc"` (or `"deal_behaviour"` for what the lender actually completed), `sourceRef` = the document id, and `asOfDate` = the document date. Writing rich term-sheet intel only into a prose `notes` field is the miss that left `lender.matchForDeal` learning nothing from ingestion; the structured signal is the record, a prose note is a supplement.
+
 ## Style rules
 
 - All CONVENTIONS.md rules apply. The atoms you emit are data, not prose — but keep `statement` sentences UK-English, evidence-first, and free of em dashes / rule-of-three.
@@ -155,6 +165,9 @@ Claude Code native tools: `Read` for any local artefacts; no `WebSearch`/`WebFet
 4. **Spreadsheet chunked.** Don't `upsertChunks` fact-dense spreadsheets; atomize them instead.
 5. **Big pass fired without confirmation.** >60 documents in scope must be confirmed by the operator first.
 6. **Re-atomizing already-covered docs.** Skip documents whose `(documentId, contentChecksum)` already has observations (step 3) — otherwise you spend tokens re-deriving facts the engine already holds.
+7. **Lender created twice for a name variant.** `lender.create` upserts; a `deduped: true` return is the correct outcome. Pass `aliases` (brand + legal name) and `sourceDocumentIds` so future variants resolve to the same row. Consolidate any pre-existing duplicate with `lender.merge`.
+8. **Qualifier used for a document version or pricing variant.** `qualifier` is tranche-only (`senior`/`mezzanine`/`bridge`/`equity`) or omitted. Term changes across revisions are new attribute atoms on the SAME facility, not qualifier variants — see "Facility, lender, and appetite discipline".
+9. **Appetite left in prose.** Term-sheet appetite facts must go to `lender.recordAppetite` at the standard fieldPaths, not only into a `notes` string; prose alone never reaches `lender.matchForDeal`.
 
 ## References
 

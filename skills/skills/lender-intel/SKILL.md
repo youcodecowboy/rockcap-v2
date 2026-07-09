@@ -107,6 +107,13 @@ Persisted to Convex:
 
 9. **Call `skillRun.complete`** with `status: "complete"` (or `complete_with_gaps`), `brief` (one paragraph: what was captured, what changed, what's deferred to gaps), `linkedClientId` = the lender.
 
+### Ingesting appetite packets & criteria documents
+
+A lender's own appetite packet, lending-criteria sheet, or product one-pager is capture mode with the source pre-structured for you. Same discipline as any document source, plus two things specific to lender-doc ingestion:
+
+- **Structured signals, not prose.** Extract every appetite-shaped fact (deal-size band, LTV / LTGDV ceilings, `products.offered`, `propertyType.allowed`, geography, typical time-to-offer, rates) to `lender.recordAppetite` at the standard fieldPaths in `references/appetite-signal-catalogue.md`. Set `sourceType: "lender_doc"`, `sourceRef` = the document id, `asOfDate` = the document date. A criteria sheet often fills most of the 7 matching-critical fieldPaths in one pass — that is the highest-value capture there is, because it directly lifts `lender.matchForDeal`.
+- **Refresh the lender row while you have the document open.** `lender.create` now UPSERTS: call it with the lender's `name`, any `aliases` the document reveals (brand plus legal name, e.g. "Paragon" + "Paragon Development Finance Limited"), `website`, and `sourceDocumentIds` = the packet. It normalises the name (case, punctuation, legal suffixes ltd/limited/llp/plc/inc), matches the existing row, enriches it, and returns it with `deduped: true` — that is success, and it means you never mint a second lender for a name variant. If ingestion surfaces an actual duplicate pair already in the roster, consolidate with `lender.merge({fromClientId, toClientId, dryRun?})`; it repoints atoms, contacts, appetite signals, and facilities onto the survivor and soft-deletes the duplicate.
+
 ### Matching mode
 
 1. **Validate the criteria.** At least 2 of `{dealSize, dealType, assetClass, geography, ltv, ltgdv, timelineWeeks}` should be set. If `projectId` is given: load `project.getDeepContext({projectId})` and auto-derive missing criteria from project's intelligence (GDV → dealSize estimate, asset class, geography from address).
@@ -136,7 +143,8 @@ All `../../CONVENTIONS.md` rules apply. Three that matter most:
 
 This skill calls these MCP-exposed tools (v1.3 Sprint F):
 
-- `lender.create` — capture mode for new lenders
+- `lender.create` — capture mode for new lenders; UPSERTS (normalises name + matches `name`/`companyName`/`aliases`, returns `deduped: true` on a match). Pass `aliases` + `sourceDocumentIds`; also used to refresh an existing lender row (aliases, website)
+- `lender.merge` — consolidate a duplicate lender pair discovered later (`{fromClientId, toClientId, dryRun?}`; repoints atoms/contacts/signals/facilities, soft-deletes the duplicate)
 - `client.get` — verify existing lender (lenders are clients rows with type=lender)
 - `lender.getDeepContext` — load current appetite + history for novelty check
 - `lender.recordAppetite` — write a new signal (supersedes prior automatically)
@@ -151,7 +159,7 @@ Tools NOT yet MCP-exposed (capture in gaps):
 
 ## What goes wrong
 
-1. **Lender doesn't exist yet.** Capture mode: skill calls `lender.create` first. Operator can pass extra fields (website, email) via the `lenderName` + extended args. Matching mode: skip; matching only against existing lenders.
+1. **Lender doesn't exist yet.** Capture mode: skill calls `lender.create` first — it upserts, so a name variant of an existing lender enriches that row and returns `deduped: true` rather than minting a duplicate. Pass `aliases` (brand + legal name) and `sourceDocumentIds` so future variants resolve to the same row; extra fields (website, email) go via the extended args. Consolidate any pre-existing duplicate pair with `lender.merge`. Matching mode: skip; matching only against existing lenders.
 2. **Signal contradicts a recent capture (within 90 days).** Don't auto-supersede — flag in the brief: "Octopus said LTGDV=0.70 today; recorded 0.75 on 2026-04-15 via BDM meeting. Either appetite tightened OR one source is wrong." Skill writes the new signal (newer source wins) but flags for operator review.
 3. **Matching returns zero optimal lenders.** Common when criteria are very specific or our lender database is thin. Skill response: "0 optimal matches across N lenders with appetite recorded. To improve: broaden criteria OR add appetite signals for adjacent lenders (currently uninformed: list with currentSignalsCount=0)."
 4. **Source extraction is ambiguous.** Meeting transcript says "they like the deal" without specifics. Capture mode: don't extract signals (per "no fabrication" rule); flag in brief that the source had no usable appetite info.
