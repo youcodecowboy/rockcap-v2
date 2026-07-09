@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { Loader2, Search } from "lucide-react";
 import { api } from "../../../../convex/_generated/api";
 import { DARK } from "@/lib/colors";
@@ -31,20 +31,25 @@ export default function AtlasView() {
   // a single query execution — see convex/knowledge/graphOverview.ts). The
   // query is reactive: it returns the cached board instantly, and when the
   // refresh action lands a rebuild, the new snapshot swaps in on its own.
-  const snap = useQuery(api.knowledge.graphOverview.snapshot, {});
+  //
+  // Skip until Convex reports authenticated: on first mount the Clerk token
+  // hasn't reached Convex yet, and an eager call would throw the snapshot
+  // query's Unauthenticated error into the page boundary — which latches.
+  const { isAuthenticated } = useConvexAuth();
+  const snap = useQuery(api.knowledge.graphOverview.snapshot, isAuthenticated ? {} : "skip");
   const refreshAtlas = useAction(api.knowledge.graphOverview.refresh);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   // One kick per observed builtAt — never a refresh loop.
   const kickedForRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
-    if (snap === undefined || snap.building) return;
+    if (!isAuthenticated || snap === undefined || snap.building) return;
     const stale = snap.builtAt === null || Date.now() - snap.builtAt > SNAPSHOT_TTL_MS;
     if (!stale || kickedForRef.current === snap.builtAt) return;
     kickedForRef.current = snap.builtAt;
     refreshAtlas({}).catch((e: unknown) => {
       setRefreshError(e instanceof Error ? e.message : String(e));
     });
-  }, [snap, refreshAtlas]);
+  }, [isAuthenticated, snap, refreshAtlas]);
 
   const data = (snap?.overview ?? undefined) as AtlasOverview | undefined;
 
