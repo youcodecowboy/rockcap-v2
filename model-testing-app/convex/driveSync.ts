@@ -18,6 +18,7 @@ import { getAuthenticatedUserOrNull } from "./authHelpers";
 // STORED classification (precedent: convex/migrations/seedCodeMappings.ts
 // imports src/lib code the same way).
 import { resolvePlacement, getParentFolderKey } from "../src/v4/lib/placement-rules";
+import { resolveDriveMirrorFolderKey } from "./driveMirrorPlacement";
 
 // Google Drive metadata mirror — the sync engine (phase 2).
 //
@@ -2694,6 +2695,23 @@ export const refileSubtreeToProject = internalMutation({
         // "project" makes its no-rule fallback "modelling_info" (flagged
         // lowConfidence), which is right here — everything in this subtree
         // IS project material.
+        // Drive-mirror authority first (same precedence as hydration and the
+        // harness lane): the client's own Drive folder placement wins.
+        const mirror = await resolveDriveMirrorFolderKey(ctx, {
+          driveFileId: (doc as any).driveFileId,
+          projectId: args.projectId,
+        });
+        if (mirror) {
+          await ctx.db.patch(doc._id, {
+            projectId: args.projectId,
+            projectName: project.name,
+            folderId: mirror.folderId,
+            folderType: "project",
+          });
+          documentsStamped++;
+          refiled++;
+          continue;
+        }
         const storedAxes: any = (doc as any).extractedData?.classificationAxes;
         const placement = resolvePlacement(
           {

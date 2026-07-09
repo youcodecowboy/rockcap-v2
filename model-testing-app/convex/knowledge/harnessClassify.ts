@@ -13,6 +13,7 @@ import {
   SETTLE_MS,
 } from "../driveSync";
 import { resolvePlacement } from "../../src/v4/lib/placement-rules";
+import { resolveDriveMirrorFolderKey } from "../driveMirrorPlacement";
 // Same convex→src sharing idiom as the placement-rules import above: the
 // V1.2 naming-standard parser lives with the app code and is bundled in.
 // Schema single source of truth: src/lib/naming/filename_schema.json.
@@ -554,6 +555,18 @@ export const applyClassification = internalMutation({
       | { folderId: string; folderType: "client" | "project" }
       | undefined;
     if (!doc.folderId) {
+      // Drive-mirror authority first: when the file sits in a Drive folder
+      // whose name matches an app folder (incl. operator-curated ones like
+      // lender_pack that classification never auto-targets), the client's
+      // own Drive placement wins over content-classification placement.
+      placementPatch =
+        (await resolveDriveMirrorFolderKey(ctx, {
+          driveFileId: (doc as any).driveFileId,
+          projectId: projectId ?? undefined,
+          clientId: clientId ?? undefined,
+        })) ?? undefined;
+    }
+    if (!doc.folderId && !placementPatch) {
       const client: any = clientId ? await ctx.db.get(clientId) : null;
       const placement = resolvePlacement(
         {
