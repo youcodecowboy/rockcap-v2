@@ -3,7 +3,7 @@ import { internalMutation } from "../_generated/server";
 import type { MutationCtx } from "../_generated/server";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { FACILITY_SHAPED_PREDICATES } from "./vocabulary";
+import { FACILITY_MINT_PREDICATES, FACILITY_SHAPED_PREDICATES } from "./vocabulary";
 
 // Facilities minting — Spec 2 §3.3 (docs/spec-2-knowledge-layer.md).
 //
@@ -24,9 +24,23 @@ import { FACILITY_SHAPED_PREDICATES } from "./vocabulary";
 // `facilities` is what the graph traverses for terms and cross-client
 // lender queries.
 
+/** Identity of a minted/rebuilt facility, returned through createBatch so
+ * the atomizing agent can map "my Downing senior quote" → facilityId and
+ * anchor the quote's economics (has_loan_amount / has_interest_rate /
+ * matures_on / has_loan_term_months / has_guarantee) to subjectType
+ * "facility" in a follow-up batch — never to the project, where rival
+ * lenders' numbers contest each other (2026-07 Donnington pilot). */
+export type FacilityRef = {
+  facilityId: Id<"facilities">;
+  projectId: Id<"projects">;
+  lenderClientId?: Id<"clients">;
+  lenderCompanyId?: Id<"companiesHouseCompanies">;
+  tranche?: string;
+};
+
 type MintResult = {
-  minted: Id<"facilities">[];
-  rebuilt: Id<"facilities">[];
+  minted: FacilityRef[];
+  rebuilt: FacilityRef[];
   skipped: Array<{ atomId: Id<"atoms">; reason: string }>;
 };
 
@@ -269,6 +283,20 @@ async function loadFacilityAtoms(
       .collect()
   ).filter((a) => FACILITY_SHAPED_PREDICATES.has(a.predicate));
 
+  // Cross-lender guard (2026-07 Donnington pilot): the byProject lane lets a
+  // SINGLE-lender project anchor terms at project scope. When several
+  // facilities share this (project, tranche) — a live lender run with
+  // competing quotes — project-anchored numbers are ambiguous between
+  // lenders, and materializing them would bleed one lender's amount onto
+  // every rival's facility row. Facility-subject atoms only, in that case.
+  const siblingCount = (
+    await ctx.db
+      .query("facilities")
+      .withIndex("by_project", (q) => q.eq("projectId", facility.projectId))
+      .collect()
+  ).filter((f) => (f.tranche ?? null) === (facility.tranche ?? null)).length;
+  if (siblingCount > 1) return bySubject;
+
   const byProject = (
     await ctx.db
       .query("atoms")
@@ -367,8 +395,68 @@ export async function mintFacilitiesForAtoms(
     }
   };
 
+  const mintedIds = new Set<Id<"facilities">>();
+
+  /** Shared quote-edge upsert: `lends_to` (project from atom scope) and
+   * `funds_project` (project IS the object) both resolve to the same
+   * (project, lender, tranche) facility identity. */
+  const upsertQuoteFacility = async (
+    atom: Doc<"atoms">,
+    projectId: Id<"projects">,
+    tranche: string | undefined,
+  ) => {
+    let lenderClientId: Id<"clients"> | undefined;
+    let lenderCompanyId: Id<"companiesHouseCompanies"> | undefined;
+    if (atom.subjectType === "client") {
+      lenderClientId = ctx.db.normalizeId("clients", atom.subjectId) ?? undefined;
+    } else if (atom.subjectType === "company") {
+      lenderCompanyId =
+        ctx.db.normalizeId("companiesHouseCompanies", atom.subjectId) ?? undefined;
+    }
+    const lenderKey = lenderClientId ?? lenderCompanyId;
+    if (!lenderKey) {
+      result.skipped.push({
+        atomId: atom._id,
+        reason: "lender_not_client_or_company",
+      });
+      return;
+    }
+
+    const dedupeKey = `${projectId}:${lenderKey}:${tranche ?? "single"}`;
+    const existing = await ctx.db
+      .query("facilities")
+      .withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey))
+      .unique();
+    if (existing) {
+      toRebuild.add(existing._id);
+      await proposeStatus(existing._id, atom);
+    } else {
+      const facilityId = await ctx.db.insert("facilities", {
+        projectId,
+        lenderClientId,
+        lenderCompanyId,
+        borrowerClientId: atom.clientId, // owning scope = the borrower side
+        tranche,
+        dedupeKey,
+        createdFrom: "atomizer",
+        lastRebuiltAt: new Date().toISOString(),
+      });
+      mintedIds.add(facilityId);
+      toRebuild.add(facilityId);
+      await proposeStatus(facilityId, atom);
+      if (lenderClientId) {
+        // Native edge write-back (spec §3.3): idempotent, sessionless.
+        // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
+        await ctx.scheduler.runAfter(0, api.projects.addLenderRole, {
+          projectId,
+          clientId: lenderClientId,
+        });
+      }
+    }
+  };
+
   for (const atom of atoms) {
-    if (!FACILITY_SHAPED_PREDICATES.has(atom.predicate)) continue;
+    if (!FACILITY_MINT_PREDICATES.has(atom.predicate)) continue;
     const tranche = normalizeTranche(atom.qualifier);
 
     // Subject is already a facility → straight re-materialization.
@@ -389,54 +477,27 @@ export async function mintFacilitiesForAtoms(
         result.skipped.push({ atomId: atom._id, reason: "no_project_scope" });
         continue;
       }
-      let lenderClientId: Id<"clients"> | undefined;
-      let lenderCompanyId: Id<"companiesHouseCompanies"> | undefined;
-      if (atom.subjectType === "client") {
-        lenderClientId = ctx.db.normalizeId("clients", atom.subjectId) ?? undefined;
-      } else if (atom.subjectType === "company") {
-        lenderCompanyId =
-          ctx.db.normalizeId("companiesHouseCompanies", atom.subjectId) ?? undefined;
-      }
-      const lenderKey = lenderClientId ?? lenderCompanyId;
-      if (!lenderKey) {
+      await upsertQuoteFacility(atom, projectId, tranche);
+      continue;
+    }
+
+    if (atom.predicate === "funds_project") {
+      // 2026-07 Donnington pilot fix: indicative quotes are lender → PROJECT
+      // edges (term sheets often never name the borrower SPV), so they mint
+      // the same (project, lender, tranche) facility lends_to does — status
+      // stamps from the source document class (term sheet → indicative).
+      const projectId =
+        atom.objectEntityType === "project" && atom.objectEntityId
+          ? ctx.db.normalizeId("projects", atom.objectEntityId)
+          : null;
+      if (!projectId) {
         result.skipped.push({
           atomId: atom._id,
-          reason: "lender_not_client_or_company",
+          reason: "funds_project_object_not_project",
         });
         continue;
       }
-
-      const dedupeKey = `${projectId}:${lenderKey}:${tranche ?? "single"}`;
-      const existing = await ctx.db
-        .query("facilities")
-        .withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey))
-        .unique();
-      if (existing) {
-        toRebuild.add(existing._id);
-        await proposeStatus(existing._id, atom);
-      } else {
-        const facilityId = await ctx.db.insert("facilities", {
-          projectId,
-          lenderClientId,
-          lenderCompanyId,
-          borrowerClientId: atom.clientId, // owning scope = the borrower side
-          tranche,
-          dedupeKey,
-          createdFrom: "atomizer",
-          lastRebuiltAt: new Date().toISOString(),
-        });
-        result.minted.push(facilityId);
-        toRebuild.add(facilityId);
-        await proposeStatus(facilityId, atom);
-        if (lenderClientId) {
-          // Native edge write-back (spec §3.3): idempotent, sessionless.
-          // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
-          await ctx.scheduler.runAfter(0, api.projects.addLenderRole, {
-            projectId,
-            clientId: lenderClientId,
-          });
-        }
-      }
+      await upsertQuoteFacility(atom, projectId, tranche);
       continue;
     }
 
@@ -469,9 +530,17 @@ export async function mintFacilitiesForAtoms(
 
   for (const facilityId of toRebuild) {
     await rematerializeFacility(ctx, facilityId);
-    if (!result.minted.includes(facilityId)) {
-      result.rebuilt.push(facilityId);
-    }
+    const row = await ctx.db.get(facilityId);
+    if (!row) continue;
+    const ref: FacilityRef = {
+      facilityId,
+      projectId: row.projectId,
+      lenderClientId: row.lenderClientId ?? undefined,
+      lenderCompanyId: row.lenderCompanyId ?? undefined,
+      tranche: row.tranche ?? undefined,
+    };
+    if (mintedIds.has(facilityId)) result.minted.push(ref);
+    else result.rebuilt.push(ref);
   }
   // Stamp lifecycle status after materialization (never-downgrade enforced in
   // applyFacilityStatus).
@@ -500,6 +569,24 @@ export const rebuildFacility = internalMutation({
   handler: async (ctx, args) => {
     await rematerializeFacility(ctx, args.facilityId);
     return { ok: true as const, facilityId: args.facilityId };
+  },
+});
+
+/** Operator-hygiene wrapper over mergeFacilityInto — collapse a stray
+ * facility row (e.g. one minted from a mis-qualified edge that has since
+ * been retired) into its correct sibling. auditFragmentation only merges
+ * within one (project, lender, tranche) cluster; this handles the
+ * cross-tranche stray case.
+ *   npx convex run knowledge/facilities:mergeInto \
+ *     '{"fromFacilityId":"<stray>","toFacilityId":"<survivor>"}' */
+export const mergeInto = internalMutation({
+  args: {
+    fromFacilityId: v.id("facilities"),
+    toFacilityId: v.id("facilities"),
+  },
+  handler: async (ctx, args) => {
+    await mergeFacilityInto(ctx, args.fromFacilityId, args.toFacilityId);
+    return { ok: true as const, survivor: args.toFacilityId };
   },
 });
 

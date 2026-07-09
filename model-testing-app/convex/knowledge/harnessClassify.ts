@@ -13,6 +13,7 @@ import {
   SETTLE_MS,
 } from "../driveSync";
 import { resolvePlacement } from "../../src/v4/lib/placement-rules";
+import { md5Hex } from "./md5";
 import { resolveDriveMirrorFolderKey } from "../driveMirrorPlacement";
 // Same convex→src sharing idiom as the placement-rules import above: the
 // V1.2 naming-standard parser lives with the app code and is bundled in.
@@ -335,6 +336,23 @@ export const extractText = internalAction({
       );
       contentChecksum = checksumAtFetch;
       source = "drive-fetch";
+    }
+
+    // ── Upload-lane checksum backfill (2026-07 Donnington pilot). Manual
+    // uploads predate checksum stamping, and a null contentChecksum blocks
+    // twin-detection / docDedupe (Drive rows carry an md5) and denies
+    // observations their drift anchor. Hash the stored bytes with the SAME
+    // algorithm Drive uses (md5) and stamp the row once, so both lanes'
+    // checksums are byte-comparable.
+    if (!contentChecksum && storageId) {
+      const blob = await ctx.storage.get(storageId);
+      if (blob && blob.size <= MAX_BYTES) {
+        contentChecksum = md5Hex(await blob.arrayBuffer());
+        await ctx.runMutation(
+          internal.knowledge.harnessClassify.stampContentChecksumInternal,
+          { documentId: args.documentId, contentChecksum },
+        );
+      }
     }
 
     // ── Parse round-trip through the thin Next route (server-side parse
@@ -908,5 +926,80 @@ export const applyClassification = internalMutation({
           }
         : {}),
     };
+  },
+});
+
+// ── Upload-lane checksum stamping (2026-07 Donnington pilot) ──
+// Manual uploads predate contentChecksum stamping; without one a document is
+// invisible to twin-detection / docDedupe (which compare md5s across the
+// Drive and upload lanes) and its observations lack a drift anchor. The
+// extractText action stamps lazily on first touch (above); the backfill
+// action below sweeps existing rows.
+
+export const stampContentChecksumInternal = internalMutation({
+  args: { documentId: v.id("documents"), contentChecksum: v.string() },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId);
+    // Never overwrite: an existing checksum is the drift anchor for prior
+    // observations.
+    if (doc && !doc.contentChecksum) {
+      await ctx.db.patch(args.documentId, { contentChecksum: args.contentChecksum });
+    }
+  },
+});
+
+export const listDocsMissingChecksumInternal = internalQuery({
+  args: { clientId: v.optional(v.id("clients")), limit: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<Array<{ documentId: Id<"documents">; fileStorageId: Id<"_storage"> }>> => {
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 500);
+    const rows = args.clientId
+      ? await ctx.db
+          .query("documents")
+          .withIndex("by_client", (q) => q.eq("clientId", args.clientId!))
+          .collect()
+      : await ctx.db.query("documents").take(4000);
+    return rows
+      .filter((d) => d.isDeleted !== true && !d.contentChecksum && d.fileStorageId)
+      .slice(0, limit)
+      .map((d) => ({ documentId: d._id, fileStorageId: d.fileStorageId! }));
+  },
+});
+
+/** Backfill md5 contentChecksums for upload-sourced documents.
+ *   npx convex run knowledge/harnessClassify:backfillUploadChecksums \
+ *     '{"clientId":"<id>"}'
+ * Scoped to one client by default-usage; omit clientId to sweep the first
+ * 4000 rows. Re-runnable: stamped rows drop out of the candidate list. */
+export const backfillUploadChecksums = internalAction({
+  args: { clientId: v.optional(v.id("clients")), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const targets: Array<{ documentId: Id<"documents">; fileStorageId: Id<"_storage"> }> =
+      await ctx.runQuery(
+        internal.knowledge.harnessClassify.listDocsMissingChecksumInternal,
+        { clientId: args.clientId, limit: args.limit },
+      );
+    let stamped = 0;
+    const skipped: Array<{ documentId: string; reason: string }> = [];
+    for (const t of targets) {
+      const blob = await ctx.storage.get(t.fileStorageId);
+      if (!blob) {
+        skipped.push({ documentId: t.documentId, reason: "storage_missing" });
+        continue;
+      }
+      if (blob.size > MAX_BYTES) {
+        skipped.push({ documentId: t.documentId, reason: "file_too_large" });
+        continue;
+      }
+      const contentChecksum = md5Hex(await blob.arrayBuffer());
+      await ctx.runMutation(
+        internal.knowledge.harnessClassify.stampContentChecksumInternal,
+        { documentId: t.documentId, contentChecksum },
+      );
+      stamped++;
+    }
+    return { candidates: targets.length, stamped, skipped };
   },
 });

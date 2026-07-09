@@ -17,12 +17,46 @@ const baseDigest = {
   clientId: "client1" as string | null,
   scope: null as string | null,
   ownerId: null as string | null,
+  contentChecksum: null as string | null,
   textChecksum: "text-fnv1a:deadbeef:1042" as string | null,
   fileStorageId: null as string | null,
   fileName: "LintonLane_LenderBrief_RC_INTERNAL_V1.3_20260608.docx",
 };
 
 describe("dedupeGroupKey", () => {
+  it("byte checksum is the strongest identity: same md5 groups even when the text hashes differ", () => {
+    // Donnington pilot: the same bytes parsed by two extractor generations
+    // hash to different textChecksums — the byte lane must win.
+    const a = dedupeGroupKey({
+      ...baseDigest,
+      contentChecksum: "md5aaaa",
+      textChecksum: "text-fnv1a:old:900",
+    });
+    const b = dedupeGroupKey({
+      ...baseDigest,
+      contentChecksum: "md5aaaa",
+      textChecksum: "text-fnv1a:new:901",
+    });
+    expect(a).toBe("bytes|client1|lintonlane lenderbrief rc internal v1.3 20260608|md5aaaa");
+    expect(b).toBe(a);
+    // Different bytes never group, whatever the text says.
+    expect(dedupeGroupKey({ ...baseDigest, contentChecksum: "md5bbbb" })).not.toBe(a);
+  });
+
+  it("normalizes Drive's %→_ filename sanitization into one name key", () => {
+    const pct = dedupeGroupKey({
+      ...baseDigest,
+      contentChecksum: "md5cccc",
+      fileName: "PallasHoTs_NorthWaltham_65%.pdf",
+    });
+    const underscore = dedupeGroupKey({
+      ...baseDigest,
+      contentChecksum: "md5cccc",
+      fileName: "PallasHoTs_NorthWaltham_65_.pdf",
+    });
+    expect(pct).toBe(underscore);
+  });
+
   it("groups text-bearing docs by client scope + text checksum", () => {
     const a = dedupeGroupKey({ ...baseDigest });
     const b = dedupeGroupKey({ ...baseDigest, fileStorageId: "st2" });
