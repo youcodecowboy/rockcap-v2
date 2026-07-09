@@ -808,12 +808,26 @@ export default function GraphCanvas({
       // node position P so the line meets the node where it's drawn).
       const meta = satMetaRef.current;
       const satSim = satSimRef.current;
+      // Zoom-proportional spread: labels are ~100px wide but leaf repulsion
+      // only keeps dots ~14px apart, so labelled clusters collide at zoom.
+      // Past the label threshold (k>=1.3) leaves render progressively further
+      // from their host (visual-only radial expansion; physics untouched),
+      // giving labels room that grows with zoom. Capped at 2.4x.
+      const zk = viewRef.current.k;
+      const spread = zk >= 1.3 ? Math.min(2.4, 1 + (zk - 1.3) * 1.1) : 1;
       for (const sat of renderedSatsRef.current) {
         const m = meta.get(sat.id);
         const p = m && satSim.get(sat.id);
         if (!m || !p) continue;
         let x = p.x;
         let y = p.y;
+        if (spread > 1) {
+          const hp0 = P[m.hostId];
+          if (hp0) {
+            x = hp0[0] + (x - hp0[0]) * spread;
+            y = hp0[1] + (y - hp0[1]) * spread;
+          }
+        }
         if (ambient) {
           x += Math.sin(t * 0.0009 + p.ph) * 1.6;
           y += Math.cos(t * 0.0008 + p.ph2) * 1.6;

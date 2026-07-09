@@ -1,5 +1,9 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "../_generated/server";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "../_generated/server";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -11,6 +15,13 @@ import {
 } from "./vocabulary";
 import { mintFacilitiesForAtoms } from "./facilities";
 import { versionPrecedenceWinner } from "./versionPrecedence";
+import {
+  isLenderEdgeSource,
+  LENDER_EDGE_SOURCE_PREDICATES,
+  matchRosteredLenders,
+  type LenderMatch,
+  type RosteredLender,
+} from "./lenderMatch";
 
 // Knowledge-layer core engine — Spec 2 Phase 2a.1
 // (docs/spec-2-knowledge-layer.md §6.1 gates, §7 dedup/corroboration/
@@ -141,7 +152,7 @@ const locatorValidator = v.object({
   section: v.optional(v.string()),
 });
 
-const observationInputValidator = v.object({
+export const observationInputValidator = v.object({
   sourceType: v.union(
     v.literal("document"),
     v.literal("companies_house"),
@@ -174,7 +185,7 @@ const candidateValidator = v.object({
   observation: observationInputValidator,
 });
 
-type ObservationInput = {
+export type ObservationInput = {
   sourceType: Doc<"atomObservations">["sourceType"];
   documentId?: Id<"documents">;
   contentChecksum?: string;
@@ -410,7 +421,7 @@ async function insertAtomWithObservation(
 
 /** Live (non-superseded) observations for an atom. */
 async function liveObservations(
-  ctx: MutationCtx,
+  ctx: MutationCtx | QueryCtx,
   atomId: Id<"atoms">,
 ): Promise<Doc<"atomObservations">[]> {
   const all = await ctx.db
@@ -621,7 +632,7 @@ async function processCandidate(
  * Superseded LOSERS (winner "incumbent") and corroborations are deliberately
  * excluded: no new statement, so no re-embed (the embed action also skips any
  * row that already has a vector). */
-function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
+export function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
   const ids: Id<"atoms">[] = [];
   for (const o of outcomes) {
     if (o.type === "created") ids.push(o.atomId);
@@ -629,6 +640,229 @@ function embedTargetIds(outcomes: Outcome[]): Id<"atoms">[] {
     else if (o.type === "superseded" && o.winner === "new") ids.push(o.atomId);
   }
   return ids;
+}
+
+// ── Companion lender edges (funds_project inference) ──
+//
+// Live-eval gap (2026-07, operator-approved fix): lender indicative-terms
+// atoms anchor at the PROJECT with the lender named only in free text
+// (qualifier "UTB indicative", statement "United Trust Bank's 2026-03-09
+// indicative Dark Mills facility…"), so no funds_project EDGE exists between
+// the lender client and the project — graph.sharedNeighbors returned 0 for
+// Kinspire × UTB / × HTB / × Triple Point even after group expansion. When a
+// FINANCING attribute atom lands with subjectType=project and its
+// statement/qualifier names exactly ONE rostered lender client
+// (knowledge/lenderMatch.ts — conservative full-name / initials-acronym
+// matching, ambiguity always skips), the engine ensures a companion
+// lender —funds_project→ project edge atom exists: created through the
+// normal identity machinery if missing, corroborated if present. The
+// companion inherits the source observation's provenance / authorityTier /
+// asOf with confidence modestly discounted (it is inferred, not asserted).
+// Borrower-side (subjectType=client) atoms never fire — see
+// isLenderEdgeSource.
+
+export const INFERRED_LENDER_EDGE_QUALIFIER = "inferred from indicative terms";
+export const INFERRED_LENDER_EDGE_CONFIDENCE_FACTOR = 0.85;
+
+/** One project-anchored financing attribute occurrence that may name a
+ * lender. Built from an accepted candidate (write path) or a live atom plus
+ * its best live observation (backfill). */
+export type LenderEdgeSource = {
+  statement: string;
+  qualifier?: string;
+  /** The financing atom's subjectId — a stringified projects._id. */
+  subjectProjectId: string;
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  asOf?: string;
+  confidence: number;
+  observation: ObservationInput;
+};
+
+export type LenderEdgeEmission =
+  | {
+      kind: "emitted";
+      lenderClientId: string;
+      lenderName: string;
+      via: "name" | "acronym";
+      projectId: string;
+      atomId: Id<"atoms">;
+      outcome: Outcome["type"];
+    }
+  | {
+      kind: "ambiguous_skipped";
+      projectId: string;
+      lenderNames: string[];
+      statement: string;
+    }
+  | {
+      kind: "rejected";
+      lenderName: string;
+      projectId: string;
+      reason: string;
+    };
+
+/** Rostered lender clients — clients rows with type="lender", soft-deleted
+ * excluded. The clients table is CRM-scale; a filtered collect matches the
+ * existing pattern (appetiteSignals.ts). */
+export async function loadRosteredLenders(
+  ctx: MutationCtx | QueryCtx,
+): Promise<RosteredLender[]> {
+  const all = await ctx.db.query("clients").collect();
+  return all
+    .filter((c) => c.type === "lender" && c.isDeleted !== true)
+    .map((c) => ({ clientId: String(c._id), name: c.name }));
+}
+
+/** Emit (create-or-corroborate) companion funds_project edges for the given
+ * sources. Shared verbatim by the createAtomsBatch / reatomizeDiff write
+ * hooks and the knowledge/lenderEdges backfill — the single code path for
+ * inferred lender edges. Returns the emissions (for reporting) and the raw
+ * outcomes (so callers can feed the embeddings hook). */
+export async function emitLenderCompanionEdges(
+  ctx: MutationCtx,
+  sources: LenderEdgeSource[],
+  now: string,
+): Promise<{ emissions: LenderEdgeEmission[]; outcomes: Outcome[] }> {
+  const emissions: LenderEdgeEmission[] = [];
+  const outcomes: Outcome[] = [];
+  if (sources.length === 0) return { emissions, outcomes };
+  const lenders = await loadRosteredLenders(ctx);
+  if (lenders.length === 0) return { emissions, outcomes };
+
+  // One emission per (lender, project, source-document) per call — several
+  // attribute atoms from the same document restate the same lender.
+  const handled = new Set<string>();
+
+  for (const src of sources) {
+    const text = src.qualifier
+      ? `${src.statement} ${src.qualifier}`
+      : src.statement;
+    const matches = matchRosteredLenders(text, lenders);
+    if (matches.length === 0) continue;
+    if (matches.length > 1) {
+      emissions.push({
+        kind: "ambiguous_skipped",
+        projectId: src.subjectProjectId,
+        lenderNames: matches.map((m) => m.name),
+        statement: src.statement,
+      });
+      console.log(
+        `[lenderEdges] ambiguous lender mention — skipped (${matches
+          .map((m) => m.name)
+          .join(" | ")}): "${src.statement}"`,
+      );
+      continue;
+    }
+    const lender = matches[0];
+    // Defensive: never a self-edge (the subject gate already guarantees the
+    // subject is a project, so the named lender can never be the subject).
+    if (lender.clientId === src.subjectProjectId) continue;
+
+    const dedupeKey = `${lender.clientId}|${src.subjectProjectId}|${
+      src.observation.documentId ?? src.observation.externalRef ?? ""
+    }`;
+    if (handled.has(dedupeKey)) continue;
+    handled.add(dedupeKey);
+
+    // Qualifier is part of atom identity: reuse an existing live edge's
+    // qualifier so this emission CORROBORATES it instead of minting a
+    // parallel row; only a genuinely new edge gets the inferred qualifier.
+    let qualifier: string | undefined = INFERRED_LENDER_EDGE_QUALIFIER;
+    const existing: Doc<"atoms">[] = [];
+    for (const status of ["active", "contested"] as const) {
+      const rows = await ctx.db
+        .query("atoms")
+        .withIndex("by_subject", (q) =>
+          q
+            .eq("subjectType", "client")
+            .eq("subjectId", lender.clientId)
+            .eq("status", status),
+        )
+        .collect();
+      for (const row of rows) {
+        if (
+          row.predicate === "funds_project" &&
+          row.objectEntityId === src.subjectProjectId
+        ) {
+          existing.push(row);
+        }
+      }
+    }
+    if (existing.length > 0) {
+      const best =
+        existing
+          .filter((a) => a.status === "active")
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? existing[0];
+      qualifier = best.qualifier;
+    }
+
+    const projectDbId = ctx.db.normalizeId("projects", src.subjectProjectId);
+    const project = projectDbId ? await ctx.db.get(projectDbId) : null;
+    if (!project) continue; // dangling subject — validateCandidate would reject
+
+    const cand: Candidate = {
+      statement: `${lender.name} funds the ${project.name} scheme (inferred from indicative terms naming the lender).`,
+      subjectType: "client",
+      subjectId: lender.clientId,
+      predicate: "funds_project",
+      objectEntityType: "project",
+      objectEntityId: src.subjectProjectId,
+      qualifier,
+      clientId: src.clientId,
+      projectId: src.projectId ?? projectDbId ?? undefined,
+      asOf: src.asOf,
+      confidence:
+        Math.round(
+          Math.min(
+            CONFIDENCE_CAP,
+            src.confidence * INFERRED_LENDER_EDGE_CONFIDENCE_FACTOR,
+          ) * 100,
+        ) / 100,
+      observation: src.observation,
+    };
+    const reason = await validateCandidate(ctx, cand);
+    if (reason !== null) {
+      emissions.push({
+        kind: "rejected",
+        lenderName: lender.name,
+        projectId: src.subjectProjectId,
+        reason,
+      });
+      continue;
+    }
+    const outcome = await processCandidate(ctx, cand, now);
+    outcomes.push(outcome);
+    emissions.push({
+      kind: "emitted",
+      lenderClientId: lender.clientId,
+      lenderName: lender.name,
+      via: lender.via,
+      projectId: src.subjectProjectId,
+      atomId: outcome.atomId,
+      outcome: outcome.type,
+    });
+  }
+  return { emissions, outcomes };
+}
+
+/** Collect the companion-edge source from an accepted candidate, when
+ * eligible (project-anchored financing attribute — see isLenderEdgeSource). */
+function collectLenderEdgeSource(
+  sources: LenderEdgeSource[],
+  cand: Candidate,
+): void {
+  if (!isLenderEdgeSource(cand.subjectType, cand.predicate)) return;
+  sources.push({
+    statement: cand.statement,
+    qualifier: cand.qualifier,
+    subjectProjectId: cand.subjectId,
+    clientId: cand.clientId,
+    projectId: cand.projectId,
+    asOf: cand.asOf,
+    confidence: cand.confidence,
+    observation: cand.observation,
+  });
 }
 
 /** Atoms relevant to facility minting from a batch's outcomes: any live
@@ -688,6 +922,7 @@ export const createAtomsBatch = internalMutation({
     const rejected: Array<{ index: number; statement: string; reason: string }> =
       [];
     const outcomes: Outcome[] = [];
+    const lenderEdgeSources: LenderEdgeSource[] = [];
 
     for (let i = 0; i < args.candidates.length; i++) {
       const cand = args.candidates[i] as Candidate;
@@ -699,6 +934,7 @@ export const createAtomsBatch = internalMutation({
       }
       const outcome = await processCandidate(ctx, cand, now);
       outcomes.push(outcome);
+      collectLenderEdgeSource(lenderEdgeSources, cand);
       switch (outcome.type) {
         case "created":
           created.push({ index: i, atomId: outcome.atomId });
@@ -728,6 +964,18 @@ export const createAtomsBatch = internalMutation({
       }
     }
 
+    // Companion lender edges: project-anchored financing attribute atoms whose
+    // text names exactly one rostered lender get a funds_project edge
+    // (created or corroborated) so graph traversal reaches lender ↔ project
+    // without free-text parsing. Outcomes join the batch's, so the new edges
+    // flow into the embeddings hook below.
+    const lenderEdges = await emitLenderCompanionEdges(
+      ctx,
+      lenderEdgeSources,
+      now,
+    );
+    outcomes.push(...lenderEdges.outcomes);
+
     // Deterministic facility minting (spec §3.3) — same transaction.
     const facilityAtoms = await collectFacilityAtoms(ctx, outcomes);
     const facilities =
@@ -747,7 +995,15 @@ export const createAtomsBatch = internalMutation({
       );
     }
 
-    return { created, corroborated, superseded, contested, rejected, facilities };
+    return {
+      created,
+      corroborated,
+      superseded,
+      contested,
+      rejected,
+      facilities,
+      lenderEdges: lenderEdges.emissions,
+    };
   },
 });
 
@@ -868,6 +1124,443 @@ export const resolveContested = internalMutation({
   handler: async (ctx, args) => resolveContestedCore(ctx, args),
 });
 
+// ── repointCandidateAtoms — Phase 2b candidate resolution (spec §3.5) ──
+//
+// A candidate resolved to a real entity: re-point every atom that references
+// the candidate (subject OR object side) to the resolved entity, THROUGH the
+// identity machinery — after re-pointing, an atom may share canonical
+// identity with an existing live atom (the fact was already known against
+// the real entity). In that case MERGE: move the re-pointed atom's
+// observations to the survivor (same-source duplicates land superseded, no
+// bump), bump corroboration per independent moved observation, and supersede
+// the duplicate pointing at the survivor. The schema's supersessionReason
+// union has no dedicated merge value, so the machine merge records "revised"
+// (the closest existing reason; "operator" would misattribute an automated
+// action). Identity clash with a DIFFERENT literal value → both rows go
+// contested, exactly like a §7 layer-3 conflict.
+//
+// Non-live (superseded / retired) candidate atoms are re-pointed too — the
+// history stays coherent — but never merged (they're already out of the
+// live graph). Statements are left untouched: they name the mention, which
+// remains what the source said.
+//
+// Finally the candidate row itself becomes the tombstone: status "resolved"
+// + resolvedToType/resolvedToId, so re-extraction of the same mention
+// resolves instantly via createCandidate's reuse path.
+
+const resolvedEntityTypeValidator = v.union(
+  v.literal("client"),
+  v.literal("project"),
+  v.literal("contact"),
+  v.literal("company"),
+  v.literal("facility"),
+);
+
+/** Re-point every atom referencing (fromType, fromId) — subject side AND
+ * object side, ALL statuses — to (toType, toId), routing each LIVE atom
+ * through the identity machinery. After re-pointing, an atom may share
+ * canonical identity with an existing live atom against the target:
+ *   • same value → MERGE — move the re-pointed atom's observations to the
+ *     pre-existing survivor (same-source dupes land superseded with no bump,
+ *     independent ones corroboration-bump), then supersede the duplicate;
+ *   • different value → CONTEST — both rows go "contested" (a §7 layer-3
+ *     conflict surfaced by the re-point). Never a silent double.
+ * Non-live (superseded / retired) atoms are re-pointed for history coherence
+ * but never merged. Statements are left untouched — they record what the
+ * source said. Merges record supersessionReason "revised" (the union has no
+ * dedicated merge value; "operator" would misattribute an automated dedup).
+ *
+ * Shared by candidate resolution (repointCandidateAtoms, fromType
+ * "candidate") and duplicate-entity merge (mergeEntities, fromType ===
+ * toType). */
+async function repointAndMergeAtoms(
+  ctx: MutationCtx,
+  fromType: EntityType,
+  fromId: string,
+  toType: EntityType,
+  toId: string,
+  now: string,
+): Promise<{ repointed: number; merged: number; contested: number }> {
+  // Referencing atoms — subject side + object side, ALL statuses (index
+  // prefix without the status component). An atom could reference the source
+  // on both sides; dedupe by id.
+  const subjectSide = await ctx.db
+    .query("atoms")
+    .withIndex("by_subject", (q) =>
+      q.eq("subjectType", fromType).eq("subjectId", fromId),
+    )
+    .collect();
+  const objectSide = await ctx.db
+    .query("atoms")
+    .withIndex("by_object", (q) =>
+      q.eq("objectEntityType", fromType).eq("objectEntityId", fromId),
+    )
+    .collect();
+  const byId = new Map<Id<"atoms">, Doc<"atoms">>();
+  for (const a of [...subjectSide, ...objectSide]) byId.set(a._id, a);
+
+  let repointed = 0;
+  let merged = 0;
+  let contested = 0;
+
+  for (const atom of byId.values()) {
+    // 1. Re-point the source reference(s) to the target entity.
+    const patch: Partial<Doc<"atoms">> = {};
+    if (atom.subjectType === fromType && atom.subjectId === fromId) {
+      patch.subjectType = toType;
+      patch.subjectId = toId;
+    }
+    if (atom.objectEntityType === fromType && atom.objectEntityId === fromId) {
+      patch.objectEntityType = toType;
+      patch.objectEntityId = toId;
+    }
+    await ctx.db.patch(atom._id, patch);
+    repointed++;
+
+    // 2. Only LIVE atoms participate in identity merging.
+    if (atom.status !== "active" && atom.status !== "contested") continue;
+
+    const updated = (await ctx.db.get(atom._id))!;
+    const liveSameSubject = await ctx.db
+      .query("atoms")
+      .withIndex("by_subject", (q) =>
+        q
+          .eq("subjectType", updated.subjectType)
+          .eq("subjectId", updated.subjectId),
+      )
+      .collect();
+    const dupes = liveSameSubject.filter(
+      (a) =>
+        a._id !== updated._id &&
+        (a.status === "active" || a.status === "contested") &&
+        atomsShareIdentity(a, updated),
+    );
+    if (dupes.length === 0) continue;
+
+    const sameValue = dupes.find((d) => valuesEqual(d, updated));
+    if (sameValue) {
+      // ── MERGE: the fact was already known against the target entity. ──
+      // Survivor = the pre-existing atom; move the re-pointed atom's
+      // observations across, corroboration-bump per independent live
+      // observation, supersede the duplicate.
+      const survivor = sameValue;
+      const survivorObs = await liveObservations(ctx, survivor._id);
+      const movingObs = await ctx.db
+        .query("atomObservations")
+        .withIndex("by_atom", (q) => q.eq("atomId", updated._id))
+        .collect();
+      let confidence = survivor.confidence;
+      for (const obs of movingObs) {
+        const isLiveObs = obs.superseded !== true;
+        const sameSource = isLiveObs
+          ? findSameSourceObservation(survivorObs, {
+              sourceType: obs.sourceType,
+              documentId: obs.documentId,
+              externalRef: obs.externalRef,
+              authorityTier: obs.authorityTier,
+            })
+          : undefined;
+        await ctx.db.patch(obs._id, {
+          atomId: survivor._id,
+          ...(sameSource ? { superseded: true } : {}),
+        });
+        if (isLiveObs && !sameSource) {
+          confidence = Math.min(CONFIDENCE_CAP, confidence + CORROBORATION_BUMP);
+        }
+      }
+      await ctx.db.patch(survivor._id, { confidence, observedAt: now });
+      await ctx.db.patch(updated._id, {
+        status: "superseded",
+        supersededBy: survivor._id,
+        supersessionReason: "revised",
+      });
+      merged++;
+      console.log(
+        `[repointAndMergeAtoms] merged atom ${updated._id} into ${survivor._id} (${fromType}:${fromId} → ${toType}:${toId})`,
+      );
+    } else {
+      // Identity clash, different value → a genuine §7 layer-3 conflict
+      // surfaced by the re-point. Both sides go contested; retrieval returns
+      // the contest instead of silently picking one.
+      await ctx.db.patch(updated._id, { status: "contested" });
+      for (const d of dupes) {
+        if (d.status !== "contested") {
+          await ctx.db.patch(d._id, { status: "contested" });
+        }
+      }
+      contested++;
+      console.log(
+        `[repointAndMergeAtoms] contest: atom ${updated._id} vs ${dupes.map((d) => d._id).join(",")} after re-point (${fromType}:${fromId} → ${toType}:${toId})`,
+      );
+    }
+  }
+
+  return { repointed, merged, contested };
+}
+
+/** repointCandidateAtoms' body as a plain function so mergeEntities can reuse
+ * the candidate-resolution path without a mutation→mutation call. */
+async function repointCandidateAtomsCore(
+  ctx: MutationCtx,
+  candidateId: Id<"entityCandidates">,
+  toType: EntityType,
+  toId: string,
+): Promise<{
+  repointed: number;
+  merged: number;
+  contested: number;
+  candidateId: Id<"entityCandidates">;
+}> {
+  const candidate = await ctx.db.get(candidateId);
+  if (!candidate) throw new Error("candidate_not_found");
+  if (!(await entityExists(ctx, toType, toId))) {
+    throw new Error(
+      `target_not_found: no ${ENTITY_TABLES[toType]} row for "${toId}"`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  const { repointed, merged, contested } = await repointAndMergeAtoms(
+    ctx,
+    "candidate",
+    String(candidateId),
+    toType,
+    toId,
+    now,
+  );
+
+  // Tombstone the candidate — createCandidate's reuse path returns the real
+  // entity directly from here on.
+  await ctx.db.patch(candidateId, {
+    status: "resolved",
+    resolvedToType: toType,
+    resolvedToId: toId,
+  });
+
+  console.log(
+    `[repointCandidateAtoms] candidate ${String(candidateId)} resolved → ${toType}:${toId}; repointed=${repointed} merged=${merged} contested=${contested}`,
+  );
+  return { repointed, merged, contested, candidateId };
+}
+
+export const repointCandidateAtoms = internalMutation({
+  args: {
+    candidateId: v.id("entityCandidates"),
+    toType: resolvedEntityTypeValidator,
+    toId: v.string(),
+  },
+  handler: async (ctx, args) =>
+    repointCandidateAtomsCore(ctx, args.candidateId, args.toType, args.toId),
+});
+
+// ── mergeEntities — operator hygiene: collapse a DUPLICATE existing entity ──
+//
+// Twin clients ("Kinspire" created twice via HubSpot/promotion), "(175)"-
+// suffixed duplicate contacts, a company synced under two CH rows: the
+// knowledge graph had no merge path for these — atoms, facilities and scope
+// tags pile up against BOTH ids. This re-points every knowledge-side
+// reference from `fromId` to `toId` (same entityType) and routes each atom
+// through the SAME identity machinery Phase 2b uses, so duplicates MERGE
+// (observations move, corroboration bumps) or CONTEST on a value clash —
+// never doubling a fact.
+//
+// It is the atom-graph twin of migrations/mergeDuplicateClients.ts, which
+// owns the CRM-table side (contacts/documents/tasks/… clientId reassignment +
+// client soft-delete) and is ATOM-BLIND. This tool is the mirror image: it is
+// CRM-BLIND — it never touches CRM tables and never deletes/soft-deletes the
+// `from` entity row. Run the CRM merge (for clients) or remove the duplicate
+// row as a separate step; keeping the source row makes the collapse
+// inspectable.
+//
+// Denormalized knowledge-side refs the subject/object re-point does NOT catch
+// are re-scoped too: atoms.clientId/projectId (owning scope), the facilities
+// mirror columns (lender/borrower/company/project — rebuildable, kept
+// coherent), documentChunks scope tags, and appetiteSignals.lenderClientId
+// (lender-intel, which the CRM merge is also blind to).
+//
+// entityType "candidate" delegates to the candidate-resolution path
+// (repointCandidateAtomsCore): a candidate resolves to a REAL entity, so
+// `toType` (the resolved entity's type) is required.
+
+export const mergeEntities = internalMutation({
+  args: {
+    entityType: entityTypeValidator,
+    fromId: v.string(),
+    toId: v.string(),
+    reason: v.string(),
+    // Required ONLY when entityType === "candidate": the resolved entity's type.
+    toType: v.optional(resolvedEntityTypeValidator),
+  },
+  handler: async (ctx, args) => {
+    const { entityType, fromId, toId, reason } = args;
+    const now = new Date().toISOString();
+
+    const emptyScope = {
+      atomsRescoped: 0,
+      chunksRescoped: 0,
+      facilitiesRescoped: 0,
+      appetiteRescoped: 0,
+    };
+
+    const writeAudit = (
+      counts: { repointed: number; merged: number; contested: number },
+      scope: typeof emptyScope,
+    ) =>
+      ctx.db.insert("auditLog", {
+        tableName: "atoms",
+        recordId: toId,
+        action: "update" as const,
+        metadata: {
+          operation: "mergeEntities",
+          entityType,
+          fromId,
+          toId,
+          reason,
+          counts,
+          scope,
+        },
+        timestamp: now,
+      });
+
+    // ── candidate → delegate to the candidate-resolution path ──
+    if (entityType === "candidate") {
+      if (!args.toType) {
+        throw new Error(
+          "candidate_needs_toType: merging a candidate RESOLVES it to a real entity — pass toType (client|project|contact|company|facility)",
+        );
+      }
+      const candId = ctx.db.normalizeId("entityCandidates", fromId);
+      if (!candId) throw new Error(`candidate_not_found: "${fromId}"`);
+      const r = await repointCandidateAtomsCore(ctx, candId, args.toType, toId);
+      const counts = {
+        repointed: r.repointed,
+        merged: r.merged,
+        contested: r.contested,
+      };
+      await writeAudit(counts, emptyScope);
+      return { entityType, fromId, toId, ...counts, scope: emptyScope };
+    }
+
+    // ── Guard rails (real entity types) ──
+    if (fromId === toId) {
+      throw new Error("same_entity: fromId and toId are identical");
+    }
+    if (!(await entityExists(ctx, entityType, fromId))) {
+      throw new Error(
+        `from_not_found: no ${ENTITY_TABLES[entityType]} row for "${fromId}"`,
+      );
+    }
+    if (!(await entityExists(ctx, entityType, toId))) {
+      throw new Error(
+        `to_not_found: no ${ENTITY_TABLES[entityType]} row for "${toId}"`,
+      );
+    }
+
+    // 1. Atom subject/object references → identity machinery.
+    const counts = await repointAndMergeAtoms(
+      ctx,
+      entityType,
+      fromId,
+      entityType,
+      toId,
+      now,
+    );
+
+    // 2. Denormalized knowledge-side scope / mirror refs the re-point missed.
+    const scope = { ...emptyScope };
+    if (entityType === "client") {
+      const from = fromId as Id<"clients">;
+      const to = toId as Id<"clients">;
+      const scopedAtoms = await ctx.db
+        .query("atoms")
+        .withIndex("by_client_status", (q) => q.eq("clientId", from))
+        .collect();
+      for (const a of scopedAtoms) {
+        await ctx.db.patch(a._id, { clientId: to });
+        scope.atomsRescoped++;
+      }
+      const chunks = await ctx.db
+        .query("documentChunks")
+        .withIndex("by_client", (q) => q.eq("clientId", from))
+        .collect();
+      for (const c of chunks) {
+        await ctx.db.patch(c._id, { clientId: to });
+        scope.chunksRescoped++;
+      }
+      const lenderFacs = await ctx.db
+        .query("facilities")
+        .withIndex("by_lender", (q) => q.eq("lenderClientId", from))
+        .collect();
+      for (const f of lenderFacs) {
+        await ctx.db.patch(f._id, { lenderClientId: to });
+        scope.facilitiesRescoped++;
+      }
+      const borrowerFacs = await ctx.db
+        .query("facilities")
+        .withIndex("by_borrower", (q) => q.eq("borrowerClientId", from))
+        .collect();
+      for (const f of borrowerFacs) {
+        await ctx.db.patch(f._id, { borrowerClientId: to });
+        scope.facilitiesRescoped++;
+      }
+      const appetite = await ctx.db
+        .query("appetiteSignals")
+        .withIndex("by_lender", (q) => q.eq("lenderClientId", from))
+        .collect();
+      for (const s of appetite) {
+        await ctx.db.patch(s._id, { lenderClientId: to });
+        scope.appetiteRescoped++;
+      }
+    } else if (entityType === "project") {
+      const from = fromId as Id<"projects">;
+      const to = toId as Id<"projects">;
+      const scopedAtoms = await ctx.db
+        .query("atoms")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .collect();
+      for (const a of scopedAtoms) {
+        await ctx.db.patch(a._id, { projectId: to });
+        scope.atomsRescoped++;
+      }
+      const chunks = await ctx.db
+        .query("documentChunks")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .collect();
+      for (const c of chunks) {
+        await ctx.db.patch(c._id, { projectId: to });
+        scope.chunksRescoped++;
+      }
+      const facs = await ctx.db
+        .query("facilities")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .collect();
+      for (const f of facs) {
+        await ctx.db.patch(f._id, { projectId: to });
+        scope.facilitiesRescoped++;
+      }
+    } else if (entityType === "company") {
+      const from = fromId as Id<"companiesHouseCompanies">;
+      const to = toId as Id<"companiesHouseCompanies">;
+      const facs = await ctx.db
+        .query("facilities")
+        .withIndex("by_lender_company", (q) => q.eq("lenderCompanyId", from))
+        .collect();
+      for (const f of facs) {
+        await ctx.db.patch(f._id, { lenderCompanyId: to });
+        scope.facilitiesRescoped++;
+      }
+    }
+    // contact / facility: atoms are the only knowledge-side references.
+
+    await writeAudit(counts, scope);
+    console.log(
+      `[mergeEntities] ${entityType} ${fromId} → ${toId}: repointed=${counts.repointed} merged=${counts.merged} contested=${counts.contested} ` +
+        `atomsRescoped=${scope.atomsRescoped} chunksRescoped=${scope.chunksRescoped} facilitiesRescoped=${scope.facilitiesRescoped} appetiteRescoped=${scope.appetiteRescoped}`,
+    );
+    return { entityType, fromId, toId, ...counts, scope };
+  },
+});
+
 // ── reatomizeDiff — same-lineage supersession (spec §7) ──
 //
 // Document D re-extracted at a new checksum. The prior revision's
@@ -913,6 +1606,7 @@ export const reatomizeDiff = internalMutation({
     const outcomes: Outcome[] = [];
     const rejected: Array<{ index: number; statement: string; reason: string }> =
       [];
+    const lenderEdgeSources: LenderEdgeSource[] = [];
     for (let i = 0; i < args.candidates.length; i++) {
       const raw = args.candidates[i] as Candidate;
       const cand: Candidate = {
@@ -930,7 +1624,20 @@ export const reatomizeDiff = internalMutation({
         continue;
       }
       outcomes.push(await processCandidate(ctx, cand, now));
+      collectLenderEdgeSource(lenderEdgeSources, cand);
     }
+
+    // 2b. Companion lender edges — BEFORE the prior-revision classification,
+    //     so a re-asserted lender mention corroborates the companion edge
+    //     (its prior observation from this document was superseded in step 1)
+    //     and a dropped mention lets step 4 close the edge out as
+    //     removed_from_source when no other live source supports it.
+    const lenderEdges = await emitLenderCompanionEdges(
+      ctx,
+      lenderEdgeSources,
+      now,
+    );
+    outcomes.push(...lenderEdges.outcomes);
 
     // 3. Classify the prior revision's atoms.
     const keptIds = new Set<Id<"atoms">>();
@@ -1002,6 +1709,7 @@ export const reatomizeDiff = internalMutation({
       ),
       rejected,
       facilities,
+      lenderEdges: lenderEdges.emissions,
     };
   },
 });
@@ -1140,5 +1848,367 @@ export const getAtomsByDocument = internalQuery({
       if (atom) out.push({ atom, observations: obs });
     }
     return out;
+  },
+});
+
+// ── Lender-edge backfill — knowledge/atomsCore:backfillLenderEdges ──
+//
+// The write-path hook above only covers atoms created from now on. This
+// paginated internalAction walks the EXISTING live financing attribute atoms
+// anchored at projects, applies the SAME conservative matcher
+// (knowledge/lenderMatch.ts), and — dryRun=false — emits the missing
+// lender —funds_project→ project companion edges through the SAME code path
+// (emitLenderCompanionEdges). dryRun=true reports the would-be edges (lender
+// matched, source atom, project, whether the edge already exists) WITHOUT
+// writing.
+//
+// Lives in atomsCore rather than its own module: a NEW registered module in
+// this codebase trips tsc's instantiation-depth cliff (TS2589 on every
+// registration — the versionPrecedence/integritySweep baseline errors), while
+// registrations added to this long-standing module typecheck clean. The
+// engine hook and its backfill sharing a module is also the honest grouping.
+//
+// Invocation (orchestrator runs this; never self-run against the deployment):
+//   npx convex run knowledge/atomsCore:backfillLenderEdges '{"dryRun": true}'
+//   npx convex run knowledge/atomsCore:backfillLenderEdges '{"dryRun": false}'
+//   … optionally scoped: '{"clientId": "<clients id>", "dryRun": true}'
+//
+// Explicit handler return types throughout — the action calls queries and a
+// mutation in its OWN module, which makes TypeScript's inference of the
+// generated `internal` api type self-referential (the TS2589 trap
+// embeddings.ts documents); annotating breaks the cycle.
+
+const BACKFILL_PAGE_SIZE = 200;
+const BACKFILL_EMIT_CHUNK = 20;
+
+type EligibleFinancingAtom = {
+  atomId: Id<"atoms">;
+  predicate: string;
+  statement: string;
+  qualifier?: string;
+  subjectProjectId: string;
+  projectName: string | null;
+  clientId?: Id<"clients">;
+  projectId?: Id<"projects">;
+  asOf?: string;
+  confidence: number;
+  observation: ObservationInput;
+};
+
+type FinancingAtomsPage = {
+  eligible: EligibleFinancingAtom[];
+  scanned: number;
+  isDone: boolean;
+  continueCursor: string;
+};
+
+type BackfillAmbiguousRow = {
+  atomId: Id<"atoms">;
+  statement: string;
+  lenderNames: string[];
+};
+
+type BackfillWouldBeEdge = {
+  lenderClientId: string;
+  lenderName: string;
+  projectId: string;
+  projectName: string | null;
+  sourceAtomIds: Id<"atoms">[];
+  edgeAlreadyExists: boolean;
+};
+
+type BackfillReport = {
+  dryRun: boolean;
+  scanned: number;
+  eligible: number;
+  matches: Array<{
+    atomId: Id<"atoms">;
+    predicate: string;
+    statement: string;
+    lenderName: string;
+    lenderClientId: string;
+    via: "name" | "acronym";
+    projectId: string;
+    projectName: string | null;
+  }>;
+  edges: BackfillWouldBeEdge[];
+  ambiguousSkipped: BackfillAmbiguousRow[];
+  emissions?: LenderEdgeEmission[];
+};
+
+/** Rostered lender clients (type="lender", not soft-deleted). */
+export const rosteredLenders = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<RosteredLender[]> => loadRosteredLenders(ctx),
+});
+
+/** One page of live (active/contested) project-anchored financing attribute
+ * atoms, each with the best live observation (max authorityTier) — the
+ * provenance a companion edge inherits. clientId scopes to one owning
+ * client's atoms. */
+export const pageFinancingProjectAtoms = internalQuery({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    cursor: v.union(v.string(), v.null()),
+    numItems: v.number(),
+  },
+  handler: async (ctx, args): Promise<FinancingAtomsPage> => {
+    const scopeClientId = args.clientId;
+    const result = scopeClientId
+      ? await ctx.db
+          .query("atoms")
+          .withIndex("by_client_status", (q) => q.eq("clientId", scopeClientId))
+          .paginate({ cursor: args.cursor, numItems: args.numItems })
+      : await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) => q.eq("subjectType", "project"))
+          .paginate({ cursor: args.cursor, numItems: args.numItems });
+
+    const eligible: EligibleFinancingAtom[] = [];
+    for (const atom of result.page) {
+      if (atom.subjectType !== "project") continue;
+      if (atom.status !== "active" && atom.status !== "contested") continue;
+      if (!LENDER_EDGE_SOURCE_PREDICATES.has(atom.predicate)) continue;
+      const live = await liveObservations(ctx, atom._id);
+      if (live.length === 0) continue; // no live provenance to inherit
+      const best = [...live].sort(
+        (a, b) => b.authorityTier - a.authorityTier,
+      )[0];
+      const projectDbId = ctx.db.normalizeId("projects", atom.subjectId);
+      const project = projectDbId ? await ctx.db.get(projectDbId) : null;
+      eligible.push({
+        atomId: atom._id,
+        predicate: atom.predicate,
+        statement: atom.statement,
+        qualifier: atom.qualifier,
+        subjectProjectId: atom.subjectId,
+        projectName: project?.name ?? null,
+        clientId: atom.clientId,
+        projectId: atom.projectId,
+        asOf: atom.asOf,
+        confidence: atom.confidence,
+        observation: {
+          sourceType: best.sourceType,
+          documentId: best.documentId,
+          contentChecksum: best.contentChecksum,
+          locator: best.locator,
+          sourceText: best.sourceText,
+          externalRef: best.externalRef,
+          authorityTier: best.authorityTier,
+        },
+      });
+    }
+    return {
+      eligible,
+      scanned: result.page.length,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    };
+  },
+});
+
+/** Which (lender, project) pairs already have a live funds_project edge —
+ * dry-run reporting only (the emitter corroborates existing edges anyway). */
+export const checkExistingLenderEdges = internalQuery({
+  args: {
+    pairs: v.array(
+      v.object({ lenderClientId: v.string(), projectId: v.string() }),
+    ),
+  },
+  handler: async (ctx, args): Promise<boolean[]> => {
+    const out: boolean[] = [];
+    for (const pair of args.pairs) {
+      let exists = false;
+      for (const status of ["active", "contested"] as const) {
+        if (exists) break;
+        const rows = await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) =>
+            q
+              .eq("subjectType", "client")
+              .eq("subjectId", pair.lenderClientId)
+              .eq("status", status),
+          )
+          .collect();
+        exists = rows.some(
+          (r) =>
+            r.predicate === "funds_project" &&
+            r.objectEntityId === pair.projectId,
+        );
+      }
+      out.push(exists);
+    }
+    return out;
+  },
+});
+
+const lenderEdgeSourceValidator = v.object({
+  statement: v.string(),
+  qualifier: v.optional(v.string()),
+  subjectProjectId: v.string(),
+  clientId: v.optional(v.id("clients")),
+  projectId: v.optional(v.id("projects")),
+  asOf: v.optional(v.string()),
+  confidence: v.number(),
+  observation: observationInputValidator,
+});
+
+/** Emit companion edges for a chunk of sources — the same code path as the
+ * write hook (emitLenderCompanionEdges re-runs the matcher server-side, so a
+ * stale pre-match can never emit a wrong edge), plus the same embeddings
+ * scheduling for newly created edge atoms. */
+export const emitCompanionEdges = internalMutation({
+  args: { sources: v.array(lenderEdgeSourceValidator) },
+  handler: async (ctx, args): Promise<LenderEdgeEmission[]> => {
+    if (args.sources.length > BACKFILL_EMIT_CHUNK) {
+      throw new Error(
+        `chunk_too_large: ${args.sources.length} sources (max ${BACKFILL_EMIT_CHUNK}); chunk the call`,
+      );
+    }
+    const now = new Date().toISOString();
+    const { emissions, outcomes } = await emitLenderCompanionEdges(
+      ctx,
+      args.sources as LenderEdgeSource[],
+      now,
+    );
+    const embedIds = embedTargetIds(outcomes);
+    if (embedIds.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.knowledge.embeddings.embedAtoms, {
+        atomIds: embedIds,
+      });
+    }
+    return emissions;
+  },
+});
+
+/** Walk existing live financing atoms (optionally scoped to one owning
+ * clientId), match rostered lenders conservatively, and emit the missing
+ * funds_project companion edges. dryRun=true returns the would-be edges
+ * without writing. */
+export const backfillLenderEdges = internalAction({
+  args: {
+    clientId: v.optional(v.id("clients")),
+    dryRun: v.boolean(),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<BackfillReport> => {
+    const numItems = Math.min(
+      Math.max(args.pageSize ?? BACKFILL_PAGE_SIZE, 1),
+      500,
+    );
+    const lenders: RosteredLender[] = await ctx.runQuery(
+      internal.knowledge.atomsCore.rosteredLenders,
+      {},
+    );
+
+    let cursor: string | null = null;
+    let scanned = 0;
+    let eligibleCount = 0;
+    const matched: Array<{
+      row: EligibleFinancingAtom;
+      lender: LenderMatch;
+    }> = [];
+    const ambiguousSkipped: BackfillAmbiguousRow[] = [];
+
+    for (;;) {
+      const page: FinancingAtomsPage = await ctx.runQuery(
+        internal.knowledge.atomsCore.pageFinancingProjectAtoms,
+        { clientId: args.clientId, cursor, numItems },
+      );
+      scanned += page.scanned;
+      for (const row of page.eligible) {
+        eligibleCount++;
+        const text = row.qualifier
+          ? `${row.statement} ${row.qualifier}`
+          : row.statement;
+        const hits = matchRosteredLenders(text, lenders);
+        if (hits.length === 1) {
+          matched.push({ row, lender: hits[0] });
+        } else if (hits.length > 1) {
+          ambiguousSkipped.push({
+            atomId: row.atomId,
+            statement: row.statement,
+            lenderNames: hits.map((h) => h.name),
+          });
+        }
+      }
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+
+    // Distinct would-be edges, with existence check for the report.
+    const edgeMap = new Map<string, BackfillWouldBeEdge>();
+    for (const { row, lender } of matched) {
+      const key = `${lender.clientId}|${row.subjectProjectId}`;
+      const entry = edgeMap.get(key) ?? {
+        lenderClientId: lender.clientId,
+        lenderName: lender.name,
+        projectId: row.subjectProjectId,
+        projectName: row.projectName,
+        sourceAtomIds: [],
+        edgeAlreadyExists: false,
+      };
+      entry.sourceAtomIds.push(row.atomId);
+      edgeMap.set(key, entry);
+    }
+    const edges = [...edgeMap.values()];
+    if (edges.length > 0) {
+      const existsFlags: boolean[] = await ctx.runQuery(
+        internal.knowledge.atomsCore.checkExistingLenderEdges,
+        {
+          pairs: edges.map((e) => ({
+            lenderClientId: e.lenderClientId,
+            projectId: e.projectId,
+          })),
+        },
+      );
+      edges.forEach((e, i) => {
+        e.edgeAlreadyExists = existsFlags[i] ?? false;
+      });
+    }
+
+    const report: BackfillReport = {
+      dryRun: args.dryRun,
+      scanned,
+      eligible: eligibleCount,
+      matches: matched.map(({ row, lender }) => ({
+        atomId: row.atomId,
+        predicate: row.predicate,
+        statement: row.statement,
+        lenderName: lender.name,
+        lenderClientId: lender.clientId,
+        via: lender.via,
+        projectId: row.subjectProjectId,
+        projectName: row.projectName,
+      })),
+      edges,
+      ambiguousSkipped,
+    };
+
+    if (args.dryRun) return report;
+
+    // Real run — same code path as the write hook, chunked per mutation.
+    const emissions: LenderEdgeEmission[] = [];
+    for (let i = 0; i < matched.length; i += BACKFILL_EMIT_CHUNK) {
+      const chunk = matched.slice(i, i + BACKFILL_EMIT_CHUNK);
+      const res: LenderEdgeEmission[] = await ctx.runMutation(
+        internal.knowledge.atomsCore.emitCompanionEdges,
+        {
+          sources: chunk.map(({ row }) => ({
+            statement: row.statement,
+            qualifier: row.qualifier,
+            subjectProjectId: row.subjectProjectId,
+            clientId: row.clientId,
+            projectId: row.projectId,
+            asOf: row.asOf,
+            confidence: row.confidence,
+            observation: row.observation,
+          })),
+        },
+      );
+      emissions.push(...res);
+    }
+    report.emissions = emissions;
+    return report;
   },
 });

@@ -26,6 +26,7 @@ import {
   toCompactPascalCase,
   type DocumentNamingConfig,
 } from './namingConfig';
+import filenameSchema from './naming/filename_schema.json';
 
 export { toCompactPascalCase };
 export type { DocumentNamingConfig };
@@ -268,6 +269,228 @@ function parseLegacyHyphenName(name: string): ParsedDocumentName | null {
     isInternal: internalExternal === 'INT',
     version,
     date,
+  };
+}
+
+// ── V1.2 file-naming-standard parser ─────────────────────────────
+//
+// Implements the client-confirmed standard
+// (docs/classification/RockCap_FileNamingStandard_RC_INTERNAL_V1.2_20260708.md),
+// driven entirely by src/lib/naming/filename_schema.json — the machine-
+// readable single source of truth (grammar, DocType enum + dualDate flags,
+// origin roles, statuses, version/reissue rules, alias maps).
+//
+//   Standard    [Scheme]_[DocType]_[Origin]_[Status]_[Version]_[FilingDate].ext
+//   Dual-date   [Scheme]_[DocType]_[DocumentDate]_[Origin]_[Status]_[Version]_[FilingDate].ext
+//
+// This parser is SEPARATE from parseDocumentName below: parseDocumentName
+// keeps its tolerant legacy contract (underscore convention + legacy hyphen
+// names, null for anything else) for existing callers; parseStandardName is
+// the strict V1.2 grammar with a full/partial confidence verdict, consumed
+// by the classification layer (convex/knowledge/harnessClassify.ts imports
+// it directly — same idiom as its placement-rules import).
+
+type SchemaDocTypeEntry = {
+  group: string;
+  dualDate: boolean;
+  appFileType: string | null;
+  appFileTypeAlt?: string;
+  note?: string;
+};
+
+const SCHEMA_DOC_TYPES = filenameSchema.docTypes as unknown as Record<
+  string,
+  SchemaDocTypeEntry
+>;
+const DOC_TYPE_ALIASES = filenameSchema.aliases.docTypes as Record<
+  string,
+  string
+>;
+const LENDER_ALIASES = filenameSchema.aliases.lenders as Record<string, string>;
+const STATUS_VALUES = new Set<string>([
+  ...filenameSchema.statuses.advisory,
+  ...filenameSchema.statuses.draftLegal,
+]);
+/** Origin role prefixes (CLIENT, LENDER, VALUER, QS, …) — the '-'-suffixed
+ * keys of schema.origins plus the reserved set. 'RC' is matched literally. */
+const ORIGIN_ROLES = new Set<string>(
+  [
+    ...Object.keys(filenameSchema.origins).filter((k) => k.endsWith('-')),
+    ...filenameSchema.origins._reserved,
+  ].map((r) => r.replace(/-$/, '')),
+);
+
+export interface ParsedStandardName {
+  /** First token — PascalCase scheme name (e.g. "LintonLane"). */
+  scheme: string;
+  /** Canonical DocType from the schema enum (alias-resolved, e.g.
+   * LenderNote → LenderBrief). On a partial parse this may be a raw token
+   * that is not in the enum. */
+  docType: string;
+  /** Hyphen-joined sub-part qualifier on the DocType
+   * (InterimMonitoringReport-No2 → "No2"). */
+  docTypeQualifier?: string;
+  /** YYYYMMDD — the document's OWN date (dual-date DocTypes only): the
+   * vintage printed on / effective for the document itself. */
+  documentDate?: string;
+  /** Who RockCap received the file from. role "RC" has no party;
+   * role-prefixed origins carry the party (LENDER-Avamore → role "LENDER",
+   * party "Avamore", lender aliases resolved: F365 → Funding365). */
+  origin?: { role: string; party?: string };
+  /** §8 status word (INTERNAL/EXTERNAL/DRAFT/FINAL/UNSIGNED/SIGNED/EXECUTED/SUPERSEDED). */
+  status?: string;
+  /** Canonical "V<maj>.<min>". */
+  version?: string;
+  /** Terms reissue ordinal (R2 → 2). */
+  reissue?: number;
+  /** YYYYMMDD — always the final token; when the file entered our filing. */
+  filingDate: string;
+  /** "full" = every token accounted for and grammar-conformant (DocType in
+   * the enum, origin present, document date present iff the DocType is
+   * dual-date). "partial" = the standard's shape matched (trailing filing
+   * date + Scheme_DocType structure) but some field failed validation or a
+   * token went unrecognised. */
+  confidence: 'full' | 'partial';
+}
+
+const YMD_TOKEN_RE = /^\d{8}$/;
+
+function isValidYmdToken(t: string): boolean {
+  if (!YMD_TOKEN_RE.test(t)) return false;
+  const y = Number(t.slice(0, 4));
+  const m = Number(t.slice(4, 6));
+  const d = Number(t.slice(6, 8));
+  return y >= 1990 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31;
+}
+
+/**
+ * Parse a V1.2 standard-convention filename, right-to-left per schema
+ * parseOrder (§9): extension → trailing filing date → optional document
+ * date (dual-date DocTypes, immediately after the DocType) → version /
+ * reissue / status tokens → origin → DocType → Scheme.
+ *
+ * Returns null when the name doesn't carry the standard's spine (underscore
+ * tokens ending in a valid YYYYMMDD filing date); "partial" confidence when
+ * the spine matches but a field fails validation; "full" only for a
+ * completely grammar-conformant name.
+ */
+export function parseStandardName(fileName: string): ParsedStandardName | null {
+  if (!fileName) return null;
+
+  // 1. Extension — after the final '.'.
+  const base = fileName.trim().replace(/\.[A-Za-z0-9]{1,6}$/, '');
+  const tokens = base.split('_');
+  if (tokens.length < 3) return null;
+
+  // 2. Filing date — the trailing \d{8} token. Without it this is not the
+  //    standard at all (spaces / legacy names land here).
+  const filingDate = tokens[tokens.length - 1];
+  if (!isValidYmdToken(filingDate)) return null;
+
+  // 7./6. Scheme = first token, DocType = the token after it. Both are word
+  //       tokens — a date or shaped token in either slot is not the grammar.
+  const scheme = tokens[0];
+  const rawDocType = tokens[1];
+  if (!scheme || !rawDocType) return null;
+  if (!/^[A-Za-z]/.test(scheme) || !/^[A-Za-z]/.test(rawDocType)) return null;
+
+  let fullyConformant = true;
+
+  // DocType: hyphen joins sub-parts within the field
+  // (InterimMonitoringReport-No2); the base is alias-resolved then validated
+  // against the schema enum.
+  const hyphenAt = rawDocType.indexOf('-');
+  const docBaseRaw = hyphenAt === -1 ? rawDocType : rawDocType.slice(0, hyphenAt);
+  const docTypeQualifier =
+    hyphenAt === -1 ? undefined : rawDocType.slice(hyphenAt + 1);
+  const docType = DOC_TYPE_ALIASES[docBaseRaw] ?? docBaseRaw;
+  const docTypeEntry: SchemaDocTypeEntry | undefined = SCHEMA_DOC_TYPES[docType];
+  if (!docTypeEntry) fullyConformant = false;
+
+  const middle = tokens.slice(2, -1);
+  let idx = 0;
+
+  // 3. Document date — a \d{8} immediately after the DocType, only
+  //    meaningful for dual-date DocTypes. A date in that slot on a
+  //    non-dual-date name is consumed but demotes to partial.
+  let documentDate: string | undefined;
+  if (idx < middle.length && isValidYmdToken(middle[idx])) {
+    if (docTypeEntry?.dualDate) {
+      documentDate = middle[idx];
+    } else {
+      fullyConformant = false;
+    }
+    idx++;
+  }
+
+  // 4./5. Remaining middle tokens: origin / status / version / reissue by
+  //       recognised shape. Anything else (and any duplicate) → partial.
+  let origin: { role: string; party?: string } | undefined;
+  let status: string | undefined;
+  let version: string | undefined;
+  let reissue: number | undefined;
+  for (; idx < middle.length; idx++) {
+    const t = middle[idx];
+    if (t === 'RC') {
+      if (origin) fullyConformant = false;
+      else origin = { role: 'RC' };
+      continue;
+    }
+    const roleMatch = t.match(/^([A-Z]+)-(.+)$/);
+    if (roleMatch && ORIGIN_ROLES.has(roleMatch[1])) {
+      if (origin) {
+        fullyConformant = false;
+      } else {
+        const role = roleMatch[1];
+        const party =
+          role === 'LENDER'
+            ? (LENDER_ALIASES[roleMatch[2]] ?? roleMatch[2])
+            : roleMatch[2];
+        origin = { role, party };
+      }
+      continue;
+    }
+    if (STATUS_VALUES.has(t)) {
+      if (status) fullyConformant = false;
+      else status = t;
+      continue;
+    }
+    if (/^V\d+\.\d+$/i.test(t)) {
+      if (version) fullyConformant = false;
+      else version = t.toUpperCase();
+      continue;
+    }
+    if (/^R\d+$/.test(t)) {
+      if (reissue !== undefined) fullyConformant = false;
+      else reissue = Number(t.slice(1));
+      continue;
+    }
+    if (isValidYmdToken(t)) {
+      // A second date adrift in the middle — never valid grammar.
+      fullyConformant = false;
+      continue;
+    }
+    fullyConformant = false; // unrecognised token
+  }
+
+  // Grammar requires an origin on every file, and a document date on every
+  // dual-date DocType (§5: the vintage is what the dual date exists for).
+  if (!origin) fullyConformant = false;
+  if (docTypeEntry?.dualDate && documentDate === undefined) {
+    fullyConformant = false;
+  }
+
+  return {
+    scheme,
+    docType,
+    ...(docTypeQualifier !== undefined ? { docTypeQualifier } : {}),
+    ...(documentDate !== undefined ? { documentDate } : {}),
+    ...(origin !== undefined ? { origin } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(version !== undefined ? { version } : {}),
+    ...(reissue !== undefined ? { reissue } : {}),
+    filingDate,
+    confidence: fullyConformant ? 'full' : 'partial',
   };
 }
 

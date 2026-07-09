@@ -62,12 +62,12 @@ Before atomizing, count the documents in scope. **If more than 60 documents are 
    - an **authorityTier** by document type (see the tier table below).
 5. **Persist in chunks.** `atoms.createBatch({atoms})` in batches of ≤100. Emit each atom with exactly one of `objectEntityId` (edge) or `objectLiteral` (attribute), the right `subjectType`/`subjectId` from the roster, `confidence` (0..1), and an `observation` carrying `sourceType:"document"`, `documentId`, `contentChecksum`, `locator`, `sourceText`, `authorityTier`.
 6. **READ `rejected[]` and repair.** Every `atoms.createBatch` return has a `rejected` array of `{index, statement, reason}`. Never drop rejects silently. The usual causes and fixes:
-   - `unresolved_subject` / `unresolved_object` — the id isn't a real row. The mention is a person/company not yet in the system. **`entityCandidates` creation does not exist yet (that lands in Phase 2b), so you cannot mint a provisional entity.** Instead: re-anchor the fact to the client (if the fact is genuinely about the client) OR **drop it and log a gap** (`kind: "schema_gap"`, describing the unresolvable mention) so 2b can pick it up. Do not force a wrong id.
+   - `unresolved_subject` / `unresolved_object` — the id isn't a real row. The mention is a person/company not yet in the system. **Mint a provisional entity**: `atoms.createCandidate({mentionText, guessedType: "person"|"company", contextSnippet, sourceDocumentId, clientId})` — ALWAYS pass `clientId` (the scope hint is what lets the enrichment worker scan the right contact roster and hand Apollo a company context). Then anchor the atom to the candidate (`subjectType`/`objectEntityType: "candidate"`, id = the returned `candidateId`) and resubmit. **Facts are never dropped.** Two return shapes matter: `reused: true` means the same normalized mention already has a candidate (anchor to it); `status: "resolved"` means the candidate already resolved — anchor to the returned `resolvedType`/`resolvedId` REAL entity directly, not the candidate. The background worker (2-hourly cron) resolves candidates (companies → CH exact-name search + sync, people → contacts/Apollo) and re-points every referencing atom automatically. Do not force a wrong id, and do not re-anchor facts about OTHER entities to the client — that flattens edges into island attributes.
    - `unknown_predicate` / `native_predicate` — you used a name not in the vocabulary or a native-store predicate. Re-map to a real atom-store predicate or drop.
    - `object_both` / `object_missing` / `predicate_kind_mismatch` — fix edge-vs-attribute and resubmit.
    Resubmit the repaired atoms in a follow-up `atoms.createBatch`.
 7. **Chunk narrative documents.** For prose-heavy documents (legal opinions, professional reports), `atoms.upsertChunks({documentId, contentChecksum, chunks})` with ~800-token sections. **Skip fact-dense spreadsheets** (spec §3.4 — atoms win there; chunks would be noise).
-8. **Close the run.** `skillRun.complete` with `status` (`complete` or `complete_with_gaps`), a two-paragraph `brief` (documents atomized, atom/observation counts, notable facilities minted, coverage gaps), and the `gaps` array (every unresolvable mention from step 6, every skipped document, every parse failure).
+8. **Close the run.** `skillRun.complete` with `status` (`complete` or `complete_with_gaps`), a two-paragraph `brief` (documents atomized, atom/observation counts, notable facilities minted, candidates minted for unresolvable mentions, coverage gaps), and the `gaps` array (every skipped document, every parse failure — unresolvable mentions are no longer gaps, they become candidates via step 6).
 
 ## Full onboarding (classify + atomize in one pass)
 
@@ -75,7 +75,7 @@ Bulk document processing runs through the harness, not the API pipeline (operato
 
 Per document:
 
-1. **`document.extractText({documentId})`** — server-side parse only, zero LLM. Returns `{text (≤120K, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}`. Branch on the flags:
+1. **`document.extractText({documentId})`** — server-side parse only, zero LLM. Returns `{text (≤120K, truncation noted), fileName, mimeType, contentChecksum, source, parsedName, alreadyClassified, alreadyAtomized}`. Trust a `parsedName` with `confidence: "full"` as a STRONG classification prior: its `docType` comes from the client-confirmed V1.2 naming standard and maps to a specific `fileTypeDetected` via `src/lib/naming/filename_schema.json`'s `docTypes[].appFileType` — verify against the text rather than re-deriving from scratch (a `"partial"` parse is only a hint; `null` is no signal). Branch on the flags:
    - `alreadyClassified: true` and `alreadyAtomized: true` → skip the doc entirely.
    - `alreadyClassified: true`, `alreadyAtomized: false` → skip classification, atomize only (steps 4–7 of the main workflow). Do NOT re-classify unless the operator asked; a re-classification never moves the doc's folder anyway (first-classification-only placement).
    - both false → full pass below.
@@ -138,6 +138,7 @@ MCP tools:
 - `atoms.vocabulary` — legal predicates (step 2).
 - `atoms.getForSubject` — existing coverage / idempotency (step 3).
 - `atoms.createBatch` — persist atoms; READ its `rejected` array (steps 5–6).
+- `atoms.createCandidate` — mint a provisional entity for an unresolvable mention (step 6 repair path); pass `clientId` so the enrichment worker can resolve it.
 - `atoms.upsertChunks` — narrative dual index (step 7).
 - `client.getDeepContext`, `lender.list` — roster (step 1).
 - `document.listByClient`, `document.get` — enumerate + read documents (steps 3–4).
@@ -146,11 +147,9 @@ MCP tools:
 
 Claude Code native tools: `Read` for any local artefacts; no `WebSearch`/`WebFetch` needed (atomization is corpus-only).
 
-Not yet available (log as gaps, don't invent): `entityCandidates` creation (Phase 2b) — until it ships, unresolvable people/companies are re-anchored to the client or dropped with a logged gap.
-
 ## What goes wrong
 
-1. **Unresolvable mention.** A person/company in the document isn't in the roster and `entityCandidates` doesn't exist yet. Re-anchor to the client if the fact is truly about the client, else drop + log a `schema_gap`. Never force a wrong id.
+1. **Unresolvable mention.** A person/company in the document isn't in the roster. Mint a candidate (`atoms.createCandidate` with `clientId`) and anchor the atom to it — never force a wrong id, never re-anchor another entity's fact to the client, never drop the fact. If `createCandidate` returns `status: "resolved"`, anchor to the returned real entity instead.
 2. **Rejects ignored.** The single most common failure is not reading `atoms.createBatch.rejected`. Always read it; repair and resubmit.
 3. **Native predicate used.** `officer_of`, `funds_project` (native side), `has_appetite_for`, `developing`, `spv_of_group`, `works_at`, `psc_of` are rejected — those live in structural tables. Use `atoms.vocabulary` to see `store`.
 4. **Spreadsheet chunked.** Don't `upsertChunks` fact-dense spreadsheets; atomize them instead.

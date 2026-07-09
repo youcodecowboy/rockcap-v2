@@ -31,6 +31,18 @@ import type { Doc, Id } from "../_generated/dataModel";
 // the document's _creationTime decides. A full tie is unorderable and the
 // conflict stays contested.
 //
+// V1.2 NAMING-STANDARD REFINEMENT (docs/classification/
+// RockCap_FileNamingStandard_RC_INTERNAL_V1.2_20260708.md §5/§9): dual-date
+// names carry TWO \d{8} tokens — a DOCUMENT date immediately after the
+// DocType (the vintage printed on the document) and the trailing FILING
+// date (recency). Ordering prefers the DOCUMENT date: a 2024 planning
+// permission can be RECEIVED after a 2026 one, and filing-date ordering
+// would make the older look newer. The filing date remains a tie-break
+// between equal vintages, and R\d+ reissue tokens (Terms R1/R2/R3…) order
+// same-date reissues (R2 > R1 > unnumbered first issue). Both shapes are
+// detected purely by token position in the underscore grammar — see
+// extractStandardTokens below.
+//
 // The token-shape rules (V?\d[._]\d version, \d{8} date, ALL-CAPS audience,
 // 1–4-cap initials runs) are adapted from parseDocumentName in
 // src/lib/documentNaming.ts. They are re-implemented here rather than
@@ -45,10 +57,18 @@ export type SeriesKey = {
   /** Normalized stem: lowercase remaining tokens joined by single spaces.
    * Empty stem ⇒ the name was all shaped tokens; never treated as a series. */
   stem: string;
-  /** Canonical YYYYMMDD (month-only dates canonicalise to day 01). */
+  /** Canonical YYYYMMDD (month-only dates canonicalise to day 01). For a
+   * V1.2 dual-date name this is the DOCUMENT date — the ordering key. */
   dateToken?: string;
+  /** Canonical YYYYMMDD trailing FILING date — set only when the name is a
+   * V1.2 dual-date shape (dateToken then holds the document date); kept as
+   * the recency tie-break between equal vintages. */
+  filingDateToken?: string;
   /** Canonical "V<maj>.<min>". */
   versionToken?: string;
+  /** Reissue ordinal from a standalone R\d+ token in the V1.2 underscore
+   * grammar (Terms R2 → 2). Ordering tie-break after dates. */
+  reissueToken?: number;
 };
 
 const EXTENSION_RE =
@@ -224,11 +244,81 @@ function extractVersion(s: string): { rest: string; versionToken?: string } {
   return { rest: s };
 }
 
+/** Strict YYYYMMDD underscore-token → canonical form (null otherwise). */
+function ymdTokenValue(t: string): string | null {
+  if (!/^\d{8}$/.test(t)) return null;
+  const y = Number(t.slice(0, 4));
+  const m = Number(t.slice(4, 6));
+  const d = Number(t.slice(6, 8));
+  return validYmd(y, m, d) ? ymd(y, m, d) : null;
+}
+
+/** V1.2 naming-standard tokens, detected purely by SHAPE in the underscore
+ * grammar — this module deliberately stays DocType/schema-agnostic (it does
+ * NOT import documentNaming.ts / filename_schema.json; this mirrors the
+ * standard's §9 parse-order rules instead). Fires only on names with the
+ * standard's spine: ≥4 underscore tokens ending in a valid \d{8} filing
+ * date. It extracts and removes:
+ *
+ * - the DOCUMENT date of a dual-date name — the \d{8} token at position 2
+ *   (immediately after the DocType token) that is NOT adjacent to the
+ *   trailing filing token. Removed from the stem (two vintages of one
+ *   dual-date series must share a stem) and returned so ordering can prefer
+ *   the vintage over the filing date (standard §5: an old planning
+ *   permission can be RECEIVED after a new one).
+ * - a standalone R\d+ reissue token (Terms_LENDER-x_R2_date) — removed from
+ *   the stem (Terms and Terms_R2 are the same series) and returned as an
+ *   ordering tie-break (R2 > R1 > unnumbered first issue).
+ *
+ * Names without the shape pass through untouched, so legacy/freetext names
+ * (where "R2" may be a block/plot label and any date layout is possible)
+ * keep their existing behavior exactly. */
+function extractStandardTokens(s: string): {
+  rest: string;
+  documentDate?: string;
+  reissue?: number;
+} {
+  const tokens = s.split("_");
+  if (tokens.length < 4) return { rest: s };
+  if (ymdTokenValue(tokens[tokens.length - 1].trim()) === null) {
+    return { rest: s };
+  }
+  let documentDate: string | undefined;
+  let reissue: number | undefined;
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    // Document date: position 2 only (right after Scheme_DocType), and never
+    // adjacent to the trailing filing token (standard §1).
+    if (i === 2 && i < tokens.length - 2 && documentDate === undefined) {
+      const d = ymdTokenValue(t);
+      if (d !== null) {
+        documentDate = d;
+        continue;
+      }
+    }
+    // Reissue: a standalone R\d+ token between the DocType and the filing
+    // date (LintonLane_Terms_LENDER-Avamore_R2_20260612).
+    if (
+      i >= 2 &&
+      i < tokens.length - 1 &&
+      reissue === undefined &&
+      /^R\d{1,2}$/.test(t)
+    ) {
+      reissue = Number(t.slice(1));
+      continue;
+    }
+    kept.push(t);
+  }
+  return { rest: kept.join("_"), documentDate, reissue };
+}
+
 /** Parse a filename into its series key: normalized stem + shaped tokens.
  * Pure and deterministic — safe to call from queries, mutations, tests. */
 export function parseSeriesKey(fileName: string): SeriesKey {
   const normalized = normalizeRawName(fileName);
-  const afterDate = extractDate(normalized);
+  const standard = extractStandardTokens(normalized);
+  const afterDate = extractDate(standard.rest);
   const afterVersion = extractVersion(afterDate.rest);
   const tokens = afterVersion.rest
     .split(/[\s_\-.,+&()[\]]+/)
@@ -245,8 +335,14 @@ export function parseSeriesKey(fileName: string): SeriesKey {
     .map((t) => t.toLowerCase());
   return {
     stem: tokens.join(" "),
-    dateToken: afterDate.dateToken,
+    // Dual-date names order by the DOCUMENT date (true vintage); the trailing
+    // filing date extracted by extractDate is kept as the recency tie-break.
+    dateToken: standard.documentDate ?? afterDate.dateToken,
+    ...(standard.documentDate !== undefined && afterDate.dateToken !== undefined
+      ? { filingDateToken: afterDate.dateToken }
+      : {}),
     versionToken: afterVersion.versionToken,
+    ...(standard.reissue !== undefined ? { reissueToken: standard.reissue } : {}),
   };
 }
 
@@ -283,14 +379,29 @@ export function isSameSeries(a: SeriesDoc, b: SeriesDoc): boolean {
 
 /** Ordering comparator for two documents ALREADY known to share a series.
  * Returns <0 (a older), >0 (a newer), 0 (unorderable tie). Date token
- * first; version token only when dates are equal or missing on either
- * side; _creationTime last (exemplar §4.6: order series members by the
- * date token, not the version token, across name variants). */
+ * first (for V1.2 dual-date names that is the DOCUMENT date — the vintage,
+ * not the filing recency); then the filing date as a tie-break between
+ * equal vintages; then the reissue ordinal (Terms R2 > R1 > unnumbered);
+ * version token only when dates are equal or missing on either side;
+ * _creationTime last (exemplar §4.6: order series members by the date
+ * token, not the version token, across name variants). */
 export function compareInSeries(a: SeriesDoc, b: SeriesDoc): number {
   const ka = parseSeriesKey(a.fileName);
   const kb = parseSeriesKey(b.fileName);
   if (ka.dateToken !== undefined && kb.dateToken !== undefined) {
     const cmp = Number(ka.dateToken) - Number(kb.dateToken);
+    if (cmp !== 0) return cmp;
+  }
+  // Filing-date tie-break — only meaningful when both sides are dual-date
+  // names (the only shape that sets filingDateToken).
+  if (ka.filingDateToken !== undefined && kb.filingDateToken !== undefined) {
+    const cmp = Number(ka.filingDateToken) - Number(kb.filingDateToken);
+    if (cmp !== 0) return cmp;
+  }
+  // Reissue tie-break: a member WITHOUT an R token is the unnumbered first
+  // issue (ordinal 1), so Terms_R2 > Terms at the same date.
+  if (ka.reissueToken !== undefined || kb.reissueToken !== undefined) {
+    const cmp = (ka.reissueToken ?? 1) - (kb.reissueToken ?? 1);
     if (cmp !== 0) return cmp;
   }
   const va = versionOrdinal(ka);
@@ -301,8 +412,13 @@ export function compareInSeries(a: SeriesDoc, b: SeriesDoc): number {
 
 /** Series test + ordering in one call. "not_same_series" is ALSO returned
  * for same-series documents that are an exact ordering tie (same date,
- * same version, same _creationTime) — an unorderable pair must never
- * auto-resolve, so callers fall through to contested either way. */
+ * same version, same _creationTime): an unorderable pair carries no
+ * version-precedence signal, so this returns the same "no signal" verdict as
+ * a genuine cross-series pair. It does NOT imply the conflict ends up
+ * contested — it only means version precedence abstains. On the write path
+ * that abstention returns null from versionPrecedenceWinner and falls through
+ * to Layers 1-3 (asOf / authority / confidence), which may still auto-resolve
+ * the conflict; contested is only the outcome when those layers also tie. */
 export function sameSeriesAndOrder(
   docA: SeriesDoc,
   docB: SeriesDoc,
@@ -351,18 +467,35 @@ export async function versionPrecedenceWinner(
 
   const newDoc = await ctx.db.get(newObservation.documentId);
   if (!newDoc) return null;
-  let sawOlder = false;
+
+  // Pass 1 — resolve EVERY backing doc and require the FULL set to share the
+  // incoming doc's series before any version comparison. Corroboration can
+  // leave an incumbent backed by MIXED-series documents (atomsCore.ts appends
+  // an observation from any equal-value document, cross-series included), so a
+  // single cross-series backer makes this a cross-source conflict — return
+  // null and let the normal layers decide. Checking the whole set up front
+  // (rather than short-circuiting on the first newer same-series doc) keeps
+  // the outcome independent of observation insertion order; this mirrors the
+  // retro pass's "ALL backing docs of every group member same-series" gate
+  // (applyVersionPrecedenceRetro above). Regression: a mixed [same-series,
+  // cross-series] incumbent must return null under BOTH orderings, never
+  // land the incoming atom born-superseded on version precedence.
+  const incumbentDocs: SeriesDoc[] = [];
   for (const docId of incumbentDocIds) {
     const doc = await ctx.db.get(docId);
     if (!doc) return null; // can't verify series — do not auto-resolve
     if (!isSameSeries(newDoc, doc)) return null;
+    incumbentDocs.push(doc);
+  }
+
+  // Pass 2 — every backer is same-series; honor the version comparison. Any
+  // same-series doc newer than the incoming one means the incoming value is a
+  // backfilled old version (order-independent: all are same-series now).
+  let sawOlder = false;
+  for (const doc of incumbentDocs) {
     const cmp = compareInSeries(newDoc, doc);
     if (cmp === 0) return null; // unorderable tie
-    if (cmp < 0) {
-      // A same-series document NEWER than the incoming one already backs
-      // the incumbent: the incoming value is a backfilled old version.
-      return "incumbent";
-    }
+    if (cmp < 0) return "incumbent";
     sawOlder = true;
   }
   return sawOlder ? "new" : null;

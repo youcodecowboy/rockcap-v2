@@ -11,14 +11,19 @@
 // server-side parser /api/drive/ingest and /api/v4-analyze use (pdf-parse /
 // xlsx / mammoth cannot run in the Convex runtime).
 //
-// Deliberately NO LLM anywhere on this path: the calling agent (Claude Code
-// on the operator's subscription) is the classifier. Compare /api/drive/
-// ingest, which runs the full v4 pipeline at API cost — that route remains
-// the automatic lane for re-processing changed Drive files; this one exists
-// so bulk classification can run through the harness instead.
+// The parser lane is deliberately LLM-free: the calling agent (Claude Code on
+// the operator's subscription) is the classifier. The ONE exception is the
+// multimodal fallback below — image documents and scanned image-only PDFs have
+// no text layer, so the parser yields nothing and they would contribute zero
+// atoms to the knowledge pipeline. For those (and only those) we transcribe the
+// bytes with Claude vision so the rest of the pipeline lights up. Compare
+// /api/drive/ingest, which runs the full v4 pipeline at API cost — that route
+// remains the automatic lane for re-processing changed Drive files; this one
+// exists so bulk classification can run through the harness instead.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { extractTextFromFile } from '@/lib/fileProcessor';
+import { extractTextFromFileEx } from '@/lib/fileProcessor';
+import { extractTextViaVision } from '@/lib/visionExtract';
 
 // Large scanned PDFs / multi-tab XLSMs take minutes to parse; match
 // /api/drive/ingest's budget.
@@ -68,16 +73,45 @@ export async function POST(request: NextRequest) {
       type: fileType || 'application/octet-stream',
     });
 
-    // ── Server-side text extraction (pure parse) ──
-    // Unlike drive/ingest there is NO multimodal fallback here — a parse
-    // failure is surfaced to the agent, which can decide what to do
-    // (typically: leave the doc for the operator, log a gap).
-    const text = await extractTextFromFile(file);
-    if (!text || text.trim().length === 0) {
-      return NextResponse.json(
-        { ok: false, error: 'parser produced no text (scanned/image-only file?)' },
-        { status: 422 },
-      );
+    // ── Server-side text extraction ──
+    // The parser handles anything with a text layer (PDF/DOCX/XLSX/CSV/EML/…).
+    // Image documents and scanned image-only PDFs come back as a typed
+    // needs_vision signal instead of empty/throw; for those we run the vision
+    // fallback so they still contribute atoms. `method` records provenance for
+    // the caller (see harnessClassify.extractText).
+    const extraction = await extractTextFromFileEx(file);
+
+    let text: string;
+    let method: 'parser' | 'vision';
+
+    if (extraction.status === 'text') {
+      text = extraction.text;
+      method = 'parser';
+      if (!text || text.trim().length === 0) {
+        return NextResponse.json(
+          { ok: false, error: 'parser produced no text (empty document?)' },
+          { status: 422 },
+        );
+      }
+    } else {
+      // needs_vision — image or scanned/image-only PDF. On vision failure
+      // (missing key, oversize, over page cap, unsupported image, empty
+      // response) surface the same 422 rather than a fake success.
+      try {
+        text = await extractTextViaVision(file, extraction.kind, {
+          pages: extraction.pages,
+        });
+        method = 'vision';
+      } catch (visionError) {
+        console.warn('[extract-text] vision fallback failed:', visionError);
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `parser produced no text and vision fallback failed: ${(visionError as Error).message}`,
+          },
+          { status: 422 },
+        );
+      }
     }
 
     const truncated = text.length > MAX_TEXT_CHARS;
@@ -86,6 +120,7 @@ export async function POST(request: NextRequest) {
       text: truncated ? text.slice(0, MAX_TEXT_CHARS) : text,
       truncated,
       fullTextChars: text.length,
+      method,
     });
   } catch (error) {
     console.error('[extract-text] parse failed:', error);

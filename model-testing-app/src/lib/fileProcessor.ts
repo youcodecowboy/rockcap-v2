@@ -6,19 +6,39 @@ const pdfParse = require('pdf-parse');
 const XLSX = require('xlsx');
 import mammoth from 'mammoth';
 
-export async function extractTextFromFile(file: File): Promise<string> {
+// A parse that produced no usable text but whose bytes CAN be read by a
+// vision model (image, or a scanned/image-only PDF). The extract-text route
+// switches on this to run the multimodal fallback instead of failing. `pages`
+// is carried through for the PDF page-count cap when known.
+export type TextExtractionResult =
+  | { status: 'text'; text: string }
+  | { status: 'needs_vision'; kind: 'image' | 'pdf'; reason: string; pages?: number };
+
+/**
+ * Extract text with a typed signal for the images / textless-PDF cases.
+ *
+ * Returns `{ status: 'text' }` for anything the server-side parsers can read,
+ * and `{ status: 'needs_vision' }` — instead of returning empty (images) or
+ * throwing (scanned PDFs) — when the bytes have no text layer but a vision
+ * model could transcribe them. A genuinely broken/encrypted PDF still throws.
+ *
+ * `extractTextFromFile` wraps this to preserve its historical string contract
+ * for the many existing callers; only the extract-text route consumes the
+ * typed result directly.
+ */
+export async function extractTextFromFileEx(file: File): Promise<TextExtractionResult> {
   const fileType = file.type;
   const fileName = file.name.toLowerCase();
 
   // Handle text files
   if (fileType.startsWith('text/') || fileName.endsWith('.txt') || fileName.endsWith('.md')) {
-    return await file.text();
+    return { status: 'text', text: await file.text() };
   }
 
   // Handle EML (email) files — extract body only for classification (no headers)
   if (fileType === 'message/rfc822' || fileName.endsWith('.eml')) {
     const raw = await file.text();
-    return extractEmailBody(raw);
+    return { status: 'text', text: extractEmailBody(raw) };
   }
 
   // Handle PDF files
@@ -26,36 +46,44 @@ export async function extractTextFromFile(file: File): Promise<string> {
     // Convert ArrayBuffer to Buffer for pdf-parse (primary parser)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
+
     // Ensure data is valid and not empty
     if (!buffer || buffer.length === 0) {
       throw new Error('PDF file appears to be empty or invalid');
     }
-    
+
     // Verify it's a valid PDF by checking for %PDF within the first 1024 bytes
     // (PDF spec allows leading whitespace, BOM, or other bytes before the header)
     const headerSearchRange = buffer.slice(0, Math.min(1024, buffer.length)).toString('ascii');
     if (!headerSearchRange.includes('%PDF')) {
       throw new Error('File does not appear to be a valid PDF');
     }
-    
+
     // pdf-parse v1.1.1 — serverless-safe, no canvas/DOM dependencies
+    let pdfData: any;
     try {
       console.log('Attempting PDF parsing with pdf-parse v1...');
-      const pdfData = await pdfParse(buffer);
-      const extractedText = pdfData.text || '';
-      if (extractedText.trim().length > 0) {
-        console.log('Successfully parsed PDF using pdf-parse');
-        return extractedText.trim();
-      } else {
-        console.warn('pdf-parse returned empty text...');
-        throw new Error('PDF parsed but no text content found');
-      }
+      pdfData = await pdfParse(buffer);
     } catch (pdfParseError) {
       const pdfParseErrorMessage = pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError);
       console.error('pdf-parse failed:', pdfParseError);
       throw new Error(`PDF parsing failed: ${pdfParseErrorMessage}. The file may be corrupted, password-protected, or in an unsupported format.`);
     }
+    const extractedText = (pdfData?.text || '').trim();
+    if (extractedText.length > 0) {
+      console.log('Successfully parsed PDF using pdf-parse');
+      return { status: 'text', text: extractedText };
+    }
+    // Parsed cleanly but the PDF has no text layer (scanned / image-only) —
+    // signal a vision fallback rather than throwing. numpages lets the route
+    // enforce the API's page-count cap before sending it to the model.
+    console.warn('pdf-parse returned empty text — flagging PDF for vision fallback');
+    return {
+      status: 'needs_vision',
+      kind: 'pdf',
+      reason: 'PDF parsed but no text content found',
+      ...(typeof pdfData?.numpages === 'number' ? { pages: pdfData.numpages } : {}),
+    };
   }
 
   // Handle DOCX files
@@ -66,7 +94,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    return { status: 'text', text: result.value };
   }
 
   // Handle DOC files (legacy format - limited support)
@@ -77,7 +105,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
     // DOC files are binary and require specialized parsing not available in serverless.
     // Return a descriptive placeholder instead of throwing, so the file can still be filed
     // with limited metadata rather than blocking the entire upload.
-    return `[Legacy .doc format — limited text extraction]\n\nThis document "${file.name}" is in the legacy Microsoft Word .doc format. Full text extraction is not available for this format in the current pipeline. Please convert to .docx or PDF for complete analysis.\n\nThe document has been accepted for filing with limited metadata.`;
+    return {
+      status: 'text',
+      text: `[Legacy .doc format — limited text extraction]\n\nThis document "${file.name}" is in the legacy Microsoft Word .doc format. Full text extraction is not available for this format in the current pipeline. Please convert to .docx or PDF for complete analysis.\n\nThe document has been accepted for filing with limited metadata.`,
+    };
   }
 
   // Handle CSV files
@@ -90,16 +121,16 @@ export async function extractTextFromFile(file: File): Promise<string> {
       // Parse CSV and format it nicely for analysis
       const lines = csvText.split('\n').filter(line => line.trim());
       if (lines.length === 0) {
-        return 'Empty CSV file';
+        return { status: 'text', text: 'Empty CSV file' };
       }
-      
+
       // Format CSV as readable text with headers
       const formattedLines = lines.map((line, index) => {
         const cells = line.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
         return `Row ${index + 1}: ${cells.join(' | ')}`;
       });
-      
-      return formattedLines.join('\n');
+
+      return { status: 'text', text: formattedLines.join('\n') };
     } catch (error) {
       throw new Error(`Failed to parse CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -161,24 +192,40 @@ export async function extractTextFromFile(file: File): Promise<string> {
         }
       }
       
-      return fullText.trim();
+      return { status: 'text', text: fullText.trim() };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to parse Excel file: ${errorMessage}`);
     }
   }
 
-  // Images: no text to extract — pipeline uses vision (base64 ImageBlock)
+  // Images: no text layer — signal a vision fallback (the extract-text route
+  // transcribes them). Callers via extractTextFromFile still receive '' for
+  // backward compatibility.
   if (fileType.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i.test(fileName)) {
-    return '';
+    return { status: 'needs_vision', kind: 'image', reason: 'image file has no text layer' };
   }
 
   // Default: try to read as text
   try {
-    return await file.text();
+    return { status: 'text', text: await file.text() };
   } catch (error) {
     throw new Error(`Unsupported file type: ${fileType}. Supported types: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls`);
   }
+}
+
+/**
+ * Legacy string-returning wrapper around {@link extractTextFromFileEx}. Kept so
+ * the many existing callers (drive/ingest, v4-analyze, meeting/intelligence
+ * queues, …) are unchanged: images resolve to '' (their prior behavior), and a
+ * textless PDF throws the same "no text content" error the v4 pipeline already
+ * catches to trigger its own raw-file multimodal fallback.
+ */
+export async function extractTextFromFile(file: File): Promise<string> {
+  const result = await extractTextFromFileEx(file);
+  if (result.status === 'text') return result.text;
+  if (result.kind === 'image') return '';
+  throw new Error(result.reason);
 }
 
 export async function convertSpreadsheetToMarkdown(file: File): Promise<string> {

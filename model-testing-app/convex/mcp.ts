@@ -43,6 +43,47 @@ function asText(result: unknown): { content: Array<{ type: "text"; text: string 
   };
 }
 
+// Cap on how many atom ids a single retrievalLog batch records (spec §10).
+const RETRIEVAL_LOG_CAP = 100;
+
+// Chunk text cap in the atoms.search tool response — full text stays in the
+// documentChunks row; the tool trims to keep the response bounded and marks
+// the cut with `truncated: true`. 2,200 chars covers a full target-size chunk
+// (~320 words ≈ 2,000 chars, chunker.ts TARGET_WORDS) — the earlier 700-char
+// cap ate the operative clause in 5/12 prose eval questions where the right
+// chunk ranked #1. Worst case stays bounded: 20 chunks (CHUNK_LIMIT_MAX) ×
+// 2.2K = 44K chars.
+const CHUNK_TEXT_CAP = 2200;
+
+/** Gather the atom ids a graph.expandEntity result actually surfaced — edge
+ * provenance refs (atom-lane only; native refs are table names and are
+ * dropped downstream by normalizeId anyway) plus attribute / ring-attribute
+ * atom ids. Used to feed retrievalLog fire-and-forget. */
+function collectExpandAtomIds(result: unknown): string[] {
+  const ids = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = result as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addEdge = (e: any) => {
+    if (e?.provenance?.sourceType !== "native" && typeof e?.provenance?.ref === "string") {
+      ids.add(e.provenance.ref);
+    }
+  };
+  (r?.edges ?? []).forEach(addEdge);
+  (r?.interEdges ?? []).forEach(addEdge);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (r?.attributes ?? []).forEach((a: any) => {
+    if (typeof a?.atomId === "string") ids.add(a.atomId);
+  });
+  for (const rows of Object.values(r?.ringAttributes ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of (rows as any[]) ?? []) {
+      if (typeof a?.atomId === "string") ids.add(a.atomId);
+    }
+  }
+  return [...ids].slice(0, RETRIEVAL_LOG_CAP);
+}
+
 // ── Tool catalogue ───────────────────────────────────────────
 
 const TOOLS: McpTool[] = [
@@ -916,16 +957,20 @@ const TOOLS: McpTool[] = [
       required: ["lenderClientId", "fieldPath", "value", "valueType", "sourceType"],
     },
     handler: async (ctx, userId, args) => {
-      const result = await ctx.runMutation(api.appetiteSignals.record, {
+      // MCP handlers have no Clerk session — use the internal variant with the
+      // bearer-resolved userId (bug: was wired to the Clerk-authed public
+      // mutation and threw "Unauthenticated" on every MCP call).
+      const result = await ctx.runMutation(internal.appetiteSignals.recordInternal, {
         lenderClientId: args.lenderClientId,
         fieldPath: args.fieldPath,
         value: args.value,
         valueType: args.valueType,
         sourceType: args.sourceType,
         sourceRef: args.sourceRef,
-        asOfDate: args.asOfDate,
+        asOfDate: args.asOfDate ?? new Date().toISOString().slice(0, 10),
         confidence: args.confidence,
         notes: args.notes,
+        userId,
       });
       return asText(result);
     },
@@ -3882,7 +3927,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.extractText",
     description:
-      "Harness classification step 1 — SERVER-SIDE PARSE ONLY, ZERO LLM: returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (≤120K chars, truncation noted), fileName, mimeType, contentChecksum, source, alreadyClassified, alreadyAtomized}. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
+      "Harness classification step 1 — returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Text-layer documents (PDF/DOCX/XLSX/CSV/EML/…) are parsed SERVER-SIDE with ZERO LLM. The ONE exception: image documents (PNG/JPG term sheets) and scanned image-only PDFs have no text layer, so they are transcribed faithfully via vision — method:'vision' in the result flags this (treat as best-effort OCR; [illegible] marks unreadable regions). Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (≤120K chars, truncation noted), fileName, mimeType, contentChecksum, source, method ('parser'|'vision'), parsedName, alreadyClassified, alreadyAtomized}. parsedName is the V1.2 file-naming-standard parse of the fileName (docs/classification/RockCap_FileNamingStandard_RC_INTERNAL_V1.2_20260708.md; schema src/lib/naming/filename_schema.json): {scheme, docType, documentDate?, origin{role,party?}, status?, version?, reissue?, filingDate, confidence:'full'|'partial'} or null for non-standard names — TREAT A confidence:'full' parsedName.docType AS A STRONG CLASSIFICATION PRIOR (the name was authored to the client-confirmed convention; the schema's docTypes map gives its appFileType), 'partial' as a hint to verify against content, null as no signal. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4734,7 +4779,7 @@ const TOOLS: McpTool[] = [
   {
     name: "atoms.search",
     description:
-      "Search stored atoms by a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). Filters: clientId (owning scope), subjectType, status (default: live atoms only — active + contested). Each hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable the call degrades to the text lane alone (vectorLaneDisabled:true).",
+      "Search the knowledge layer in TWO RESULT LANES at once. `results` = ATOMS: discrete facts with provenance — a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). `chunks` = PROSE PASSAGES from the narrative dual index (documentChunks, spec §3.4): the same hybrid+RRF over chunk text, each hit carrying documentId + parent document {displayName, fileName, fileTypeDetected} + locator {page/sheet/section} + chunkIndex — use chunks for the nuance atoms flatten (caveats, conditions, reasoning, surrounding context in legal opinions / reports); chunk text is trimmed to ~700 chars with `truncated:true` when cut (read the full doc via document.get if you need more). includeChunks defaults TRUE; set false to skip the chunk lane. Atom filters: clientId (owning scope; also scopes chunks), subjectType, status (default: live atoms only — active + contested). Each atom hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable both lanes degrade to full-text alone (vectorLaneDisabled:true).",
     inputSchema: {
       type: "object",
       properties: {
@@ -4744,6 +4789,8 @@ const TOOLS: McpTool[] = [
         status: { type: "string", description: "Optional: active | contested | superseded | retired. Default: live (active + contested)." },
         limit: { type: "number", description: "Default 20, max 50." },
         includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide hits whose owning clientId is a prospect-status clients row; counts.prospectScopedHidden reports how many were hidden." },
+        includeChunks: { type: "boolean", description: "Default true: also run the prose-chunk lane (same query + clientId) and return a `chunks` array (documentChunks hits with parent-document metadata + locator). Set false for atoms only." },
+        chunkLimit: { type: "number", description: "Max chunk hits. Default 8, max 20." },
       },
       required: ["query"],
     },
@@ -4755,6 +4802,142 @@ const TOOLS: McpTool[] = [
         status: args.status,
         limit: args.limit,
         includeProspectScoped: args.includeProspectScoped,
+      });
+
+      // Chunk lane (default ON) — prose passages from the narrative dual
+      // index, same query + client scope. Trimmed to ~2,200 chars per hit so
+      // the tool response stays bounded; `truncated:true` flags a cut.
+      let chunksSection: Record<string, unknown> = {};
+      let chunkIds: string[] = [];
+      if (args.includeChunks !== false) {
+        const chunkResult = await ctx.runAction(
+          internal.knowledge.embeddings.chunksSearchHybrid,
+          { query: args.query, clientId: args.clientId, limit: args.chunkLimit },
+        );
+        const chunks = chunkResult.results.map((c) => {
+          const truncated = c.text.length > CHUNK_TEXT_CAP;
+          return {
+            ...c,
+            text: truncated ? c.text.slice(0, CHUNK_TEXT_CAP) : c.text,
+            ...(truncated ? { truncated: true as const } : {}),
+          };
+        });
+        chunkIds = chunks
+          .map((c) => c.chunkId as string)
+          .slice(0, RETRIEVAL_LOG_CAP);
+        chunksSection = { chunks, chunkCounts: chunkResult.counts };
+      }
+
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget so the
+      // usage half of salience learns from real queries; off the latency path.
+      // Chunk hits log in the same batch (chunkId rows; salience-inert).
+      const atomIds = ((result.results ?? []) as Array<{ atomId?: unknown }>)
+        .map((row) => row.atomId)
+        .filter((id): id is string => typeof id === "string")
+        .slice(0, RETRIEVAL_LOG_CAP);
+      if (atomIds.length > 0 || chunkIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          chunkIds,
+          source: "search",
+          queryText: args.query,
+          clientId: args.clientId,
+          retrievedAt: Date.now(),
+        });
+      }
+      return asText({ ...result, ...chunksSection });
+    },
+  },
+
+  // ── atoms.*Candidate — provisional entities (Spec 2 Phase 2b, §3.5) ──
+  // The repair path for unresolvable mentions: mint a candidate, anchor the
+  // atom to it (subjectType/objectEntityType "candidate") — facts are never
+  // dropped. The 2-hourly enrichment worker resolves candidates (companies →
+  // CH, people → contacts/Apollo) and re-points referencing atoms through
+  // the identity machinery.
+  {
+    name: "atoms.createCandidate",
+    description:
+      "Mint (or reuse) a PROVISIONAL entity for a person/company mention that doesn't resolve to any roster id — the atomize-document repair path for `unresolved_subject`/`unresolved_object` rejects. Anchor the rejected atom to the returned candidateId with subjectType/objectEntityType 'candidate' and resubmit: the fact is NEVER dropped, and the background enrichment worker (2-hourly) resolves the candidate (companies → Companies House exact-name search + full sync; people → client-scoped contact match, then Apollo) and re-points every referencing atom to the real entity through the identity machinery (duplicates merge automatically). Dedup is built in: the same normalized mention (lowercased, punctuation-stripped) with the same guessedType reuses ONE candidate row across documents — `reused:true` tells you it already existed. If the candidate was ALREADY RESOLVED you get `{status:'resolved', resolvedType, resolvedId}` — anchor your atom to THAT real entity directly instead of the candidate. Pass `clientId` as a scope hint whenever you know the owning client (it is what lets the worker scan the right contact roster and give Apollo a company context; stored inside contextSnippet as 'client:<id>|<snippet>' — the schema is frozen). Returns {candidateId, reused, status} or the resolved-entity ref.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mentionText: { type: "string", description: "The mention verbatim, e.g. 'Land at Willersey SPV Ltd' or 'Jason Buttler'." },
+        guessedType: { type: "string", description: "'person' or 'company'." },
+        contextSnippet: { type: "string", description: "Optional verbatim source snippet around the mention — helps the worker and the operator judge who/what this is." },
+        sourceDocumentId: { type: "string", description: "Optional Convex id of the document the mention came from." },
+        clientId: { type: "string", description: "Optional owning-client scope hint (Convex id). STRONGLY recommended — person resolution is client-scoped." },
+      },
+      required: ["mentionText", "guessedType"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.createCandidate, {
+        mentionText: args.mentionText,
+        guessedType: args.guessedType,
+        contextSnippet: args.contextSnippet,
+        sourceDocumentId: args.sourceDocumentId,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.listCandidates",
+    description:
+      "List entityCandidates rows (provisional entities minted for unresolvable mentions) with referencing-atom counts. Optional status filter: 'pending' (awaiting enrichment — the default operator triage view), 'resolved' (tombstones pointing at the real entity via resolvedToType/resolvedToId), 'dismissed'. Each row carries mentionText, guessedType, enrichmentAttempts (the worker stops retrying after 3 failed attempts but NEVER auto-dismisses — a pending row with attempts=3 is waiting for the operator), scopeClientId (parsed from the stored scope hint), sourceDocumentId, and referencingAtoms {asSubject, asObject, total} so you can see how much of the graph hangs off each unresolved mention. Use with atoms.dismissCandidate to clear noise (typos, generic phrases wrongly minted as entities).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Optional: pending | resolved | dismissed. Omit for all." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.candidates.listCandidates, {
+        status: args?.status,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.dismissCandidate",
+    description:
+      "Operator hygiene: mark an entityCandidates row 'dismissed' — this mention is not a real resolvable entity (a typo, a generic phrase, an out-of-scope party) and the enrichment worker should never chase it again. Atoms anchored to the candidate stay anchored (the facts survive, flagged as unconfirmed via their candidate reference); a later atomization pass re-encountering the same mention reuses the dismissed row rather than resurrecting it as fresh pending noise. Errors on an already-resolved candidate (the tombstone must survive so re-extraction keeps resolving instantly). This is the ONLY dismissal path — the worker itself never auto-dismisses, it just stops retrying after 3 failed attempts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        candidateId: { type: "string", description: "Convex id of the entityCandidates row." },
+      },
+      required: ["candidateId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.dismissCandidate, {
+        candidateId: args.candidateId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.mergeEntities",
+    description:
+      "Operator hygiene: collapse a DUPLICATE existing entity into its canonical twin on the KNOWLEDGE GRAPH. Use when the SAME real thing exists under two ids — a client created twice (HubSpot/promotion), a '(175)'-suffixed duplicate contact, a company synced under two Companies House rows — and their atoms/facilities/scope tags are split across both. Re-points every knowledge-side reference from `fromId` to `toId` (BOTH must be the same `entityType`) and routes each atom through the SAME identity machinery Phase-2b candidate resolution uses: a re-pointed atom that now duplicates a live atom on the target MERGES (its observations move to the survivor, corroboration bumps, the duplicate is superseded); a value clash goes CONTESTED (both live, surfaced for adjudication — never a silent double). Also re-scopes the denormalized refs the subject/object re-point misses: atoms.clientId/projectId, the facilities mirror columns (lender/borrower/company/project), documentChunks scope tags, and appetiteSignals.lenderClientId. SCOPE: knowledge graph ONLY. This tool is CRM-BLIND — it does NOT reassign CRM tables (contacts/documents/tasks/notes/…) and does NOT delete or soft-delete the `from` entity row. For client duplicates run the CRM-side merge separately (migrations/mergeDuplicateClients — it is the atom-blind mirror of this tool); then remove the source row. `entityType`: client | project | contact | company | facility | candidate. For 'candidate' this RESOLVES the candidate to a real entity — pass `toType` (the resolved entity's type), and `toId` is that real entity's id. `reason` is a free-text audit note. Writes an auditLog row and returns {repointed, merged, contested, scope:{atomsRescoped, chunksRescoped, facilitiesRescoped, appetiteRescoped}} so you see exactly what moved.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate. fromId and toId are BOTH this type (except 'candidate', where toId is the resolved real entity named by toType)." },
+        fromId: { type: "string", description: "Convex id of the DUPLICATE to collapse (the entityCandidates id when entityType='candidate')." },
+        toId: { type: "string", description: "Convex id of the canonical entity to keep (the real entity's id when entityType='candidate')." },
+        reason: { type: "string", description: "Why these are the same entity (audit note)." },
+        toType: { type: "string", description: "Required ONLY when entityType='candidate': the resolved real entity's type (client | project | contact | company | facility)." },
+      },
+      required: ["entityType", "fromId", "toId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: args.entityType,
+        fromId: args.fromId,
+        toId: args.toId,
+        reason: args.reason,
+        toType: args.toType,
       });
       return asText(result);
     },
@@ -4796,13 +4979,25 @@ const TOOLS: McpTool[] = [
         includeProspectScoped: args.includeProspectScoped,
         includeRingAttributes: args.includeRingAttributes,
       });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget.
+      const atomIds = collectExpandAtomIds(result);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "expand",
+          clientId: args.entityType === "client" ? args.entityId : undefined,
+          subjectType: args.entityType,
+          subjectId: args.entityId,
+          retrievedAt: Date.now(),
+        });
+      }
       return asText(result);
     },
   },
   {
     name: "graph.sharedNeighbors",
     description:
-      "The 'what connects these?' primitive: expand each input entity's federated neighborhood (atom + native edges, one hop) and INTERSECT the neighbor sets — returns only nodes connected to ALL inputs, each with the per-input connections ({fromInput, predicate, direction, provenance}) that make the link auditable. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; the inputs themselves never count as shared neighbors. One hop only — for longer chains use graph.findPaths.",
+      "The 'what connects these?' primitive: expand each input entity into a bounded structural GROUP (client → its role projects + facilities + CH group companies; project → its facilities + their SPV/borrower client; company → the client(s) it is a group SPV of + their mapped sibling companies; contact/facility/candidate → just themselves — ≤25 members/input, `capped` flagged per input in `groups`), then INTERSECT the UNION of each group's members' one-hop federated neighborhoods (atom + native edges) — a node counts as reached by an input if ANY of its group members has a direct edge to it. Returns only nodes reached by ALL inputs, each with per-input connections ({fromInput, groupMember?, predicate, direction, provenance}) — groupMember is set when the link runs input→member→node (the group hop), absent for a classic one-hop link. This closes the lender→facility→project→developer gap where the shared project sits two hops from a lender that anchors on the facility node. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; only the input entities THEMSELVES are excluded from results — a group member the other side reaches (a developer's own project reached by a lender) is a legitimate shared node. For longer indirect chains use graph.findPaths.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4833,7 +5028,7 @@ const TOOLS: McpTool[] = [
   {
     name: "graph.findPaths",
     description:
-      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop) comes back empty and you suspect an indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
+      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop plus its bounded group expansion) comes back empty and you suspect a longer indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4856,6 +5051,25 @@ const TOOLS: McpTool[] = [
         from: args.from,
         to: args.to,
         maxHops: args.maxHops,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.overview",
+    description:
+      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxNodes: { type: "number", description: "Node cap (default and max 2500). Lowest-degree contact/company/candidate leaves drop first." },
+        maxEdges: { type: "number", description: "Edge cap (default and max 6000). Kept by contested-first → atom-over-native → confidence ranking." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphOverview.overviewInternal, {
+        maxNodes: args.maxNodes,
+        maxEdges: args.maxEdges,
       });
       return asText(result);
     },
