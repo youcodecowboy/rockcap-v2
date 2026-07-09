@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  chunkString,
   computeDegrees,
   dedupeOverviewEdges,
   normalizeClientStatus,
@@ -229,5 +230,33 @@ describe("client flag normalization", () => {
     expect(normalizeClientStatus(undefined)).toBe("active");
     expect(normalizeClientStatus("archived")).toBeUndefined();
     expect(normalizeClientStatus("past")).toBeUndefined();
+  });
+});
+
+describe("chunkString (snapshot chunking)", () => {
+  it("round-trips exactly and respects the size cap", () => {
+    const s = "a".repeat(10) + "£€🌍" + "b".repeat(10);
+    for (const size of [1, 3, 7, 100]) {
+      const chunks = chunkString(s, size);
+      expect(chunks.join("")).toBe(s);
+      // +1 slack: a chunk may grow one unit to keep a surrogate pair whole.
+      for (const c of chunks) expect(c.length).toBeLessThanOrEqual(size + 1);
+    }
+  });
+
+  it("never splits a surrogate pair across chunks", () => {
+    const s = "🌍🌎🌏"; // 6 UTF-16 units, 3 pairs
+    for (const size of [1, 2, 3, 5]) {
+      for (const c of chunkString(s, size)) {
+        // A chunk ending in an unpaired high surrogate would not round-trip
+        // through UTF-8 storage.
+        const last = c.charCodeAt(c.length - 1);
+        expect(last >= 0xd800 && last <= 0xdbff).toBe(false);
+      }
+    }
+  });
+
+  it("always returns at least one chunk", () => {
+    expect(chunkString("", 100)).toEqual([""]);
   });
 });

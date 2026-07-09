@@ -1055,7 +1055,7 @@ const TOOLS: McpTool[] = [
   {
     name: "lender.create",
     description:
-      "Create a new lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation — escape hatch for genuine net-new lenders never seen in HubSpot. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add a new lender you're starting to track → mode 3.",
+      "Create OR UPSERT a lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation. Mode 3 is now an UPSERT: before inserting it runs a conservative normalized-name match (lowercase, strip punctuation, drop trailing legal suffixes — equality only, never fuzzy) across every existing lender's name/companyName/aliases. On a match it patches that row instead of inserting (unions `aliases` + `sourceDocumentIds`, appends a dated note line, fills missing website/companyName/country) and returns `deduped:true` with the EXISTING `lenderClientId` — so a document-ingestion wave that re-encounters 'Funding 365' / 'Downing LLP' collapses onto the first row rather than duplicating it. Pass `aliases` (known alternate names) and `sourceDocumentIds` (evidence) so the roster self-heals. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add / roster a lender from a document → mode 3 with aliases + sourceDocumentIds. To collapse EXISTING duplicate lender rows, use `lender.merge`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1068,6 +1068,8 @@ const TOOLS: McpTool[] = [
         email: { type: "string", description: "General contact email if known" },
         phone: { type: "string" },
         country: { type: "string", description: "Default 'United Kingdom'" },
+        aliases: { type: "array", items: { type: "string" }, description: "Mode 3 only: alternate names this lender is known by (registered-company variants, brand names). Feeds the dedup match here AND the knowledge-layer lender matcher. Unioned onto an existing row on dedup." },
+        sourceDocumentIds: { type: "array", items: { type: "string" }, description: "Mode 3 only: Convex document ids that evidenced this lender (provenance). Unioned onto an existing row on dedup." },
       },
       required: [],
     },
@@ -1115,27 +1117,123 @@ const TOOLS: McpTool[] = [
         });
       }
 
-      // Mode 3: naked creation (no HubSpot link)
+      // Mode 3: naked upsert (no HubSpot link) — dedups against existing
+      // lenders by normalized name before inserting (see clients.upsertLender).
       if (!args.name) {
         return asText({ error: "name_required_for_mode_3", note: "Mode 3 (naked creation) requires `name`. For modes 1/2 (HubSpot promotion), pass promoteFromCompanyId or hubspotCompanyId instead." });
       }
-      const id = await ctx.runMutation(api.clients.create, {
+      const upsert = await ctx.runMutation(api.clients.upsertLender, {
         name: args.name,
-        type: "lender",
-        status: "active" as const,
         companyName: args.companyName,
         notes: args.notes,
         website: args.website,
         email: args.email,
         phone: args.phone,
         country: args.country ?? "United Kingdom",
-        source: "manual" as const,
+        aliases: args.aliases,
+        sourceDocumentIds: args.sourceDocumentIds as any,
       });
+      return asText(
+        upsert.deduped
+          ? {
+              status: "deduped",
+              deduped: true,
+              lenderClientId: upsert.lenderClientId,
+              matchedName: upsert.matchedName,
+              note: `Matched an existing lender ("${upsert.matchedName}") by normalized name — patched that row (unioned aliases + sourceDocumentIds, appended a note) instead of creating a duplicate. Use this lenderClientId.`,
+            }
+          : {
+              status: "created",
+              deduped: false,
+              lenderClientId: upsert.lenderClientId,
+              note: "Lender created via naked path (no HubSpot link). Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+            },
+      );
+    },
+  },
+
+  {
+    name: "lender.merge",
+    description:
+      "Collapse a DUPLICATE lender row into a canonical one — the operator-hygiene fix for the duplicate lenders lender.create's dedup could not catch automatically (e.g. 'Funding 365' vs 'Funding 365 Property Finance', 'Downing' vs 'Downing LLP', 'Paragon' vs 'Paragon Bank'). Both ids must be clients rows with type='lender' and distinct. Repoints EVERYTHING from the from-row to the to-row: knowledge atoms + facilities + appetite signals + document chunks (via atoms.mergeEntities), then the flat CRM references (contacts, documents, tasks, notes, meetings, cadences/approvals-derived, …) and projects.clientRoles (via the client CRM merge), then unions the lender row fields (aliases — incl. the from-row's name/companyName as aliases so future mentions resolve — sourceDocumentIds, notes with a merge marker, and any missing scalars). Finally soft-deletes the from-row (deletedReason=merged_into_<toId>), so the roster reads clean. Pass `dryRun:true` (recommended first) to preview validation + the would-be repoint counts + field merge WITHOUT writing. The to-row is the survivor — pick the richer/canonical one as `toClientId`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromClientId: { type: "string", description: "Convex id of the DUPLICATE lender to collapse and soft-delete." },
+        toClientId: { type: "string", description: "Convex id of the CANONICAL lender that survives and absorbs the duplicate." },
+        dryRun: { type: "boolean", description: "Preview only — validate + count would-be repoints and field merge without writing. Default false." },
+      },
+      required: ["fromClientId", "toClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      // Pre-flight validation + plan (also the dryRun payload). Runs before any
+      // write so an invalid pair never half-merges.
+      const plan = await ctx.runQuery(api.clients.mergeLendersPlan, {
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+      });
+      if (!plan.ok) {
+        return asText({ error: "invalid_merge_pair", detail: plan.error });
+      }
+      if (args.dryRun) {
+        return asText({ status: "dry_run", ...plan });
+      }
+
+      // 1. Knowledge side — atoms + facilities + appetite + chunks.
+      const atomMerge = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: "client" as const,
+        fromId: args.fromClientId,
+        toId: args.toClientId,
+        reason: `lender.merge ${args.fromClientId} → ${args.toClientId}`,
+      });
+      // 2. CRM side — flat FKs + clientRoles + soft-delete the from-row.
+      const crmMerge = await ctx.runMutation(internal.migrations.mergeDuplicateClients.mergeTwo, {
+        sourceId: args.fromClientId,
+        targetId: args.toClientId,
+      });
+      // 3. Lender row-field union onto the survivor.
+      const fields = await ctx.runMutation(api.clients.mergeLenderFields, {
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+      });
+
       return asText({
-        status: "created",
-        lenderClientId: id,
-        note: "Lender created via naked path (no HubSpot link). Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+        status: "merged",
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+        survivor: plan.toName,
+        collapsed: plan.fromName,
+        knowledge: {
+          atomsRepointed: atomMerge.repointed,
+          atomsMerged: atomMerge.merged,
+          atomsContested: atomMerge.contested,
+          scope: atomMerge.scope,
+        },
+        crmCounts: crmMerge.counts,
+        fieldMerge: fields,
+        note: "Duplicate lender collapsed and soft-deleted (deletedReason=merged_into_target). All atoms, facilities, appetite, CRM refs and clientRoles now point at the survivor.",
       });
+    },
+  },
+
+  {
+    name: "facilities.audit",
+    description:
+      "Find (and optionally fix) FRAGMENTED facilities — the multiple facility rows that free-text tranche descriptors used to mint for one negotiation (e.g. Allica Bank: 8 rows on one project from successive quote revisions). Groups facilities by project + lender + normalized tranche (senior/mezzanine/bridge/equity/single); any group with >1 row is a fragment cluster of what should be ONE facility. Dry-run (default) reports each cluster with its rows (id/tranche/amount/status/atomCount) and the suggested canonical row (most attached atoms, then richest mirror columns). Pass `execute:true` to collapse each fragment into the canonical via the completed facility merge path (fills mirrors, recomputes dedupeKey under the enum scheme, deletes the fragment, rematerializes) and return the merge count. Scope to one project with `projectId`, or omit to audit the whole corpus. External/unrostered facilities (no lender id) are excluded — two such rows can't be confirmed duplicates.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Optional: limit the audit to one project's facilities. Omit to audit the whole corpus." },
+        execute: { type: "boolean", description: "Perform the merges (fragments → canonical). Default false = dry-run report only." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.auditFragmentation, {
+        projectId: args.projectId as any,
+        execute: args.execute ?? false,
+      });
+      return asText(result);
     },
   },
 
@@ -5058,7 +5156,7 @@ const TOOLS: McpTool[] = [
   {
     name: "graph.overview",
     description:
-      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view.",
+      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view. Served from a CACHED snapshot (the graph outgrew a single query execution): the call rebuilds first only when the cache is older than ~5 min, and `builtAt` (epoch ms) rides along so you can see the snapshot's age.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5067,11 +5165,19 @@ const TOOLS: McpTool[] = [
       },
     },
     handler: async (ctx, _userId, args) => {
-      const result = await ctx.runQuery(internal.knowledge.graphOverview.overviewInternal, {
+      // Cached-snapshot read: rebuild only when past the TTL, then serve the
+      // stored chunks (the org-wide walk no longer fits one query execution).
+      await ctx.runAction(internal.knowledge.graphOverview.ensureFresh, {});
+      const snap = await ctx.runQuery(internal.knowledge.graphOverview.snapshotInternal, {
         maxNodes: args.maxNodes,
         maxEdges: args.maxEdges,
       });
-      return asText(result);
+      if (!snap.overview) {
+        // Only reachable when another build claimed the lock before the very
+        // first snapshot landed — momentary.
+        return asText({ error: "atlas snapshot is still building — retry in a few seconds" });
+      }
+      return asText({ ...snap.overview, builtAt: snap.builtAt });
     },
   },
 

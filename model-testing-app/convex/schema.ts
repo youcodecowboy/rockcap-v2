@@ -203,6 +203,20 @@ export default defineSchema({
       v.literal("revalidate_materially_changed"),
     )),
     intelAttentionClearedAt: v.optional(v.string()),
+
+    // ── Lender DB hardening (2026-07) ──
+    // Alternate names this client is known by — registered-company variants,
+    // brand names, historical names, and the `name`/`companyName` of any
+    // duplicate rows merged into this one via lender.merge. Read by the
+    // knowledge-layer lender matcher (loadRosteredLenders → matchRosteredLenders)
+    // alongside `name`/`companyName`, and by lender.create's dedup upsert to
+    // recognise a lender that arrives under a variant name. Conservative,
+    // normalized-equality matching only (never fuzzy).
+    aliases: v.optional(v.array(v.string())),
+    // Provenance pointer: source documents that evidenced this lender row.
+    // Written by lender.create (naked create + dedup upsert) and unioned on
+    // lender.merge so the merged row keeps every duplicate's evidence.
+    sourceDocumentIds: v.optional(v.array(v.id("documents"))),
   })
     .index("by_status", ["status"])
     .index("by_needs_action_at", ["needsActionAt"])
@@ -5027,5 +5041,24 @@ export default defineSchema({
   })
     .index("by_atom", ["atomId"])
     .index("by_retrievedAt", ["retrievedAt"]),
+
+  // Cached org-wide atlas snapshot — knowledge/graphOverview.ts. The overview
+  // walk (atoms + native structural lanes) outgrew Convex's 16MiB single-
+  // execution read limit, so an internalAction assembles it from paged
+  // internalQuery lanes and stores the result JSON here, chunked under the
+  // 1MiB document cap. ONE meta row (kind "meta") points at the live buildId
+  // and carries the builder lock; chunk rows (kind "chunk") hold the JSON
+  // slices. Readers (atlas board query + MCP graph.overview) load meta →
+  // chunks; a rebuild swaps the meta buildId atomically in the same mutation
+  // that inserts the new chunks and sweeps the old ones.
+  graphOverviewCache: defineTable({
+    kind: v.union(v.literal("meta"), v.literal("chunk")),
+    buildId: v.string(), // meta: the live build; chunk: its owning build
+    seq: v.optional(v.number()), // chunk order within a build
+    payload: v.optional(v.string()), // JSON slice (chunks only)
+    builtAt: v.optional(v.number()), // meta: last successful build
+    buildStartedAt: v.optional(v.number()), // meta: build lock (stale after 2 min)
+    chunkCount: v.optional(v.number()), // meta
+  }).index("by_kind_build", ["kind", "buildId"]),
 });
 

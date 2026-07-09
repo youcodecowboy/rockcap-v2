@@ -1,8 +1,8 @@
 // Org-wide knowledge atlas — shared types.
 //
 // The node/edge/counts shapes mirror the backend contract of
-// `convex/knowledge/graphOverview.ts` `overview` (built in parallel; see
-// overviewRef.ts for why the reference is hand-rolled). Keep in sync.
+// `convex/knowledge/graphOverview.ts` (the OverviewResult inside the cached
+// `snapshot` query's return). Keep in sync.
 
 import type { ColorPalette } from "@/lib/colors";
 import { colorForType, type GraphEntityType } from "../graphVocab";
