@@ -8,10 +8,10 @@ import AtlasView from '@/components/knowledge/atlas/AtlasView';
 // Auth: /knowledge is not in the middleware public-route list, so Clerk
 // protects it exactly like every other (desktop) page — no per-page guard.
 
-/** The overview query lives in convex/knowledge/graphOverview.ts (built in
- * parallel — see overviewRef.ts). Until it's deployed, the query errors; this
- * boundary keeps the page shell alive with an app-idiom message instead of
- * crashing the route. It also catches genuine runtime errors later. */
+/** The overview is served from a cached snapshot (convex/knowledge/
+ * graphOverview.ts). This boundary catches runtime errors from the snapshot
+ * query or the board itself and keeps the page shell alive with an app-idiom
+ * message instead of crashing the route. */
 class AtlasErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) {
@@ -23,7 +23,7 @@ class AtlasErrorBoundary extends Component<{ children: ReactNode }, { error: Err
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, background: DARK.bg.base }}>
           <EmptyState
             title="Knowledge atlas unavailable"
-            body="The org-wide overview query isn't reachable right now. If the graphOverview backend hasn't been deployed yet, this page will light up as soon as it lands."
+            body={`The atlas hit a runtime error: ${this.state.error.message} — check the Convex logs for knowledge/graphOverview.`}
           />
         </div>
       );

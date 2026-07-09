@@ -370,8 +370,10 @@ function rankAttributes(a: GraphAttribute, b: GraphAttribute): number {
 const HONORIFICS = /^(mr|mrs|ms|miss|dr|sir|dame|prof|professor)\.?\s+/i;
 
 /** Lowercase, strip honorifics/punctuation, reorder CH "SURNAME, Forenames"
- * comma form to natural order, collapse whitespace. */
-function normalizePersonName(raw: string): string {
+ * comma form to natural order, collapse whitespace. Exported for
+ * graphOverview.ts (the atlas snapshot joins CH officer/PSC names to
+ * contacts with the same normalization). */
+export function normalizePersonName(raw: string): string {
   let name = raw.trim();
   const comma = name.indexOf(",");
   if (comma !== -1) {
@@ -591,8 +593,8 @@ function nativeEdge(
 
 /** clientRoles role → predicate mapping (spec §5): lender → funds_project,
  * everything else (borrower / developer / …) → developing. The raw role
- * string rides along as the qualifier. */
-function rolePredicate(role: string): string {
+ * string rides along as the qualifier. Exported for graphOverview.ts. */
+export function rolePredicate(role: string): string {
   return role.toLowerCase() === "lender" ? "funds_project" : "developing";
 }
 

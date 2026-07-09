@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { Loader2, Search } from "lucide-react";
+import { api } from "../../../../convex/_generated/api";
 import { DARK } from "@/lib/colors";
 import { EmptyState } from "@/components/layouts";
 import AtlasCanvas, { type AtlasHover } from "./AtlasCanvas";
@@ -15,15 +16,37 @@ import {
   type AtlasNode,
   type AtlasOverview,
 } from "./atlasTypes";
-import { atlasOverviewRef } from "./overviewRef";
 
 // The atlas board is a committed dark surface in both app themes — the same
 // deliberate choice the Sidebar makes for its chrome. All tokens come from the
 // canonical DARK palette so it stays in the app's design system.
 const colors = DARK;
 
+/** Matches the server's SNAPSHOT_TTL_MS — younger snapshots render without a
+ * refresh kick (the server would decline the rebuild anyway). */
+const SNAPSHOT_TTL_MS = 5 * 60_000;
+
 export default function AtlasView() {
-  const data = useQuery(atlasOverviewRef, {}) as AtlasOverview | undefined;
+  // The overview is served from a cached snapshot (the org-wide walk outgrew
+  // a single query execution — see convex/knowledge/graphOverview.ts). The
+  // query is reactive: it returns the cached board instantly, and when the
+  // refresh action lands a rebuild, the new snapshot swaps in on its own.
+  const snap = useQuery(api.knowledge.graphOverview.snapshot, {});
+  const refreshAtlas = useAction(api.knowledge.graphOverview.refresh);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // One kick per observed builtAt — never a refresh loop.
+  const kickedForRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (snap === undefined || snap.building) return;
+    const stale = snap.builtAt === null || Date.now() - snap.builtAt > SNAPSHOT_TTL_MS;
+    if (!stale || kickedForRef.current === snap.builtAt) return;
+    kickedForRef.current = snap.builtAt;
+    refreshAtlas({}).catch((e: unknown) => {
+      setRefreshError(e instanceof Error ? e.message : String(e));
+    });
+  }, [snap, refreshAtlas]);
+
+  const data = (snap?.overview ?? undefined) as AtlasOverview | undefined;
 
   const [excluded, setExcluded] = useState<Set<AtlasDisplayType>>(new Set());
   const [contestedOnly, setContestedOnly] = useState(false);
@@ -328,7 +351,7 @@ export default function AtlasView() {
           title="Entities and edges currently on the board · atoms and contested counts are org-wide"
         >
           {data
-            ? `${viewNodes.length} entities · ${viewEdges.length} edges · ${data.counts.atoms} atoms · ${data.counts.contested} contested${contestedInView && !contestedOnly ? ` (${contestedInView} nodes)` : ""}`
+            ? `${viewNodes.length} entities · ${viewEdges.length} edges · ${data.counts.atoms} atoms · ${data.counts.contested} contested${contestedInView && !contestedOnly ? ` (${contestedInView} nodes)` : ""}${snap?.building ? " · refreshing…" : ""}`
             : "loading…"}
         </span>
         {data?.counts.truncated && (
@@ -353,9 +376,23 @@ export default function AtlasView() {
 
       {/* board */}
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
-        {data === undefined ? (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {data === undefined && refreshError ? (
+          // No cached snapshot AND the first build failed — surface it
+          // instead of spinning forever (a stale cached board still renders).
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+            <EmptyState
+              title="Atlas build failed"
+              body={`The snapshot rebuild errored: ${refreshError} — check the Convex logs for knowledge/graphOverview.`}
+            />
+          </div>
+        ) : data === undefined ? (
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center" }}>
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.text.dim }} />
+            {snap !== undefined && (
+              // Query answered but no snapshot exists yet — the first build
+              // is assembling the graph in the background.
+              <span style={{ fontSize: 12, color: colors.text.dim }}>Assembling the atlas…</span>
+            )}
           </div>
         ) : data.counts.nodes === 0 ? (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>

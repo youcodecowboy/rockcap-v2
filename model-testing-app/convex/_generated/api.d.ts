@@ -43,6 +43,7 @@ import type * as documentNotes from "../documentNotes.js";
 import type * as documentPublish from "../documentPublish.js";
 import type * as documents from "../documents.js";
 import type * as driveHydration from "../driveHydration.js";
+import type * as driveMirrorPlacement from "../driveMirrorPlacement.js";
 import type * as driveSync from "../driveSync.js";
 import type * as driveTokens from "../driveTokens.js";
 import type * as driveWriteback from "../driveWriteback.js";
@@ -222,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   documentPublish: typeof documentPublish;
   documents: typeof documents;
   driveHydration: typeof driveHydration;
+  driveMirrorPlacement: typeof driveMirrorPlacement;
   driveSync: typeof driveSync;
   driveTokens: typeof driveTokens;
   driveWriteback: typeof driveWriteback;
