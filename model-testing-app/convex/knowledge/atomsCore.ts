@@ -13,7 +13,7 @@ import {
   PREDICATES,
   FACILITY_SHAPED_PREDICATES,
 } from "./vocabulary";
-import { mintFacilitiesForAtoms } from "./facilities";
+import { mintFacilitiesForAtoms, mergeFacilityInto } from "./facilities";
 import { versionPrecedenceWinner } from "./versionPrecedence";
 import {
   isLenderEdgeSource,
@@ -684,7 +684,7 @@ export type LenderEdgeEmission =
       kind: "emitted";
       lenderClientId: string;
       lenderName: string;
-      via: "name" | "acronym";
+      via: "name" | "acronym" | "stem";
       projectId: string;
       atomId: Id<"atoms">;
       outcome: Outcome["type"];
@@ -711,7 +711,12 @@ export async function loadRosteredLenders(
   const all = await ctx.db.query("clients").collect();
   return all
     .filter((c) => c.type === "lender" && c.isDeleted !== true)
-    .map((c) => ({ clientId: String(c._id), name: c.name }));
+    .map((c) => ({
+      clientId: String(c._id),
+      name: c.name,
+      companyName: c.companyName,
+      aliases: c.aliases,
+    }));
 }
 
 /** Emit (create-or-corroborate) companion funds_project edges for the given
@@ -1370,7 +1375,10 @@ export const repointCandidateAtoms = internalMutation({
 // CRM-BLIND — it never touches CRM tables and never deletes/soft-deletes the
 // `from` entity row. Run the CRM merge (for clients) or remove the duplicate
 // row as a separate step; keeping the source row makes the collapse
-// inspectable.
+// inspectable. EXCEPTION (2026-07): entityType "facility" DOES delete its
+// from-row — a facility has no CRM twin to soft-delete it, and the mint
+// pipeline would otherwise treat the orphan as a live fragment. See the
+// facility branch below.
 //
 // Denormalized knowledge-side refs the subject/object re-point does NOT catch
 // are re-scoped too: atoms.clientId/projectId (owning scope), the facilities
@@ -1549,8 +1557,25 @@ export const mergeEntities = internalMutation({
         await ctx.db.patch(f._id, { lenderCompanyId: to });
         scope.facilitiesRescoped++;
       }
+    } else if (entityType === "facility") {
+      // Collapse a DUPLICATE/fragment facility (2026-07). Step 1 already
+      // repointed atom subject/object refs from→to; now complete the row-level
+      // merge: fill missing mirror columns on the target, take the higher-
+      // ranked lifecycle status (never downgrade), recompute the target's
+      // dedupeKey under the tranche-enum scheme, DELETE the orphaned from-row,
+      // and rematerialize the target. Unlike the client/project/company cases
+      // (which keep the source row for the separate CRM merge to soft-delete),
+      // a facility has no CRM twin — leaving it would strand an empty row — so
+      // this branch is the exception to the "never deletes the from row" rule
+      // above.
+      await mergeFacilityInto(
+        ctx,
+        fromId as Id<"facilities">,
+        toId as Id<"facilities">,
+      );
+      scope.facilitiesRescoped++;
     }
-    // contact / facility: atoms are the only knowledge-side references.
+    // contact: atoms are the only knowledge-side references.
 
     await writeAudit(counts, scope);
     console.log(
@@ -1927,7 +1952,7 @@ type BackfillReport = {
     statement: string;
     lenderName: string;
     lenderClientId: string;
-    via: "name" | "acronym";
+    via: "name" | "acronym" | "stem";
     projectId: string;
     projectName: string | null;
   }>;

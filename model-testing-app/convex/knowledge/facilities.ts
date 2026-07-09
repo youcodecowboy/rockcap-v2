@@ -43,9 +43,186 @@ function numericValue(value: unknown): number | null {
   return null;
 }
 
-function normalizeTranche(qualifier: string | undefined): string | undefined {
-  const t = qualifier?.trim().toLowerCase();
-  return t === "" ? undefined : t;
+// ── Tranche enum (2026-07 lender-DB hardening) ──
+// `qualifier` is free text on the atom — agents put variant descriptors there
+// ("indicative terms 2026-07-02", "0.75% fee variant"), which the previous
+// lowercase-only normalizer turned into DISTINCT dedupeKeys, minting one
+// facility per quote revision (Allica Bank: 8 rows on one project). The
+// tranche axis of a facility's identity is a CLOSED enum — senior / mezzanine
+// / bridge / equity — so anything that is not one of those (with two accepted
+// spelling aliases) collapses to `undefined`, and the dedupeKey falls back to
+// `"single"`. Successive quote revisions on the same project+lender now hit
+// ONE facility row.
+const TRANCHE_ENUM = new Set(["senior", "mezzanine", "bridge", "equity"]);
+
+export function normalizeTranche(qualifier: string | undefined): string | undefined {
+  let t = qualifier?.trim().toLowerCase();
+  if (!t) return undefined;
+  if (t === "mezz") t = "mezzanine";
+  else if (t === "bridging") t = "bridge";
+  return TRANCHE_ENUM.has(t) ? t : undefined;
+}
+
+// ── Facility lifecycle status (2026-07) ──
+// Stamped at mint/attach time from the triggering atom's source document.
+// Rank encodes the lifecycle order so status is NEVER DOWNGRADED: once a
+// facility is "live" (an executed agreement was seen), a later indicative doc
+// (a fresh term sheet / quote) must not reset it to "indicative".
+const FACILITY_STATUS_RANK: Record<string, number> = {
+  indicative: 1,
+  live: 2,
+  repaid: 3,
+  defaulted: 3,
+};
+
+function facilityStatusRank(status: string | undefined): number {
+  return status ? (FACILITY_STATUS_RANK[status] ?? 0) : 0;
+}
+
+/** Map a source-document descriptor (fileTypeDetected / fileName) to a
+ * facility lifecycle status. Case-insensitive. Executed-agreement phrases are
+ * checked FIRST so "facility agreement" resolves to "live" rather than being
+ * mistaken for an indicative "facility letter"-style doc. Unknown → undefined
+ * (leave the column unset). */
+export function statusFromDocDescriptor(
+  descriptor: string,
+): "indicative" | "live" | undefined {
+  const d = descriptor.toLowerCase();
+  if (/facility agreement|loan agreement|facility letter|completion/.test(d)) {
+    return "live";
+  }
+  if (
+    /term sheet|heads of terms|\bhots?\b|\bdip\b|decision in principle|agreement in principle|indicative|\bquote\b/.test(
+      d,
+    )
+  ) {
+    return "indicative";
+  }
+  return undefined;
+}
+
+/** Resolve the lifecycle status implied by the atom that triggered a
+ * mint/attach: find a document-sourced observation, read the document's
+ * detected type + filename, and map it. Returns undefined when there is no
+ * document source or the descriptor is unrecognised. */
+async function statusFromAtom(
+  ctx: MutationCtx,
+  atom: Doc<"atoms">,
+): Promise<"indicative" | "live" | undefined> {
+  const observations = await ctx.db
+    .query("atomObservations")
+    .withIndex("by_atom", (q) => q.eq("atomId", atom._id))
+    .collect();
+  const docObs = observations.find((o) => o.documentId);
+  if (!docObs?.documentId) return undefined;
+  const doc = await ctx.db.get(docObs.documentId);
+  if (!doc) return undefined;
+  return statusFromDocDescriptor(
+    `${doc.fileTypeDetected ?? ""} ${doc.fileName ?? ""}`,
+  );
+}
+
+/** Apply a proposed status to a facility, honouring the never-downgrade rule.
+ * No-op when the proposal is undefined or ranks no higher than the current
+ * value. */
+async function applyFacilityStatus(
+  ctx: MutationCtx,
+  facilityId: Id<"facilities">,
+  proposed: "indicative" | "live" | undefined,
+): Promise<void> {
+  if (!proposed) return;
+  const facility = await ctx.db.get(facilityId);
+  if (!facility) return;
+  if (facilityStatusRank(proposed) > facilityStatusRank(facility.status)) {
+    await ctx.db.patch(facilityId, { status: proposed });
+  }
+}
+
+/** dedupeKey for a facility under the CURRENT normalized-tranche scheme. The
+ * stored `tranche` is re-normalized so a row minted before the enum change
+ * (free-text tranche) recomputes to its enum/`single` bucket. Returns both the
+ * normalized tranche and the key so callers can patch the row coherently. */
+export function recomputeFacilityDedupeKey(
+  facility: Pick<
+    Doc<"facilities">,
+    "projectId" | "lenderClientId" | "lenderCompanyId" | "tranche"
+  >,
+): { tranche: string | undefined; dedupeKey: string } {
+  const tranche = normalizeTranche(facility.tranche);
+  const lenderKey = facility.lenderClientId ?? facility.lenderCompanyId;
+  return {
+    tranche,
+    dedupeKey: `${facility.projectId}:${lenderKey}:${tranche ?? "single"}`,
+  };
+}
+
+const FACILITY_MIRROR_COLUMNS = [
+  "lenderClientId",
+  "lenderCompanyId",
+  "borrowerClientId",
+  "amountGBP",
+  "interestRate",
+  "maturityDate",
+  "securitySummary",
+] as const;
+
+/** Complete the collapse of a duplicate/fragment facility into `toId`: repoint
+ * any atoms still pointing at the from-row (a no-op when the caller already ran
+ * the atom-identity repoint — e.g. mergeEntities step 1), fill missing mirror
+ * columns on the target, take the higher-ranked status (never downgrade),
+ * recompute the target's dedupeKey under the enum scheme, DELETE the from-row,
+ * and rematerialize the target from active atoms. Idempotent: a missing
+ * from/to row short-circuits. */
+export async function mergeFacilityInto(
+  ctx: MutationCtx,
+  fromId: Id<"facilities">,
+  toId: Id<"facilities">,
+): Promise<void> {
+  if (fromId === toId) return;
+  const from = await ctx.db.get(fromId);
+  const to = await ctx.db.get(toId);
+  if (!from || !to) return;
+
+  // Repoint any atoms whose subject/object is still the from-facility. When
+  // invoked from mergeEntities (after repointAndMergeAtoms) these queries are
+  // empty; when invoked directly (auditFragmentation) they do the repoint.
+  const subjectAtoms = await ctx.db
+    .query("atoms")
+    .withIndex("by_subject", (q) =>
+      q.eq("subjectType", "facility").eq("subjectId", fromId as string),
+    )
+    .collect();
+  for (const a of subjectAtoms) {
+    await ctx.db.patch(a._id, { subjectId: toId as string });
+  }
+  const objectAtoms = await ctx.db
+    .query("atoms")
+    .withIndex("by_object", (q) =>
+      q.eq("objectEntityType", "facility").eq("objectEntityId", fromId as string),
+    )
+    .collect();
+  for (const a of objectAtoms) {
+    await ctx.db.patch(a._id, { objectEntityId: toId as string });
+  }
+
+  const patch: Partial<Doc<"facilities">> = {};
+  for (const col of FACILITY_MIRROR_COLUMNS) {
+    if (to[col] === undefined && from[col] !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (patch as any)[col] = from[col];
+    }
+  }
+  if (facilityStatusRank(from.status) > facilityStatusRank(to.status)) {
+    patch.status = from.status;
+  }
+  const merged = { ...to, ...patch };
+  const { tranche, dedupeKey } = recomputeFacilityDedupeKey(merged);
+  patch.tranche = tranche;
+  patch.dedupeKey = dedupeKey;
+
+  await ctx.db.patch(toId, patch);
+  await ctx.db.delete(fromId);
+  await rematerializeFacility(ctx, toId);
 }
 
 /** Winning atom for a materialized column: highest confidence, then most
@@ -59,13 +236,23 @@ function pickWinner(atoms: Doc<"atoms">[]): Doc<"atoms"> | undefined {
   )[0];
 }
 
-/** Active atoms carrying `predicate` that belong to this facility: subject
- * IS the facility, or scoped to its project with a matching tranche
- * qualifier. */
-async function facilityAtomsForPredicate(
+/** All active atoms that belong to this facility: subject IS the facility,
+ * or owned by its project with a matching tranche qualifier. Loaded ONCE per
+ * rebuild and shared by every materialized column.
+ *
+ * BYTE-READ LIMIT (2026-07 live wave): the previous implementation ran a
+ * per-predicate `.withIndex("by_predicate")` collect — every active
+ * `has_loan_amount` / `has_interest_rate` / … atom in the ENTIRE database
+ * (all clients, all projects), filtered to the project in JS, four times per
+ * facility. An 11-atom financing createBatch rebuilding a handful of
+ * facilities blew Convex's per-transaction byte-read cap (the agent had to
+ * resubmit in 4-atom chunks). Both reads are now index-bounded to the
+ * facility itself (`by_subject`) and its own project (`by_project`), so the
+ * read volume scales with one project's atoms, not the corpus — a 100-atom
+ * batch stays within the transaction budget. */
+async function loadFacilityAtoms(
   ctx: MutationCtx,
   facility: Doc<"facilities">,
-  predicate: string,
 ): Promise<Doc<"atoms">[]> {
   const bySubject = (
     await ctx.db
@@ -77,23 +264,22 @@ async function facilityAtomsForPredicate(
           .eq("status", "active"),
       )
       .collect()
-  ).filter((a) => a.predicate === predicate);
+  ).filter((a) => FACILITY_SHAPED_PREDICATES.has(a.predicate));
 
-  const byPredicate = (
+  const byProject = (
     await ctx.db
       .query("atoms")
-      .withIndex("by_predicate", (q) =>
-        q.eq("predicate", predicate).eq("status", "active"),
-      )
+      .withIndex("by_project", (q) => q.eq("projectId", facility.projectId))
       .collect()
   ).filter(
     (a) =>
-      a.projectId === facility.projectId &&
+      a.status === "active" &&
+      FACILITY_SHAPED_PREDICATES.has(a.predicate) &&
       (normalizeTranche(a.qualifier) ?? null) === (facility.tranche ?? null) &&
       a.subjectType !== "facility", // already covered above
   );
 
-  return [...bySubject, ...byPredicate];
+  return [...bySubject, ...byProject];
 }
 
 /** Re-materialize a facility's term columns from active atoms (spec §3.3:
@@ -111,32 +297,28 @@ export async function rematerializeFacility(
     lastRebuiltAt: new Date().toISOString(),
   };
 
-  const amount = pickWinner(
-    await facilityAtomsForPredicate(ctx, facility, "has_loan_amount"),
-  );
+  const atoms = await loadFacilityAtoms(ctx, facility);
+  const forPredicate = (predicate: string) =>
+    atoms.filter((a) => a.predicate === predicate);
+
+  const amount = pickWinner(forPredicate("has_loan_amount"));
   const amountValue = amount && numericValue(amount.objectLiteral?.value);
   if (amountValue !== null && amountValue !== undefined) {
     patch.amountGBP = amountValue;
   }
 
-  const rate = pickWinner(
-    await facilityAtomsForPredicate(ctx, facility, "has_interest_rate"),
-  );
+  const rate = pickWinner(forPredicate("has_interest_rate"));
   const rateValue = rate && numericValue(rate.objectLiteral?.value);
   if (rateValue !== null && rateValue !== undefined) {
     patch.interestRate = rateValue;
   }
 
-  const maturity = pickWinner(
-    await facilityAtomsForPredicate(ctx, facility, "matures_on"),
-  );
+  const maturity = pickWinner(forPredicate("matures_on"));
   if (maturity?.objectLiteral?.value !== undefined) {
     patch.maturityDate = String(maturity.objectLiteral.value);
   }
 
-  const security = pickWinner(
-    await facilityAtomsForPredicate(ctx, facility, "granted_security_over"),
-  );
+  const security = pickWinner(forPredicate("granted_security_over"));
   if (security) {
     patch.securitySummary = security.statement;
   }
@@ -166,6 +348,22 @@ export async function mintFacilitiesForAtoms(
   const result: MintResult = { minted: [], rebuilt: [], skipped: [] };
   const toRebuild = new Set<Id<"facilities">>();
 
+  // Highest-ranked lifecycle status proposed by any triggering atom, per
+  // facility. Resolved from each atom's source document (see statusFromAtom)
+  // and applied AFTER the rebuild loop, honouring never-downgrade.
+  const statusProposals = new Map<Id<"facilities">, "indicative" | "live">();
+  const proposeStatus = async (
+    facilityId: Id<"facilities">,
+    atom: Doc<"atoms">,
+  ) => {
+    const proposed = await statusFromAtom(ctx, atom);
+    if (!proposed) return;
+    const prev = statusProposals.get(facilityId);
+    if (!prev || facilityStatusRank(proposed) > facilityStatusRank(prev)) {
+      statusProposals.set(facilityId, proposed);
+    }
+  };
+
   for (const atom of atoms) {
     if (!FACILITY_SHAPED_PREDICATES.has(atom.predicate)) continue;
     const tranche = normalizeTranche(atom.qualifier);
@@ -175,6 +373,7 @@ export async function mintFacilitiesForAtoms(
       const facilityId = ctx.db.normalizeId("facilities", atom.subjectId);
       if (facilityId && (await ctx.db.get(facilityId))) {
         toRebuild.add(facilityId);
+        await proposeStatus(facilityId, atom);
       } else {
         result.skipped.push({ atomId: atom._id, reason: "facility_subject_missing" });
       }
@@ -211,6 +410,7 @@ export async function mintFacilitiesForAtoms(
         .unique();
       if (existing) {
         toRebuild.add(existing._id);
+        await proposeStatus(existing._id, atom);
       } else {
         const facilityId = await ctx.db.insert("facilities", {
           projectId,
@@ -224,8 +424,10 @@ export async function mintFacilitiesForAtoms(
         });
         result.minted.push(facilityId);
         toRebuild.add(facilityId);
+        await proposeStatus(facilityId, atom);
         if (lenderClientId) {
           // Native edge write-back (spec §3.3): idempotent, sessionless.
+          // @ts-ignore - TypeScript has issues with deep type instantiation for Convex scheduler
           await ctx.scheduler.runAfter(0, api.projects.addLenderRole, {
             projectId,
             clientId: lenderClientId,
@@ -250,6 +452,7 @@ export async function mintFacilitiesForAtoms(
     );
     if (matching.length === 1) {
       toRebuild.add(matching[0]._id);
+      await proposeStatus(matching[0]._id, atom);
     } else {
       result.skipped.push({
         atomId: atom._id,
@@ -266,6 +469,11 @@ export async function mintFacilitiesForAtoms(
     if (!result.minted.includes(facilityId)) {
       result.rebuilt.push(facilityId);
     }
+  }
+  // Stamp lifecycle status after materialization (never-downgrade enforced in
+  // applyFacilityStatus).
+  for (const [facilityId, proposed] of statusProposals) {
+    await applyFacilityStatus(ctx, facilityId, proposed);
   }
   return result;
 }
@@ -289,5 +497,124 @@ export const rebuildFacility = internalMutation({
   handler: async (ctx, args) => {
     await rematerializeFacility(ctx, args.facilityId);
     return { ok: true as const, facilityId: args.facilityId };
+  },
+});
+
+// ── Fragmentation audit (2026-07 lender-DB hardening) ──
+//
+// Before the tranche-enum change, free-text `qualifier` descriptors minted a
+// fresh facility per quote revision (Allica Bank: 8 rows on one project). This
+// finds the fragments left behind: facilities that share projectId + lender +
+// normalized tranche (i.e. the SAME identity under the enum scheme) but live
+// in more than one row. Dry-run (default) reports the clusters and a suggested
+// canonical row; `execute: true` collapses each fragment into the canonical
+// via the same row-merge primitive `mergeEntities` uses (mergeFacilityInto),
+// which fills mirrors, recomputes the dedupeKey, deletes the fragment, and
+// rematerializes. Scope to one project with `projectId`, or audit the whole
+// corpus. Groups with no resolvable lender key (external, unrostered) are
+// EXCLUDED — without a lender identity two rows can't be confirmed duplicates.
+export const auditFragmentation = internalMutation({
+  args: {
+    projectId: v.optional(v.id("projects")),
+    execute: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const execute = args.execute === true;
+    const facilities = args.projectId
+      ? await ctx.db
+          .query("facilities")
+          .withIndex("by_project", (q) => q.eq("projectId", args.projectId!))
+          .collect()
+      : await ctx.db.query("facilities").collect();
+
+    // Cluster key = projectId + lenderKey + normalized tranche. Rows sharing a
+    // key are fragments of one facility; distinct enum tranches (senior vs
+    // mezzanine) land in different keys and are left untouched.
+    const groups = new Map<string, Doc<"facilities">[]>();
+    for (const f of facilities) {
+      const lenderKey = f.lenderClientId ?? f.lenderCompanyId;
+      if (!lenderKey) continue; // external/unrostered — can't confirm duplicate
+      const tranche = normalizeTranche(f.tranche) ?? "single";
+      const key = `${f.projectId}::${lenderKey}::${tranche}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(f);
+      groups.set(key, arr);
+    }
+
+    const subjectAtomCount = async (id: Id<"facilities">): Promise<number> =>
+      (
+        await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) =>
+            q.eq("subjectType", "facility").eq("subjectId", id as string),
+          )
+          .collect()
+      ).length;
+    const mirrorRichness = (f: Doc<"facilities">): number =>
+      FACILITY_MIRROR_COLUMNS.filter((c) => f[c] !== undefined).length +
+      (f.status ? 1 : 0);
+
+    const fragmentGroups: Array<{
+      projectId: Id<"projects">;
+      lenderClientId?: Id<"clients">;
+      lenderCompanyId?: Id<"companiesHouseCompanies">;
+      tranche: string | null;
+      canonicalId: Id<"facilities">;
+      rows: Array<{
+        id: Id<"facilities">;
+        tranche: string | null;
+        amountGBP: number | null;
+        status: string | null;
+        atomCount: number;
+      }>;
+    }> = [];
+    let fragmentsMerged = 0;
+
+    for (const rows of groups.values()) {
+      if (rows.length < 2) continue;
+      const enriched = [];
+      for (const f of rows) {
+        enriched.push({
+          f,
+          atoms: await subjectAtomCount(f._id),
+          richness: mirrorRichness(f),
+        });
+      }
+      // Canonical = most attached atoms, then richest mirrors, then oldest row.
+      enriched.sort(
+        (a, b) =>
+          b.atoms - a.atoms ||
+          b.richness - a.richness ||
+          a.f._creationTime - b.f._creationTime,
+      );
+      const canonical = enriched[0];
+      fragmentGroups.push({
+        projectId: canonical.f.projectId,
+        lenderClientId: canonical.f.lenderClientId,
+        lenderCompanyId: canonical.f.lenderCompanyId,
+        tranche: normalizeTranche(canonical.f.tranche) ?? null,
+        canonicalId: canonical.f._id,
+        rows: enriched.map((e) => ({
+          id: e.f._id,
+          tranche: e.f.tranche ?? null,
+          amountGBP: e.f.amountGBP ?? null,
+          status: e.f.status ?? null,
+          atomCount: e.atoms,
+        })),
+      });
+      if (execute) {
+        for (const frag of enriched.slice(1)) {
+          await mergeFacilityInto(ctx, frag.f._id, canonical.f._id);
+          fragmentsMerged++;
+        }
+      }
+    }
+
+    return {
+      dryRun: !execute,
+      groupsWithFragmentation: fragmentGroups.length,
+      fragmentsMerged,
+      fragmentGroups,
+    };
   },
 });

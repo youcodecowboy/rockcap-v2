@@ -10,9 +10,16 @@ import mammoth from 'mammoth';
 // vision model (image, or a scanned/image-only PDF). The extract-text route
 // switches on this to run the multimodal fallback instead of failing. `pages`
 // is carried through for the PDF page-count cap when known.
+//
+// `no_text` (kind 'media') is terminal: video/audio bytes have no text layer
+// AND must not be fed to vision — the extract-text route 422s with a clear
+// "media file" message instead. Added after a 2026-07 live-wave .mp4 fell
+// through to the read-as-text default and came back as ~900K chars of raw
+// container bytes.
 export type TextExtractionResult =
   | { status: 'text'; text: string }
-  | { status: 'needs_vision'; kind: 'image' | 'pdf'; reason: string; pages?: number };
+  | { status: 'needs_vision'; kind: 'image' | 'pdf'; reason: string; pages?: number }
+  | { status: 'no_text'; kind: 'media'; reason: string };
 
 /**
  * Extract text with a typed signal for the images / textless-PDF cases.
@@ -206,6 +213,23 @@ export async function extractTextFromFileEx(file: File): Promise<TextExtractionR
     return { status: 'needs_vision', kind: 'image', reason: 'image file has no text layer' };
   }
 
+  // Video / audio: no text layer AND no vision path — return a terminal
+  // no_text signal so the extract-text route 422s with a clear "media file"
+  // message. Without this guard a .mp4 falls through to the read-as-text
+  // default below and returns ~900K chars of raw container bytes (2026-07
+  // live wave). Matched by MIME prefix or by a known media extension.
+  if (
+    fileType.startsWith('video/') ||
+    fileType.startsWith('audio/') ||
+    /\.(mp4|m4v|mov|avi|mkv|webm|wmv|flv|mpe?g|3gp|mp3|wav|m4a|aac|flac|ogg|oga|opus|aiff?)$/i.test(fileName)
+  ) {
+    return {
+      status: 'no_text',
+      kind: 'media',
+      reason: `media file (${fileType || fileName}) has no text layer and cannot be transcribed by vision`,
+    };
+  }
+
   // Default: try to read as text
   try {
     return { status: 'text', text: await file.text() };
@@ -224,7 +248,7 @@ export async function extractTextFromFileEx(file: File): Promise<TextExtractionR
 export async function extractTextFromFile(file: File): Promise<string> {
   const result = await extractTextFromFileEx(file);
   if (result.status === 'text') return result.text;
-  if (result.kind === 'image') return '';
+  if (result.status === 'needs_vision' && result.kind === 'image') return '';
   throw new Error(result.reason);
 }
 

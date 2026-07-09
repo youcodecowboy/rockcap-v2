@@ -4,7 +4,9 @@ import {
   coreLenderName,
   isLenderEdgeSource,
   lenderAcronym,
+  lenderBrandStem,
   matchRosteredLenders,
+  normalizeLenderName,
   type RosteredLender,
 } from "./lenderMatch";
 
@@ -128,6 +130,164 @@ describe("matchRosteredLenders — ambiguity is surfaced, never guessed", () => 
   });
 });
 
+describe("matchRosteredLenders — self-ambiguity dedup (2026-07 wave regression)", () => {
+  it("one client row matching via name AND companyName is a SINGLE match", () => {
+    // Live wave: "Funding 365" matched itself twice (name + companyName) and
+    // was skipped as ambiguous. Dedup by clientId must collapse it.
+    const roster: RosteredLender[] = [
+      {
+        clientId: "funding365",
+        name: "Funding 365",
+        companyName: "Funding 365 Ltd",
+      },
+    ];
+    const hits = matchRosteredLenders(
+      "Funding 365 Ltd issued indicative terms at 65% LTGDV.",
+      roster,
+    );
+    expect(hits).toEqual([
+      {
+        clientId: "funding365",
+        name: "Funding 365",
+        companyName: "Funding 365 Ltd",
+        via: "name",
+      },
+    ]);
+  });
+
+  it("one client row matching via name AND acronym is a SINGLE match", () => {
+    const roster: RosteredLender[] = [
+      {
+        clientId: "utb",
+        name: "United Trust Bank",
+        companyName: "UTB Partners Group",
+      },
+    ];
+    const hits = matchRosteredLenders(
+      "United Trust Bank (UTB) issued indicative terms.",
+      roster,
+    );
+    expect(hits.map((h) => h.clientId)).toEqual(["utb"]);
+    expect(hits[0].via).toBe("name");
+  });
+
+  it("two DISTINCT lender clients are still ambiguous (2 hits)", () => {
+    const roster: RosteredLender[] = [
+      { clientId: "funding365", name: "Funding 365" },
+      { clientId: "downing", name: "Downing LLP" },
+    ];
+    const hits = matchRosteredLenders(
+      "Funding 365 and Downing both issued indicative terms.",
+      roster,
+    );
+    expect(hits.map((h) => h.clientId).sort()).toEqual([
+      "downing",
+      "funding365",
+    ]);
+  });
+
+  it("the same clientId appearing twice in the roster still yields one match", () => {
+    const roster: RosteredLender[] = [
+      { clientId: "funding365", name: "Funding 365" },
+      { clientId: "funding365", name: "Funding 365 Ltd" },
+    ];
+    const hits = matchRosteredLenders(
+      "Funding 365 issued indicative terms.",
+      roster,
+    );
+    expect(hits.map((h) => h.clientId)).toEqual(["funding365"]);
+  });
+});
+
+describe("matchRosteredLenders — brand-stem aliases (2026-07 wave misses)", () => {
+  it("'Allica Bridging Finance' in text matches roster 'Allica Bank' via stem", () => {
+    const hits = matchRosteredLenders(
+      "Allica Bridging Finance issued indicative terms on the scheme.",
+      [{ clientId: "allica", name: "Allica Bank" }],
+    );
+    expect(hits).toEqual([
+      { clientId: "allica", name: "Allica Bank", via: "stem" },
+    ]);
+  });
+
+  it("bare 'Pivot' in text matches roster 'Pivot Finance' via stem", () => {
+    const hits = matchRosteredLenders(
+      "Pivot confirmed appetite for the senior facility.",
+      [{ clientId: "pivot", name: "Pivot Finance" }],
+    );
+    expect(hits).toEqual([
+      { clientId: "pivot", name: "Pivot Finance", via: "stem" },
+    ]);
+  });
+
+  it("'Downing' matches a Downing lender whose roster name carries generic words", () => {
+    const hits = matchRosteredLenders(
+      "Downing's indicative facility runs 24 months.",
+      [{ clientId: "downing", name: "Downing Development Finance" }],
+    );
+    expect(hits.map((h) => h.clientId)).toEqual(["downing"]);
+    expect(hits[0].via).toBe("stem");
+  });
+
+  it("a short single-word stem never fires ('West Bank' ↛ bare 'West')", () => {
+    expect(
+      matchRosteredLenders(
+        "The West elevation overlooks the courtyard.",
+        [{ clientId: "west", name: "West Bank" }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("a lowercase common-noun hit never fires a stem ('the quantum of the claim')", () => {
+    expect(
+      matchRosteredLenders(
+        "The parties agreed the quantum of the claim at mediation.",
+        [{ clientId: "quantum", name: "Quantum Development Finance Ltd" }],
+      ),
+    ).toEqual([]);
+    expect(
+      matchRosteredLenders("We should pivot the exit strategy to sales.", [
+        { clientId: "pivot", name: "Pivot Finance" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("proper-noun stem hits still fire, including ALL-CAPS term-sheet headers", () => {
+    expect(
+      matchRosteredLenders("Quantum issued a revised facility letter.", [
+        { clientId: "quantum", name: "Quantum Development Finance Ltd" },
+      ]).map((h) => h.via),
+    ).toEqual(["stem"]);
+    expect(
+      matchRosteredLenders("INDICATIVE TERMS — PIVOT — STRICTLY PRIVATE", [
+        { clientId: "pivot", name: "Pivot Finance" },
+      ]).map((h) => h.via),
+    ).toEqual(["stem"]);
+  });
+
+  it("a stem match on two distinct lenders is ambiguous (caller skips)", () => {
+    const hits = matchRosteredLenders(
+      "Allica issued revised terms on Friday.",
+      [
+        { clientId: "allica-bank", name: "Allica Bank" },
+        { clientId: "allica-cap", name: "Allica Capital" },
+      ],
+    );
+    expect(hits.map((h) => h.clientId).sort()).toEqual([
+      "allica-bank",
+      "allica-cap",
+    ]);
+  });
+
+  it("full-name matches still take precedence over stems", () => {
+    const hits = matchRosteredLenders(
+      "Allica Bank issued indicative terms.",
+      [{ clientId: "allica", name: "Allica Bank" }],
+    );
+    expect(hits[0].via).toBe("name");
+  });
+});
+
 describe("matchRosteredLenders — negatives", () => {
   it("borrower-side names never match (only rostered lenders are candidates)", () => {
     expect(
@@ -195,5 +355,51 @@ describe("name helpers", () => {
     // "QDF Funding 2 Ltd" → only two letter-words ("QDF", "Funding") → null,
     // so the bare token "QDF" can only mean Quantum Development Finance.
     expect(lenderAcronym("QDF Funding 2 Ltd")).toBeNull();
+  });
+
+  it("lenderBrandStem strips generic finance words, conservatively", () => {
+    expect(lenderBrandStem("Allica Bank")).toBe("Allica");
+    expect(lenderBrandStem("Pivot Finance")).toBe("Pivot");
+    expect(lenderBrandStem("Downing Development Finance")).toBe("Downing");
+    // Short single-word stems never fire.
+    expect(lenderBrandStem("West Bank")).toBeNull();
+    // Nothing stripped → null (the full-name rule already covers it).
+    expect(lenderBrandStem("Triple Point")).toBeNull();
+    // All words generic → null.
+    expect(lenderBrandStem("Development Finance Group Ltd")).toBeNull();
+    // Multi-word stems are allowed regardless of word length.
+    expect(lenderBrandStem("Hampshire Trust Bank")).toBe("Hampshire Trust");
+  });
+});
+
+describe("normalizeLenderName — lender.create dedup key (equality only)", () => {
+  it("lowercases, strips punctuation, collapses whitespace", () => {
+    expect(normalizeLenderName("  Funding 365  ")).toBe("funding 365");
+    expect(normalizeLenderName("Maslow, Capital.")).toBe("maslow capital");
+    expect(normalizeLenderName("O'Brien Finance")).toBe("o brien finance");
+  });
+
+  it("drops trailing legal suffixes so suffix variants collapse", () => {
+    expect(normalizeLenderName("Downing LLP")).toBe(normalizeLenderName("Downing"));
+    expect(normalizeLenderName("Funding 365 Ltd")).toBe("funding 365");
+    expect(normalizeLenderName("Shawbrook Bank PLC")).toBe("shawbrook bank");
+    expect(normalizeLenderName("Acme Inc")).toBe("acme");
+  });
+
+  it("real duplicate pairs from the roster key equal", () => {
+    expect(normalizeLenderName("Funding 365")).toBe(normalizeLenderName("Funding 365 Limited"));
+    expect(normalizeLenderName("Maslow Capital")).toBe(normalizeLenderName("Maslow Capital LLP"));
+  });
+
+  it("does NOT collapse distinct brands (equality, never fuzzy/substring)", () => {
+    // Sector words are NOT stripped here — Paragon vs Paragon Bank stay
+    // distinct; that judgement is left to the operator via lender.merge.
+    expect(normalizeLenderName("Paragon")).not.toBe(normalizeLenderName("Paragon Bank"));
+    expect(normalizeLenderName("Downing")).not.toBe(normalizeLenderName("Downing Development Finance"));
+  });
+
+  it("never strips the sole word away", () => {
+    expect(normalizeLenderName("Limited")).toBe("limited");
+    expect(normalizeLenderName("LLP")).toBe("llp");
   });
 });

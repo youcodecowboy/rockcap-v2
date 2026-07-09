@@ -2,9 +2,10 @@ import { v } from "convex/values";
 import { anyApi } from "convex/server";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 import { backfillContactClientLinks } from "./contacts";
 import { INTEL_STALE_DAYS } from "./lib/pipelineStages";
+import { normalizeLenderName } from "./knowledge/lenderMatch";
 
 // Query: Get all clients
 export const list = query({
@@ -272,6 +273,294 @@ export const create = mutation({
     await bootstrapNewClient(ctx, clientId, args.type);
 
     return clientId;
+  },
+});
+
+// ── Lender upsert (2026-07 lender-DB hardening) ──
+//
+// Naked lender creation used to be a blind insert, so the roster grew
+// duplicates (Funding 365 ×2, Maslow Capital ×2, Downing vs Downing LLP). This
+// runs a CONSERVATIVE normalized-name match (normalizeLenderName: lowercase,
+// strip punctuation, drop trailing legal suffixes — equality only, never
+// fuzzy) across every existing type="lender" row's name / companyName /
+// aliases before inserting. On a match it UPSERTS: appends a dated provenance
+// line to notes, unions aliases (incl. the incoming name/companyName as
+// aliases so later variants resolve), unions sourceDocumentIds, and fills any
+// missing website / companyName / country — then returns the existing id with
+// deduped:true. No match → a fresh lender row carrying aliases +
+// sourceDocumentIds. Atomic (single transaction) so concurrent waves can't
+// both insert. Called by the MCP lender.create tool (naked mode).
+export const upsertLender = mutation({
+  args: {
+    name: v.string(),
+    companyName: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    website: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    country: v.optional(v.string()),
+    aliases: v.optional(v.array(v.string())),
+    sourceDocumentIds: v.optional(v.array(v.id("documents"))),
+  },
+  handler: async (ctx, args) => {
+    const normKeys = (names: (string | undefined)[]): Set<string> => {
+      const s = new Set<string>();
+      for (const n of names) {
+        if (!n || !n.trim()) continue;
+        const k = normalizeLenderName(n);
+        if (k) s.add(k);
+      }
+      return s;
+    };
+
+    const incomingKeys = normKeys([
+      args.name,
+      args.companyName,
+      ...(args.aliases ?? []),
+    ]);
+
+    const existingLenders = (
+      await ctx.db
+        .query("clients")
+        .withIndex("by_type", (q) => q.eq("type", "lender"))
+        .collect()
+    ).filter((c) => c.isDeleted !== true);
+
+    let match: Doc<"clients"> | null = null;
+    for (const c of existingLenders) {
+      const keys = normKeys([c.name, c.companyName, ...(c.aliases ?? [])]);
+      if ([...incomingKeys].some((k) => keys.has(k))) {
+        match = c;
+        break;
+      }
+    }
+
+    const uniq = (arr: string[]): string[] => [...new Set(arr)];
+
+    if (match) {
+      // Union aliases: existing + incoming aliases + incoming name/companyName
+      // (as recognisable variants), minus the row's own canonical name.
+      const canonical = normalizeLenderName(match.name);
+      const mergedAliases = uniq([
+        ...(match.aliases ?? []),
+        ...(args.aliases ?? []),
+        ...[args.name, args.companyName].filter(
+          (n): n is string =>
+            !!n && n.trim() !== "" && normalizeLenderName(n) !== canonical,
+        ),
+      ]);
+      const mergedSourceDocs = uniq([
+        ...((match.sourceDocumentIds as string[] | undefined) ?? []),
+        ...((args.sourceDocumentIds as string[] | undefined) ?? []),
+      ]) as Id<"documents">[];
+      const today = new Date().toISOString().slice(0, 10);
+      const docNote = args.sourceDocumentIds?.length
+        ? ` (+${args.sourceDocumentIds.length} source doc${args.sourceDocumentIds.length === 1 ? "" : "s"})`
+        : "";
+      const dedupLine = `[${today}] lender.create dedup: matched incoming "${args.name}"${docNote}`;
+
+      const patch: Partial<Doc<"clients">> = {
+        aliases: mergedAliases,
+        sourceDocumentIds: mergedSourceDocs,
+        notes: [match.notes, dedupLine].filter((s) => !!s && s !== "").join("\n"),
+      };
+      if (!match.website && args.website) patch.website = args.website;
+      if (!match.companyName && args.companyName) patch.companyName = args.companyName;
+      if (!match.country && args.country) patch.country = args.country;
+      await ctx.db.patch(match._id, patch);
+
+      return {
+        deduped: true as const,
+        lenderClientId: match._id,
+        matchedName: match.name,
+      };
+    }
+
+    const clientId = await ctx.db.insert("clients", {
+      name: args.name,
+      type: "lender",
+      status: "active" as const,
+      companyName: args.companyName,
+      notes: args.notes,
+      website: args.website,
+      email: args.email,
+      phone: args.phone,
+      country: args.country ?? "United Kingdom",
+      source: "manual" as const,
+      aliases: args.aliases,
+      sourceDocumentIds: args.sourceDocumentIds,
+      createdAt: new Date().toISOString(),
+    });
+    await bootstrapNewClient(ctx, clientId, "lender");
+
+    return { deduped: false as const, lenderClientId: clientId };
+  },
+});
+
+// ── Lender merge (2026-07 lender-DB hardening) ──
+//
+// Collapse two DUPLICATE lender rows (Funding 365 ×2, Downing vs Downing LLP).
+// The MCP `lender.merge` tool orchestrates three steps in the action layer
+// (mutations can't call mutations): (1) atoms.mergeEntities entityType="client"
+// repoints knowledge atoms + facilities + appetiteSignals + chunks; (2)
+// migrations.mergeDuplicateClients.mergeTwo repoints the flat CRM FKs
+// (contacts/documents/tasks/notes/meetings/…), rewrites projects.clientRoles,
+// and soft-deletes the from-row; (3) this `mergeLenderFields` unions the
+// lender-specific row fields onto the target. `mergeLendersPlan` (below) is the
+// dry-run preview + the pre-flight validation the action runs before any write.
+
+/** Validate a lender-merge pair and preview the would-be repoint counts + field
+ * merge WITHOUT writing. Returns `ok:false` + `error` when the pair is invalid
+ * (missing / deleted / not-a-lender / identical). The `lender.merge` action
+ * calls this first for BOTH dryRun and execute, aborting on `ok:false`. */
+export const mergeLendersPlan = query({
+  args: {
+    fromClientId: v.id("clients"),
+    toClientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const from = await ctx.db.get(args.fromClientId);
+    const to = await ctx.db.get(args.toClientId);
+    if (args.fromClientId === args.toClientId) {
+      return { ok: false as const, error: "same_client: from and to are identical" };
+    }
+    if (!from || from.isDeleted) {
+      return { ok: false as const, error: `from_not_found_or_deleted: ${args.fromClientId}` };
+    }
+    if (!to || to.isDeleted) {
+      return { ok: false as const, error: `to_not_found_or_deleted: ${args.toClientId}` };
+    }
+    if (from.type !== "lender" || to.type !== "lender") {
+      return {
+        ok: false as const,
+        error: `not_both_lenders: from.type=${from.type ?? "∅"} to.type=${to.type ?? "∅"} (both must be "lender")`,
+      };
+    }
+    const fromId = args.fromClientId as string;
+    const countIndex = async (
+      table: "atoms" | "facilities" | "appetiteSignals" | "contacts" | "documents",
+      index: string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      range: (q: any) => any,
+    ): Promise<number> =>
+      (await ctx.db.query(table).withIndex(index as any, range).collect()).length;
+
+    const [
+      atomsSubject,
+      atomsObject,
+      atomsScope,
+      facilitiesLender,
+      facilitiesBorrower,
+      appetiteSignals,
+      contacts,
+      documents,
+    ] = await Promise.all([
+      countIndex("atoms", "by_subject", (q) => q.eq("subjectType", "client").eq("subjectId", fromId)),
+      countIndex("atoms", "by_object", (q) => q.eq("objectEntityType", "client").eq("objectEntityId", fromId)),
+      countIndex("atoms", "by_client_status", (q) => q.eq("clientId", args.fromClientId)),
+      countIndex("facilities", "by_lender", (q) => q.eq("lenderClientId", args.fromClientId)),
+      countIndex("facilities", "by_borrower", (q) => q.eq("borrowerClientId", args.fromClientId)),
+      countIndex("appetiteSignals", "by_lender", (q) => q.eq("lenderClientId", args.fromClientId)),
+      countIndex("contacts", "by_client", (q) => q.eq("clientId", args.fromClientId)),
+      countIndex("documents", "by_client", (q) => q.eq("clientId", args.fromClientId)),
+    ]);
+
+    const allProjects = await ctx.db.query("projects").collect();
+    let projectRoles = 0;
+    for (const p of allProjects) {
+      const roles: { clientId: Id<"clients">; role: string }[] =
+        (p as unknown as { clientRoles?: { clientId: Id<"clients">; role: string }[] }).clientRoles ?? [];
+      if (roles.some((r) => r.clientId === args.fromClientId)) projectRoles++;
+    }
+
+    return {
+      ok: true as const,
+      fromName: from.name,
+      toName: to.name,
+      knowledgeRepoints: {
+        atomsSubject,
+        atomsObject,
+        atomsScope,
+        facilitiesLender,
+        facilitiesBorrower,
+        appetiteSignals,
+      },
+      crmRepoints: { contacts, documents, projectRoles },
+      // Tables mergeTwo also sweeps but not individually previewed here.
+      crmSweptByMergeTwo: [
+        "tasks", "flags", "notes", "meetings", "chatSessions",
+        "enrichmentSuggestions", "reminders", "events", "knowledgeBankEntries",
+        "knowledgeChecklistItems", "knowledgeEmailLogs", "knowledgeItems",
+        "prospectingContext", "prospectingEmails", "intelligenceConflicts",
+        "companies.promotedToClientId", "activities",
+      ],
+      fieldMerge: {
+        aliasesUnion: uniqueStrings([
+          ...(to.aliases ?? []),
+          ...(from.aliases ?? []),
+          from.name,
+          ...(from.companyName ? [from.companyName] : []),
+        ]),
+        sourceDocumentIdsUnion:
+          ((to.sourceDocumentIds as string[] | undefined) ?? []).length +
+          ((from.sourceDocumentIds as string[] | undefined) ?? []).length,
+        scalarsToFill: (["website", "companyName", "country", "email", "phone", "address", "city", "industry"] as const)
+          .filter((k) => to[k] === undefined && from[k] !== undefined),
+      },
+    };
+  },
+});
+
+function uniqueStrings(arr: (string | undefined)[]): string[] {
+  return [...new Set(arr.filter((s): s is string => !!s && s.trim() !== ""))];
+}
+
+/** Union the lender-specific row fields of the (already soft-deleted) from-row
+ * onto the target: aliases (+ from's name/companyName as aliases),
+ * sourceDocumentIds, a dated merge marker appended to notes, and any missing
+ * scalars. Runs LAST in the lender.merge sequence, after mergeTwo has
+ * soft-deleted the from-row (still readable). */
+export const mergeLenderFields = mutation({
+  args: {
+    fromClientId: v.id("clients"),
+    toClientId: v.id("clients"),
+  },
+  handler: async (ctx, args) => {
+    const from = await ctx.db.get(args.fromClientId);
+    const to = await ctx.db.get(args.toClientId);
+    if (!from) throw new Error(`from_not_found: ${args.fromClientId}`);
+    if (!to) throw new Error(`to_not_found: ${args.toClientId}`);
+
+    const toCanonical = normalizeLenderName(to.name);
+    const aliases = uniqueStrings([
+      ...(to.aliases ?? []),
+      ...(from.aliases ?? []),
+      ...[from.name, from.companyName].filter(
+        (n): n is string => !!n && normalizeLenderName(n) !== toCanonical,
+      ),
+    ]);
+    const sourceDocumentIds = [
+      ...new Set([
+        ...((to.sourceDocumentIds as string[] | undefined) ?? []),
+        ...((from.sourceDocumentIds as string[] | undefined) ?? []),
+      ]),
+    ] as Id<"documents">[];
+
+    const today = new Date().toISOString().slice(0, 10);
+    const marker = `[${today}] merged duplicate lender "${from.name}" (${from._id}) into this row`;
+    const notes = [to.notes, marker, from.notes]
+      .filter((s): s is string => !!s && s.trim() !== "")
+      .join("\n");
+
+    const patch: Partial<Doc<"clients">> = { aliases, sourceDocumentIds, notes };
+    for (const k of ["website", "companyName", "country", "email", "phone", "address", "city", "industry"] as const) {
+      if (to[k] === undefined && from[k] !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (patch as any)[k] = from[k];
+      }
+    }
+    await ctx.db.patch(args.toClientId, patch);
+    return { toClientId: args.toClientId, aliasesCount: aliases.length, sourceDocumentIdsCount: sourceDocumentIds.length };
   },
 });
 

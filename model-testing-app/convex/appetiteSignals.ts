@@ -290,7 +290,9 @@ export const matchForDeal = query({
     const criteria = args.criteria as MatchCriteria;
     // Pull all lender clients (type=lender)
     const allClients = await ctx.db.query("clients").collect();
-    const lenders = allClients.filter((c: any) => c.type === "lender");
+    const lenders = allClients.filter(
+      (c: any) => c.type === "lender" && c.isDeleted !== true,
+    );
 
     if (lenders.length === 0) {
       return {
@@ -470,7 +472,9 @@ export const listLenders = query({
   args: { nameQuery: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const all = await ctx.db.query("clients").collect();
-    let lenders = all.filter((c: any) => c.type === "lender");
+    let lenders = all.filter(
+      (c: any) => c.type === "lender" && c.isDeleted !== true,
+    );
     if (args.nameQuery) {
       const q = args.nameQuery.toLowerCase();
       lenders = lenders.filter(
