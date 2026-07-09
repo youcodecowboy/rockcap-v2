@@ -328,9 +328,15 @@ describe("isLenderEdgeSource — the write-path gate", () => {
   });
 
   it("the predicate gate is derived from the vocabulary's financing attributes", () => {
+    // Reviewed additions 2026-07-09 (Donnington pilot hardening): loan-term
+    // and guarantee attributes are financing facts stated by lender terms
+    // docs, so a project-anchored one naming a rostered lender is a valid
+    // companion-edge source like the other four.
     expect([...LENDER_EDGE_SOURCE_PREDICATES].sort()).toEqual([
+      "has_guarantee",
       "has_interest_rate",
       "has_loan_amount",
+      "has_loan_term_months",
       "has_total_development_cost",
       "matures_on",
     ]);

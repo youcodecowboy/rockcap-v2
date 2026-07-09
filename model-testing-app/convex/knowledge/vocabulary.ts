@@ -205,6 +205,18 @@ export const PREDICATES: Record<string, PredicateDef> = {
     family: "financing",
     description: "Facility maturity date (ISO date).",
   },
+  has_loan_term_months: {
+    kind: "attribute",
+    family: "financing",
+    description:
+      "Loan / facility term in months (number) — the offered or committed duration. Distinct from matures_on (a calendar date); term sheets usually state the term, not the date.",
+  },
+  has_guarantee: {
+    kind: "attribute",
+    family: "financing",
+    description:
+      "Guarantee attached to a facility — amount or cap, percentage of costs/loan, and guarantor description in the statement (string). Use the guarantees EDGE instead when the guarantor resolves to a rostered person/company; this attribute exists for the common term-sheet case ('PG of 25% of gross facility from the directors') where guarantors are named only generically.",
+  },
   has_unit_count: {
     kind: "attribute",
     family: "property",
@@ -279,7 +291,8 @@ export const PREDICATES: Record<string, PredicateDef> = {
   },
 };
 
-/** Facility-shaped predicates — spec §3.3 minting triggers. The spec's
+/** Facility-shaped predicates — spec §3.3: the atoms whose values
+ * MATERIALIZE into facility columns (rematerializeFacility). The spec's
  * `secured_by` shorthand maps to `granted_security_over` (the §5 vocabulary
  * name for the security predicate). */
 export const FACILITY_SHAPED_PREDICATES = new Set([
@@ -288,6 +301,19 @@ export const FACILITY_SHAPED_PREDICATES = new Set([
   "has_interest_rate",
   "matures_on",
   "granted_security_over",
+]);
+
+/** Facility MINT triggers — the facility-shaped set plus `funds_project`
+ * (2026-07 Donnington pilot fix). Indicative quotes arrive as lender →
+ * PROJECT edges (HoTs and term sheets often never name the borrower SPV),
+ * so `funds_project` upserts the same (project, lender, tranche) facility
+ * identity `lends_to` does — otherwise quote economics have no facility to
+ * anchor to and rival lenders' numbers pile up as artificial contests on
+ * the project node. Kept OUT of FACILITY_SHAPED_PREDICATES: it triggers a
+ * mint/rebuild but materializes no column. */
+export const FACILITY_MINT_PREDICATES = new Set([
+  ...FACILITY_SHAPED_PREDICATES,
+  "funds_project",
 ]);
 
 /** True when the predicate exists in the vocabulary (any store kind). */

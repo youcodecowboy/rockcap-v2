@@ -11,7 +11,7 @@ import {
   isValidPredicate,
   isAtomStorablePredicate,
   PREDICATES,
-  FACILITY_SHAPED_PREDICATES,
+  FACILITY_MINT_PREDICATES,
 } from "./vocabulary";
 import { mintFacilitiesForAtoms, mergeFacilityInto } from "./facilities";
 import { versionPrecedenceWinner } from "./versionPrecedence";
@@ -887,7 +887,7 @@ async function collectFacilityAtoms(
     if (
       atom &&
       atom.status === "active" &&
-      FACILITY_SHAPED_PREDICATES.has(atom.predicate)
+      FACILITY_MINT_PREDICATES.has(atom.predicate)
     ) {
       atoms.push(atom);
     }

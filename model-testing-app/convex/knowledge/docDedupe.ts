@@ -74,10 +74,16 @@ export type DocDigest = {
 
 /**
  * Content-identity grouping key, or null when the doc can never be grouped.
- *   • text-bearing docs: client scope + text hash (fileSize agreement is a
- *     second gate applied by partitionByFileSize — see below);
- *   • empty-text docs: client scope + exact fileStorageId (same storage id ⇒
- *     definitionally the same bytes); no storage id ⇒ ungroupable.
+ *   • docs with a contentChecksum: client scope + the byte md5 — the
+ *     STRONGEST identity (2026-07 Donnington pilot: the same bytes parsed by
+ *     two extractor generations produce different text hashes, so
+ *     byte-identical twins never grouped under the text lane; every row now
+ *     carries an md5 — Drive rows from the mirror, upload rows via
+ *     harnessClassify's backfill);
+ *   • text-bearing docs without one: client scope + text hash (fileSize
+ *     agreement is a second gate applied by partitionByFileSize — see below);
+ *   • otherwise: client scope + exact fileStorageId (same storage id ⇒
+ *     definitionally the same bytes); nothing at all ⇒ ungroupable.
  * Scope key: clientId when present; personal-scope docs are keyed per owner;
  * everything else falls under "unscoped" (same-client-only grouping is the
  * hard rule — two docs with DIFFERENT clientIds can never share a key).
@@ -86,6 +92,7 @@ export function dedupeGroupKey(d: {
   clientId: string | null;
   scope: string | null;
   ownerId: string | null;
+  contentChecksum: string | null;
   textChecksum: string | null;
   fileStorageId: string | null;
   fileName: string;
@@ -94,6 +101,7 @@ export function dedupeGroupKey(d: {
     d.clientId ??
     (d.scope === "personal" && d.ownerId ? `personal:${d.ownerId}` : "unscoped");
   const nameKey = normalizedNameKey(d.fileName);
+  if (d.contentChecksum) return `bytes|${scopeKey}|${nameKey}|${d.contentChecksum}`;
   if (d.textChecksum) return `text|${scopeKey}|${nameKey}|${d.textChecksum}`;
   if (d.fileStorageId) return `storage|${scopeKey}|${nameKey}|${d.fileStorageId}`;
   return null;
@@ -112,7 +120,10 @@ export function normalizedNameKey(fileName: string): string {
     .toLowerCase()
     .replace(/\.[a-z0-9]{1,5}$/i, "") // extension
     .replace(/\s*(\(\d+\)|- \d+)\s*$/, "") // " (1)" / " - 2" copy suffixes
-    .replace(/(%20|_20(?=\D)|[\s_]+)/g, " ") // URL-mangling + whitespace runs
+    // URL-mangling + whitespace runs. Bare "%" is in the class because Drive
+    // re-saves sanitize it to "_" ("…_65%.pdf" → "…_65_.pdf" — Donnington
+    // pilot pairs), so both collapse to the same space.
+    .replace(/(%20|_20(?=\D)|[%\s_]+)/g, " ")
     .trim();
 }
 

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "rockcap-mcp": {
+      "type": "http",
+      "url": "https://incredible-kudu-562.convex.site/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_TOKEN_HERE"
+      }
+    }
+  }
+}

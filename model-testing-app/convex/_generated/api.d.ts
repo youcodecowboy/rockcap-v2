@@ -109,6 +109,7 @@ import type * as knowledge_graphQueries from "../knowledge/graphQueries.js";
 import type * as knowledge_harnessClassify from "../knowledge/harnessClassify.js";
 import type * as knowledge_integritySweep from "../knowledge/integritySweep.js";
 import type * as knowledge_lenderMatch from "../knowledge/lenderMatch.js";
+import type * as knowledge_md5 from "../knowledge/md5.js";
 import type * as knowledge_salience from "../knowledge/salience.js";
 import type * as knowledge_versionPrecedence from "../knowledge/versionPrecedence.js";
 import type * as knowledge_vocabulary from "../knowledge/vocabulary.js";
@@ -289,6 +290,7 @@ declare const fullApi: ApiFromModules<{
   "knowledge/harnessClassify": typeof knowledge_harnessClassify;
   "knowledge/integritySweep": typeof knowledge_integritySweep;
   "knowledge/lenderMatch": typeof knowledge_lenderMatch;
+  "knowledge/md5": typeof knowledge_md5;
   "knowledge/salience": typeof knowledge_salience;
   "knowledge/versionPrecedence": typeof knowledge_versionPrecedence;
   "knowledge/vocabulary": typeof knowledge_vocabulary;
