@@ -548,9 +548,15 @@ export const mergeLenderFields = mutation({
 
     const today = new Date().toISOString().slice(0, 10);
     const marker = `[${today}] merged duplicate lender "${from.name}" (${from._id}) into this row`;
-    const notes = [to.notes, marker, from.notes]
-      .filter((s): s is string => !!s && s.trim() !== "")
-      .join("\n");
+    // Idempotent on re-run (lender.merge's recovery path is "re-run with the
+    // same arguments"): if this from-row's merge marker is already in the
+    // notes, don't append the marker + from-notes block again.
+    const alreadyMerged = !!to.notes?.includes(`(${from._id}) into this row`);
+    const notes = alreadyMerged
+      ? to.notes
+      : [to.notes, marker, from.notes]
+          .filter((s): s is string => !!s && s.trim() !== "")
+          .join("\n");
 
     const patch: Partial<Doc<"clients">> = { aliases, sourceDocumentIds, notes };
     for (const k of ["website", "companyName", "country", "email", "phone", "address", "city", "industry"] as const) {

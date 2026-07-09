@@ -177,6 +177,7 @@ export async function mergeFacilityInto(
   ctx: MutationCtx,
   fromId: Id<"facilities">,
   toId: Id<"facilities">,
+  opts?: { skipRematerialize?: boolean },
 ): Promise<void> {
   if (fromId === toId) return;
   const from = await ctx.db.get(fromId);
@@ -222,7 +223,9 @@ export async function mergeFacilityInto(
 
   await ctx.db.patch(toId, patch);
   await ctx.db.delete(fromId);
-  await rematerializeFacility(ctx, toId);
+  if (!opts?.skipRematerialize) {
+    await rematerializeFacility(ctx, toId);
+  }
 }
 
 /** Winning atom for a materialized column: highest confidence, then most
@@ -516,16 +519,25 @@ export const rebuildFacility = internalMutation({
 export const auditFragmentation = internalMutation({
   args: {
     projectId: v.optional(v.id("projects")),
+    // Chunking seam: rematerialize scans the project's atoms, so executing
+    // many groups in one transaction can cross the 16MiB read cap. Scope an
+    // execute run to one lender and invoke per lender.
+    lenderClientId: v.optional(v.id("clients")),
     execute: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const execute = args.execute === true;
-    const facilities = args.projectId
+    let facilities = args.projectId
       ? await ctx.db
           .query("facilities")
           .withIndex("by_project", (q) => q.eq("projectId", args.projectId!))
           .collect()
       : await ctx.db.query("facilities").collect();
+    if (args.lenderClientId) {
+      facilities = facilities.filter(
+        (f) => f.lenderClientId === args.lenderClientId,
+      );
+    }
 
     // Cluster key = projectId + lenderKey + normalized tranche. Rows sharing a
     // key are fragments of one facility; distinct enum tranches (senior vs
@@ -603,10 +615,17 @@ export const auditFragmentation = internalMutation({
         })),
       });
       if (execute) {
+        // Rematerialize ONCE per group, not per fragment: rematerialize scans
+        // the project's atoms (by_project), so per-fragment rebuilds of the
+        // same canonical row multiply reads past the 16MiB transaction cap
+        // when one project holds several fragmented groups.
         for (const frag of enriched.slice(1)) {
-          await mergeFacilityInto(ctx, frag.f._id, canonical.f._id);
+          await mergeFacilityInto(ctx, frag.f._id, canonical.f._id, {
+            skipRematerialize: true,
+          });
           fragmentsMerged++;
         }
+        await rematerializeFacility(ctx, canonical.f._id);
       }
     }
 
