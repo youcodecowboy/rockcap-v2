@@ -64,6 +64,41 @@ function shortSatValue(v: string): string {
   const s = (v ?? "").trim();
   return s.length > 18 ? `${s.slice(0, 17)}…` : s;
 }
+/** Mid-zoom label content: the predicate key alone, `has_` prefix stripped and
+ * underscores spaced (has_valuation → "valuation", planning_status → "planning
+ * status"). Short strings collide far less than full `key: value` pairs. */
+function prettyKey(pred: string): string {
+  return (pred ?? "").replace(/^has_/, "").replace(/_/g, " ").trim();
+}
+/** Screen-space label size estimate. Width from char count × font × ~0.6 avoids
+ * per-frame getComputedTextLength() measurement in the occlusion pass. */
+const SAT_LABEL_FS = 8.5;
+const NODE_LABEL_FS = 11;
+const LABEL_CHAR_W = 0.6;
+/** Padding (screen px) added around each label AABB in the occlusion pass. */
+const LABEL_CULL_PAD = 3;
+/** Combined painted-wobble amplitude (world px). draw() jitters node text by ±3
+ * (drift, see the `drift` helper) and satellite text by ±1.6 (render-time
+ * ambient offset). We inflate every occlusion rect by this × k so a rect always
+ * covers where its text can actually travel, letting the cull stay stable
+ * instead of re-running each frame to chase the wobble. */
+const WOBBLE_AMP = 4.6;
+/** Zoom band over which satellite mini-labels fade in: alpha = clamp((k−lo)/w). */
+const SAT_LABEL_FADE_LO = 1.15;
+const SAT_LABEL_FADE_W = 0.3;
+/** Cull the label set at most every N sim ticks while the layout is still
+ * moving (camera moves force an immediate pass via cullDirtyRef). */
+const CULL_TICK_INTERVAL = 8;
+
+interface ScreenRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+function rectsOverlap(a: ScreenRect, b: ScreenRect): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
 // ── Phyllotaxis (sunflower) SEED slots ──
 // Satellites are now real force-sim particles (see SatSim + the satellite pass
 // in step()). But we still SEED each new leaf on its host's phyllotaxis spiral:
@@ -203,6 +238,13 @@ export default function GraphCanvas({
   useEffect(() => {
     centerIdRef.current = centerId;
   }, [centerId]);
+  // Selection mirrored to a ref (read by the out-of-React cull pass) + a dirty
+  // poke so the pass re-runs the frame the selection changes.
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+    cullDirtyRef.current = true;
+  }, [selectedId]);
 
   // Satellites: element refs + a persistent force-sim particle store (leaves
   // are real sim participants now, not kinematic slots). satLineElRef holds the
@@ -219,6 +261,10 @@ export default function GraphCanvas({
   // Viewport transform.
   const viewRef = useRef({ vw: 0, vh: 0, tx: 0, ty: 0, k: 1 });
   const panRef = useRef({ on: false, px: 0, py: 0 });
+  // Label occlusion cull runs OUTSIDE React (imperative class toggles in the rAF
+  // loop) to avoid a re-render storm on every zoom/pan/sim tick. Set true on any
+  // camera or selection change so the next frame re-culls immediately.
+  const cullDirtyRef = useRef(true);
 
   // Auto-fit bookkeeping — fit once per center change, never after the user
   // has touched the camera (pan / wheel / zoom buttons).
@@ -227,6 +273,19 @@ export default function GraphCanvas({
   const simStartRef = useRef(0);
 
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // Mirrors of hover / server-truncation for the imperative cull (it reads refs,
+  // not props/state). A change re-cull is forced so seeded sub-label / overflow
+  // rects track the current node state.
+  const hoverIdRef = useRef(hoverId);
+  useEffect(() => {
+    hoverIdRef.current = hoverId;
+    cullDirtyRef.current = true;
+  }, [hoverId]);
+  const satelliteTruncationRef = useRef(satelliteTruncation);
+  useEffect(() => {
+    satelliteTruncationRef.current = satelliteTruncation;
+    cullDirtyRef.current = true;
+  }, [satelliteTruncation]);
 
   const byId = useMemo(() => {
     const m = new Map<string, GraphNodeVM>();
@@ -321,6 +380,20 @@ export default function GraphCanvas({
     return { renderedSats: rendered, satMeta: meta, hostSatCount: counts };
   }, [satsByHost]);
 
+  // Per-satellite label strings + char lengths. Two variants (key-only for the
+  // mid-zoom band, full `key: value` for deep zoom / host selection); the
+  // lengths feed the occlusion pass so it never has to measure text per frame.
+  const satLabelText = useMemo(() => {
+    const m = new Map<string, { key: string; full: string; value: string; keyLen: number; fullLen: number }>();
+    for (const s of satellites) {
+      const key = prettyKey(s.label);
+      const value = shortSatValue(s.valueSnippet);
+      const full = value ? `${s.label}: ${value}` : s.label;
+      m.set(s.id, { key, full, value, keyLen: key.length, fullLen: full.length });
+    }
+    return m;
+  }, [satellites]);
+
   // effectiveRadius = scaled node radius (prominence bump) + its estimated leaf
   // cluster radius. Hosts with heavy knowledge clusters claim more canvas: this
   // feeds node repulsion, spring rests, and auto-fit fallback. Kept in a ref so
@@ -339,9 +412,13 @@ export default function GraphCanvas({
   const renderedSatsRef = useRef(renderedSats);
   const satMetaRef = useRef(satMeta);
   const effRadiusRef = useRef(effRadius);
+  const satLabelTextRef = useRef(satLabelText);
+  const hostSatCountRef = useRef(hostSatCount);
   useEffect(() => { renderedSatsRef.current = renderedSats; }, [renderedSats]);
   useEffect(() => { satMetaRef.current = satMeta; }, [satMeta]);
   useEffect(() => { effRadiusRef.current = effRadius; }, [effRadius]);
+  useEffect(() => { satLabelTextRef.current = satLabelText; cullDirtyRef.current = true; }, [satLabelText]);
+  useEffect(() => { hostSatCountRef.current = hostSatCount; }, [hostSatCount]);
 
   // When the satellite set changes (pivot / refilter): drop sim particles for
   // leaves that no longer exist (bounded memory) and wake the sim so new/removed
@@ -359,17 +436,24 @@ export default function GraphCanvas({
     worldRef.current?.setAttribute("transform", `translate(${tx},${ty}) scale(${k})`);
     // Label declutter — cheap class toggles at zoom thresholds (k only changes
     // through here, from the wheel/buttons/auto-fit paths), no React re-render:
-    //   k > 1.15  → sub-labels appear (otherwise only on hover/selected/center)
-    //   k < 0.55  → primary labels of tiny non-center nodes (r < 13) hide too
-    //   k ≥ 1.3   → persistent satellite mini-labels fade in (all clusters)
-    //   k ≥ 1.9   → satellite dots grow — deep-zoom "inspect" feel
+    //   k > 1.15        → sub-labels appear (otherwise only hover/selected/center)
+    //   k < 0.55        → primary labels of tiny non-center nodes (r < 13) hide too
+    //   k > 1.15        → satellite mini-labels active; they ramp in over the
+    //                     1.15→1.45 band via --rc-sat-label-alpha (not a hard cut)
+    //   k ≥ 1.9         → full `key: value` labels + satellite dots grow ("inspect")
     const svg = svgRef.current;
     if (svg) {
       svg.classList.toggle("rc-zoom-sub", k > 1.15);
       svg.classList.toggle("rc-zoom-far", k < 0.55);
-      svg.classList.toggle("rc-sat-labels-on", k >= 1.3);
+      svg.classList.toggle("rc-sat-labels-on", k > SAT_LABEL_FADE_LO);
       svg.classList.toggle("rc-sat-zoom-deep", k >= 1.9);
+      // Continuous opacity ramp for the mid-zoom label band (host-selected labels
+      // override this to 1 in CSS). Read by .rc-sat-label { opacity: var(...) }.
+      const alpha = Math.max(0, Math.min(1, (k - SAT_LABEL_FADE_LO) / SAT_LABEL_FADE_W));
+      svg.style.setProperty("--rc-sat-label-alpha", String(alpha));
     }
+    // Camera moved → labels must be re-culled against the new screen layout.
+    cullDirtyRef.current = true;
   }, []);
 
   const size = useCallback(() => {
@@ -746,6 +830,125 @@ export default function GraphCanvas({
       }
     };
 
+    // ── Label occlusion cull ─────────────────────────────────────────────────
+    // Greedy screen-space collision pass so every VISIBLE satellite mini-label
+    // owns a clear rectangle. The DOTS are never touched — only which labels
+    // show. Runs imperatively (class toggles, no React state) to match the LOD
+    // philosophy: a re-render per zoom/pan/tick would be unaffordable.
+    //   priority: selected-host labels → contested atoms → the rest.
+    //   occupied set is seeded with every entity PRIMARY label (never culled),
+    //   so satellite text never overlaps an entity name.
+    // Cost: O(nodes) + O(sats · accepted) — a sorted greedy insert, fine at ~300.
+    const cullLabels = () => {
+      const v = viewRef.current;
+      const k = v.k;
+      const deep = k >= 1.9;
+      const alpha = Math.max(0, Math.min(1, (k - SAT_LABEL_FADE_LO) / SAT_LABEL_FADE_W));
+      const labelsOn = alpha > 0; // matches the rc-sat-labels-on gate (k > 1.15)
+      const selId = selectedIdRef.current;
+      // Nothing can be visible → skip entirely (labels are CSS-hidden anyway).
+      if (!labelsOn && !selId) return;
+
+      const sim = simRef.current;
+      const satSim = satSimRef.current;
+      const meta = satMetaRef.current;
+      const rendered = renderedSatsRef.current;
+      const labelText = satLabelTextRef.current;
+      const satCounts = hostSatCountRef.current;
+
+      // Screen-space padding folded into every rect: the static LABEL_CULL_PAD
+      // plus the painted wobble amplitude (WOBBLE_AMP world px → screen), so a
+      // rect is always at least as strict as where its text can actually travel.
+      const pad = LABEL_CULL_PAD + WOBBLE_AMP * k;
+      const hoverId = hoverIdRef.current;
+      const truncation = satelliteTruncationRef.current;
+
+      // Entity labels occupy space first and are never culled. Only labels the
+      // render/CSS would actually paint reserve space (mirror the same gates).
+      const accepted: ScreenRect[] = [];
+      const seedRect = (xWorld: number, yWorld: number, chars: number, fs: number) => {
+        const cx = v.tx + k * xWorld;
+        const cy = v.ty + k * yWorld;
+        const w = chars * fs * LABEL_CHAR_W * k + 2 * pad;
+        const h = fs * k + 2 * pad;
+        accepted.push({ x: cx - w / 2, y: cy - h / 2, w, h });
+      };
+      for (const n of nodes) {
+        const s = sim.get(n.id);
+        if (!s) continue;
+        const hostCount = satCounts.get(n.id) ?? 0;
+        const r = NODE_RADIUS[n.type] + hostRadiusBump(hostCount);
+        // Primary name label: rc-zoom-far + rc-plabel-sm hide it on small,
+        // non-center nodes at k < 0.55 — reserve no space when hidden.
+        const primaryHidden = k < 0.55 && !n.isCenter && r < 13;
+        if (!primaryHidden) seedRect(s.x, s.y + r + 17, n.name.length, NODE_LABEL_FS);
+        // Sub-label (rc-sublabel): shown at zoom (rc-zoom-sub, k > 1.15) or on a
+        // center / hovered / selected node (rc-sub-on). y = r + 31, font 9.
+        if (n.sub && (k > 1.15 || n.isCenter || n.id === hoverId || n.id === selId)) {
+          seedRect(s.x, s.y + r + 31, n.sub.length, 9);
+        }
+        // "+N more (capped)" overflow — always rendered when present. y offset and
+        // font 8.5 mirror the render.
+        const trunc = truncation[n.id] ?? 0;
+        if (trunc > 0) {
+          seedRect(s.x, s.y + r + (n.sub ? 43 : 31), `+${trunc} more (capped)`.length, 8.5);
+        }
+        // "+N unlabeled" overflow — only on the selected host over the label cap.
+        if (n.id === selId && hostCount > SAT_LABEL_CAP) {
+          const y = r + (n.sub ? 45 : 33) + (trunc > 0 ? 12 : 0);
+          seedRect(s.x, s.y + y, `+${hostCount - SAT_LABEL_CAP} unlabeled`.length, 8.5);
+        }
+      }
+
+      // Build the candidate list — only labels the CSS gates would actually show.
+      const cands: { el: SVGGElement; rect: ScreenRect; prio: number; ord: number }[] = [];
+      let ord = 0;
+      for (const sat of rendered) {
+        const i = ord++;
+        const el = satElRef.current.get(sat.id);
+        const p = satSim.get(sat.id);
+        const m = meta.get(sat.id);
+        const lt = labelText.get(sat.id);
+        if (!el || !p || !m || !lt) continue;
+        const hostSelected = sat.hostId === selId;
+        const capped = m.idx >= SAT_LABEL_CAP;
+        // Gate visibility exactly as the <style> block does (see rc-sat-label*):
+        //   A key : labelsOn && !deep && !hostSelected
+        //   B full: labelsOn && deep
+        //   C full: hostSelected && !capped
+        const showKey = labelsOn && !deep && !hostSelected;
+        const showFull = (labelsOn && deep) || (hostSelected && !capped);
+        if (!showKey && !showFull) {
+          el.classList.remove("rc-sat-culled");
+          continue;
+        }
+        const len = showFull ? lt.fullLen : lt.keyLen;
+        const cx = v.tx + k * p.x;
+        const cy = v.ty + k * (p.y + SAT_RADIUS + 10);
+        const w = len * SAT_LABEL_FS * LABEL_CHAR_W * k + 2 * pad;
+        const h = SAT_LABEL_FS * k + 2 * pad;
+        const prio = hostSelected ? 0 : sat.status === "contested" ? 1 : 2;
+        cands.push({ el, rect: { x: cx - w / 2, y: cy - h / 2, w, h }, prio, ord: i });
+      }
+
+      // Greedy accept in priority order; a label whose padded rect clears every
+      // already-accepted rect wins its space, the rest are hidden this frame.
+      cands.sort((a, b) => a.prio - b.prio || a.ord - b.ord);
+      for (const c of cands) {
+        let clash = false;
+        for (let j = 0; j < accepted.length; j++) {
+          if (rectsOverlap(c.rect, accepted[j])) { clash = true; break; }
+        }
+        if (clash) {
+          c.el.classList.add("rc-sat-culled");
+        } else {
+          c.el.classList.remove("rc-sat-culled");
+          accepted.push(c.rect);
+        }
+      }
+    };
+
+    let cullTick = 0;
     const loop = () => {
       step();
       // One-shot auto-fit: once the sim has mostly settled (alpha decayed
@@ -761,6 +964,13 @@ export default function GraphCanvas({
         fitToContent();
       }
       draw();
+      // Re-cull on camera/selection changes (dirty flag) and periodically while
+      // the layout is still moving so visibility tracks the settling positions.
+      cullTick++;
+      if (cullDirtyRef.current || (alphaRef.current > 0.02 && cullTick % CULL_TICK_INTERVAL === 0)) {
+        cullDirtyRef.current = false;
+        cullLabels();
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -937,24 +1147,36 @@ export default function GraphCanvas({
         .rc-sublabel { display: none; }
         .rc-zoom-sub .rc-sublabel, .rc-sublabel.rc-sub-on { display: inline; }
         .rc-zoom-far .rc-plabel-sm { display: none; }
-        /* Persistent satellite mini-labels — off by default (display:none = zero
-           per-frame paint when zoomed out). Shown when the svg carries
-           rc-sat-labels-on (zoom k ≥ 1.3, every cluster) OR when the satellite's
-           host is selected (rc-host-selected on the sat <g>, any zoom) and the
-           sat isn't over the per-host cap (rc-sat-capped). Fades in on appear. */
-        .rc-sat-label { display: none; }
-        .rc-sat-labels-on .rc-sat-label,
-        .rc-sat-g.rc-host-selected:not(.rc-sat-capped) .rc-sat-label {
+        /* Persistent satellite mini-labels. Off by default (display:none = zero
+           per-frame paint when zoomed out). Two variants per dot, toggled purely
+           by ancestor zoom classes (no React re-render on zoom):
+             • KEY  (.rc-sat-label-key)  — predicate only, shown in the mid-zoom
+               band on non-selected hosts;
+             • FULL (.rc-sat-label-full) — key + value, shown at deep zoom
+               (rc-sat-zoom-deep, k ≥ 1.9) OR whenever the host is selected.
+           Visibility also honours the greedy occlusion cull (.rc-sat-culled,
+           applied imperatively per frame) and the per-host selection cap
+           (.rc-sat-capped). Opacity ramps with the zoom band via the
+           --rc-sat-label-alpha custom property (set in applyView); host-selected
+           labels override to full opacity at any zoom. */
+        .rc-sat-label { display: none; opacity: var(--rc-sat-label-alpha, 1); }
+        .rc-sat-labels-on:not(.rc-sat-zoom-deep)
+          .rc-sat-g:not(.rc-host-selected):not(.rc-sat-culled) .rc-sat-label-key {
           display: block;
-          animation: rc-sat-fade .18s ease both;
         }
-        @keyframes rc-sat-fade { from { opacity: 0; } to { opacity: 1; } }
+        .rc-sat-labels-on.rc-sat-zoom-deep
+          .rc-sat-g:not(.rc-sat-culled) .rc-sat-label-full {
+          display: block;
+        }
+        .rc-sat-g.rc-host-selected:not(.rc-sat-capped):not(.rc-sat-culled) .rc-sat-label-full {
+          display: block;
+          opacity: 1;
+        }
         /* Deep-zoom (k ≥ 1.9): grow the satellite dot in place. The scale sits on
            an inner group so it never fights the outer per-frame translate. */
         .rc-sat-scale { transform-box: fill-box; transform-origin: center; transition: transform .15s ease; }
         .rc-sat-zoom-deep .rc-sat-scale { transform: scale(1.55); }
         @media (prefers-reduced-motion: reduce) {
-          .rc-sat-label { animation: none !important; }
           .rc-sat-scale { transition: none !important; }
         }
       `}</style>
@@ -1008,6 +1230,11 @@ export default function GraphCanvas({
                     fill: colors.text.muted,
                     pointerEvents: "none",
                     opacity: labelOpacity,
+                    // Background halo so the predicate stays legible over edges.
+                    stroke: colors.bg.base,
+                    strokeWidth: 2.5,
+                    paintOrder: "stroke",
+                    strokeLinejoin: "round",
                   }}
                 >
                   {e.predicate}
@@ -1051,12 +1278,21 @@ export default function GraphCanvas({
             // block): rc-host-selected turns labels on for THIS host's leaves at
             // any zoom (selection case); rc-sat-capped withholds the label past
             // the per-host cap so a mega-hub shows "+N unlabeled" instead. The
-            // zoom case (k ≥ 1.3, all hosts) is a class on the svg root, so it
-            // needs no per-satellite state here.
+            // zoom case (k > 1.15, all hosts) is a class on the svg root, so it
+            // needs no per-satellite state here. The out-of-React occlusion pass
+            // adds rc-sat-culled to whichever labels lose their collision fight.
             const hostSelected = sat.hostId === selectedId;
             const capped = (satMeta.get(sat.id)?.idx ?? 0) >= SAT_LABEL_CAP;
             const gClass = `rc-sat-g${hostSelected ? " rc-host-selected" : ""}${capped ? " rc-sat-capped" : ""}`;
-            const labelValue = shortSatValue(sat.valueSnippet);
+            const lt = satLabelText.get(sat.id);
+            const labelValue = lt?.value ?? "";
+            // Background halo so mini-labels stay legible over dots / links.
+            const labelHalo = {
+              stroke: colors.bg.base,
+              strokeWidth: 2.5,
+              paintOrder: "stroke" as const,
+              strokeLinejoin: "round" as const,
+            };
             return (
               <g
                 key={sat.id}
@@ -1088,13 +1324,23 @@ export default function GraphCanvas({
                     style={{ filter: match ? "drop-shadow(0 0 5px currentColor)" : undefined }}
                   />
                 </g>
-                {/* Persistent mini-label: `predicate: shortValue`, muted, static
-                    child of the moving <g> — no per-frame work. */}
+                {/* Two persistent mini-label variants — muted static children of
+                    the moving <g> (no per-frame work). CSS shows exactly one:
+                    KEY in the mid-zoom band, FULL at deep zoom / host selection.
+                    Semantic zoom = shorter text mid-zoom = fewer collisions. */}
                 <text
-                  className="rc-sat-label"
+                  className="rc-sat-label rc-sat-label-key"
                   textAnchor="middle"
                   y={SAT_RADIUS + 10}
-                  style={{ fontSize: 8.5, fill: colors.text.muted, pointerEvents: "none" }}
+                  style={{ fontSize: 8.5, fill: colors.text.muted, pointerEvents: "none", ...labelHalo }}
+                >
+                  {lt?.key ?? sat.label}
+                </text>
+                <text
+                  className="rc-sat-label rc-sat-label-full"
+                  textAnchor="middle"
+                  y={SAT_RADIUS + 10}
+                  style={{ fontSize: 8.5, fill: colors.text.muted, pointerEvents: "none", ...labelHalo }}
                 >
                   {sat.label}
                   {labelValue ? <tspan style={{ fill: colors.text.dim }}>{`: ${labelValue}`}</tspan> : null}
@@ -1189,7 +1435,16 @@ export default function GraphCanvas({
                     className={`rc-sublabel${n.isCenter || n.id === hoverId || n.id === selectedId ? " rc-sub-on" : ""}`}
                     textAnchor="middle"
                     y={r + 31}
-                    style={{ fontSize: 9, fill: colors.text.muted, pointerEvents: "none" }}
+                    style={{
+                      fontSize: 9,
+                      fill: colors.text.muted,
+                      pointerEvents: "none",
+                      // Background halo — keeps the sub-label off satellite text.
+                      stroke: colors.bg.base,
+                      strokeWidth: 2.5,
+                      paintOrder: "stroke",
+                      strokeLinejoin: "round",
+                    }}
                   >
                     {n.sub}
                   </text>
