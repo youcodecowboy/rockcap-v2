@@ -202,7 +202,15 @@ export const stampBytesCachedInternal = internalMutation({
 // action returns the text straight through to the MCP caller — no state is
 // parked between the hops.
 export const extractText = internalAction({
-  args: { documentId: v.id("documents") },
+  args: {
+    documentId: v.id("documents"),
+    // Paging window into the parsed text (2026-07 Wave A fix): multi-sheet
+    // workbooks now parse far past the 120K return cap, so agents page with
+    // textOffset instead of losing everything after page one. Each call
+    // re-parses server-side (cheap, zero LLM); the checksum is stable across
+    // pages of the same revision.
+    textOffset: v.optional(v.number()),
+  },
   handler: async (
     ctx,
     args,
@@ -210,6 +218,8 @@ export const extractText = internalAction({
     | {
         text: string;
         truncated: boolean;
+        /** Start of the returned window within the full parsed text. */
+        textOffset: number;
         fullTextChars: number;
         fileName: string;
         mimeType: string;
@@ -400,7 +410,12 @@ export const extractText = internalAction({
     }
 
     const fullTextChars: number = payload.text.length;
-    const truncated = fullTextChars > TEXT_RETURN_CAP;
+    const textOffset = Math.min(
+      Math.max(0, Math.floor(args.textOffset ?? 0)),
+      fullTextChars,
+    );
+    const windowEnd = Math.min(textOffset + TEXT_RETURN_CAP, fullTextChars);
+    const truncated = fullTextChars > windowEnd || textOffset > 0;
     // Provenance from the parse route: "vision" means the text was transcribed
     // from an image / scanned image-only PDF rather than parsed from a text
     // layer. Default to "parser" for older route responses without the field.
@@ -410,13 +425,19 @@ export const extractText = internalAction({
       method === "vision"
         ? "Text was transcribed from an image / scanned image-only PDF via vision (not a text layer) — treat as best-effort OCR and note any [illegible] regions."
         : undefined;
-    const truncationNote = truncated
-      ? `Text truncated to ${TEXT_RETURN_CAP} chars (full length ${fullTextChars}). Classify from what you have; note the truncation in your reasoning.`
-      : undefined;
+    const truncationNote =
+      fullTextChars > TEXT_RETURN_CAP
+        ? `Returning chars ${textOffset}-${windowEnd} of ${fullTextChars}. ${
+            windowEnd < fullTextChars
+              ? `Call extractText again with textOffset: ${windowEnd} for the next page — atomize a fact-dense document from ALL its pages, not just page one.`
+              : "This is the final page."
+          } Multi-sheet workbooks open with a manifest listing every sheet on page one.`
+        : undefined;
     const note = [visionNote, truncationNote].filter(Boolean).join(" ");
     return {
-      text: truncated ? payload.text.slice(0, TEXT_RETURN_CAP) : payload.text,
+      text: payload.text.slice(textOffset, windowEnd),
       truncated,
+      textOffset,
       fullTextChars,
       fileName,
       mimeType,
