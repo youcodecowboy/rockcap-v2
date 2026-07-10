@@ -208,8 +208,11 @@ export const extractText = internalAction({
     // workbooks now parse far past the 120K return cap, so agents page with
     // textOffset instead of losing everything after page one. Each call
     // re-parses server-side (cheap, zero LLM); the checksum is stable across
-    // pages of the same revision.
-    textOffset: v.optional(v.number()),
+    // pages of the same revision. Accepts a stringified number too: an MCP
+    // client holding a pre-textOffset schema snapshot serializes unknown
+    // params as strings (Wave B live finding), and rejecting those would
+    // silently disable paging for the whole session.
+    textOffset: v.optional(v.union(v.number(), v.string())),
   },
   handler: async (
     ctx,
@@ -410,8 +413,12 @@ export const extractText = internalAction({
     }
 
     const fullTextChars: number = payload.text.length;
+    const requestedOffset =
+      typeof args.textOffset === "string"
+        ? Number(args.textOffset)
+        : (args.textOffset ?? 0);
     const textOffset = Math.min(
-      Math.max(0, Math.floor(args.textOffset ?? 0)),
+      Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0),
       fullTextChars,
     );
     const windowEnd = Math.min(textOffset + TEXT_RETURN_CAP, fullTextChars);
