@@ -13,13 +13,17 @@ House group charges, and one-click knowledge graph (drawer with selectEntryOnMou
 
 ## Plan
 - [x] Research: nav, docs layout precedent, lender data model, layouts kit
-- [ ] Convex: public `knowledge/facilities.listByLender` query (by_lender index)
+- [x] Convex: public `knowledge/facilities.listByLender` query (by_lender index)
       with project/borrower name enrichment + observed stats (avg deal size on
       executed basis, fallback all-priced)
-- [ ] Nav: add `/lenders` item (Landmark icon) to Sidebar.tsx
-- [ ] UI: `src/app/(desktop)/lenders/` — page.tsx + LendersSidebar + LenderProfile
-- [ ] `npx next build` from model-testing-app, fix errors
-- [ ] Branch, commit, push, PR
+- [x] Nav: add `/lenders` item (Landmark icon) to Sidebar.tsx
+- [x] UI: `src/app/(desktop)/lenders/` — page.tsx + LendersSidebar + LenderProfile
+- [x] `npx next build` from model-testing-app — clean; vitest convex/knowledge 118/118
+- [x] Branch `lenders-tab`, PR #87: https://github.com/youcodecowboy/rockcap-v2/pull/87
+
+## Remaining
+- [ ] Merge PR #87 + Convex deploy (new query must ship with frontend)
+- [ ] Live click-through on a wave-ingested lender (e.g. Allica) post-deploy
 
 ## Notes
 - Lenders are `clients` rows with `type === "lender"` — no new table.
