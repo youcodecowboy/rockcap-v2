@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation } from "../_generated/server";
+import { internalMutation, query } from "../_generated/server";
 import type { MutationCtx } from "../_generated/server";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -721,6 +721,62 @@ export const auditFragmentation = internalMutation({
       groupsWithFragmentation: fragmentGroups.length,
       fragmentsMerged,
       fragmentGroups,
+    };
+  },
+});
+
+// ── Read side: the lender's observed book (2026-07 Lenders tab) ────────────
+//
+// Everything above is write-side (deterministic minting/merge). This is the
+// one read query: a lender's full facility book with project/borrower names
+// resolved, plus observed-behaviour stats. Average deal size is COMPUTED here
+// at read time — never stored — so it updates itself with every ingestion
+// wave. It prefers the executed book (live/repaid/defaulted) and falls back
+// to all priced rows (incl. indicative quotes) when nothing has executed yet;
+// `avgDealSizeBasis` says which basis was used so the UI can label
+// "stated appetite vs observed behaviour" honestly.
+export const listByLender = query({
+  args: { lenderClientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("facilities")
+      .withIndex("by_lender", (q) => q.eq("lenderClientId", args.lenderClientId))
+      .collect();
+
+    const facilities = await Promise.all(
+      rows.map(async (f) => {
+        const project = await ctx.db.get(f.projectId);
+        const borrower = f.borrowerClientId ? await ctx.db.get(f.borrowerClientId) : null;
+        return {
+          ...f,
+          projectName: (project as Doc<"projects"> | null)?.name ?? "Unknown project",
+          projectClientId: (project as Doc<"projects"> | null)?.clientId,
+          borrowerName: (borrower as Doc<"clients"> | null)?.name,
+        };
+      }),
+    );
+    facilities.sort((a, b) => b.lastRebuiltAt.localeCompare(a.lastRebuiltAt));
+
+    const priced = facilities.filter((f) => typeof f.amountGBP === "number");
+    const executed = priced.filter(
+      (f) => facilityStatusRank(f.status) >= FACILITY_STATUS_RANK.live,
+    );
+    const basisRows = executed.length > 0 ? executed : priced;
+    const sum = (xs: typeof priced) =>
+      xs.reduce((s, f) => s + (f.amountGBP as number), 0);
+
+    return {
+      facilities,
+      stats: {
+        total: facilities.length,
+        live: facilities.filter((f) => f.status === "live").length,
+        indicative: facilities.filter((f) => f.status === "indicative").length,
+        distinctProjects: new Set(facilities.map((f) => f.projectId)).size,
+        avgDealSizeGBP: basisRows.length > 0 ? sum(basisRows) / basisRows.length : null,
+        avgDealSizeBasis: (executed.length > 0 ? "executed" : "all") as "executed" | "all",
+        avgDealSizeSampleSize: basisRows.length,
+        totalExecutedGBP: sum(executed),
+      },
     };
   },
 });
