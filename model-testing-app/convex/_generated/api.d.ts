@@ -101,6 +101,7 @@ import type * as knowledge_candidates from "../knowledge/candidates.js";
 import type * as knowledge_chunkDedupe from "../knowledge/chunkDedupe.js";
 import type * as knowledge_chunker from "../knowledge/chunker.js";
 import type * as knowledge_chunks from "../knowledge/chunks.js";
+import type * as knowledge_coverageAudit from "../knowledge/coverageAudit.js";
 import type * as knowledge_docDedupe from "../knowledge/docDedupe.js";
 import type * as knowledge_embeddings from "../knowledge/embeddings.js";
 import type * as knowledge_facilities from "../knowledge/facilities.js";
@@ -282,6 +283,7 @@ declare const fullApi: ApiFromModules<{
   "knowledge/chunkDedupe": typeof knowledge_chunkDedupe;
   "knowledge/chunker": typeof knowledge_chunker;
   "knowledge/chunks": typeof knowledge_chunks;
+  "knowledge/coverageAudit": typeof knowledge_coverageAudit;
   "knowledge/docDedupe": typeof knowledge_docDedupe;
   "knowledge/embeddings": typeof knowledge_embeddings;
   "knowledge/facilities": typeof knowledge_facilities;
