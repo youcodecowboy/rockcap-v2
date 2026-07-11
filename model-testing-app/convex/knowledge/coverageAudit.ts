@@ -199,3 +199,196 @@ export const run = internalAction({
     return { totals, clients: rows };
   },
 });
+
+// ── Drive-vs-library overlap (no import needed) ──
+// The Drive mirror carries every file's md5; library uploads now carry md5s
+// too (harnessClassify backfill). So "how much of this Drive subtree is
+// already in the client's library?" is a set intersection — computed here
+// BEFORE paying for an import. Google-native files (no md5) are reported
+// separately; trashed files excluded.
+
+export const subtreeChildFolders = internalQuery({
+  args: { parentIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<string[]> => {
+    const out: string[] = [];
+    for (const pid of args.parentIds) {
+      const children = await ctx.db
+        .query("driveFolders")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", pid))
+        .collect();
+      for (const c of children) out.push((c as any).driveFolderId);
+    }
+    return out;
+  },
+});
+
+export const filesForFolders = internalQuery({
+  args: { folderIds: v.array(v.string()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    Array<{ name: string; md5: string | null; modifiedTime: string; size: number | null }>
+  > => {
+    const out: Array<{ name: string; md5: string | null; modifiedTime: string; size: number | null }> = [];
+    for (const fid of args.folderIds) {
+      const files = await ctx.db
+        .query("driveFiles")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", fid))
+        .collect();
+      for (const f of files) {
+        if ((f as any).trashed === true) continue;
+        out.push({
+          name: f.name,
+          md5: (f as any).md5Checksum ?? null,
+          modifiedTime: f.modifiedTime,
+          size: (f as any).size ?? null,
+        });
+      }
+    }
+    return out;
+  },
+});
+
+export const clientChecksums = internalQuery({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args): Promise<string[]> => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const sums: string[] = [];
+    for (const d of docs) {
+      const c = (d as any).contentChecksum;
+      if (typeof c === "string" && c) sums.push(c);
+    }
+    return sums;
+  },
+});
+
+/**
+ * npx convex run knowledge/coverageAudit:driveOverlap \
+ *   '{"rootFolderId":"<drive folder id>","clientId":"<clients id>"}'
+ */
+export const driveOverlap = internalAction({
+  args: { rootFolderId: v.string(), clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    // BFS the subtree (batched child-folder lookups).
+    const all: string[] = [args.rootFolderId];
+    let frontier: string[] = [args.rootFolderId];
+    while (frontier.length > 0) {
+      const batch = frontier.slice(0, 100);
+      frontier = frontier.slice(100);
+      const children: string[] = await ctx.runQuery(
+        internal.knowledge.coverageAudit.subtreeChildFolders,
+        { parentIds: batch },
+      );
+      all.push(...children);
+      frontier.push(...children);
+    }
+
+    const files: Array<{ name: string; md5: string | null; modifiedTime: string; size: number | null }> = [];
+    for (let i = 0; i < all.length; i += 50) {
+      files.push(
+        ...(await ctx.runQuery(internal.knowledge.coverageAudit.filesForFolders, {
+          folderIds: all.slice(i, i + 50),
+        })),
+      );
+    }
+
+    const known = new Set<string>(
+      await ctx.runQuery(internal.knowledge.coverageAudit.clientChecksums, {
+        clientId: args.clientId,
+      }),
+    );
+
+    const fresh: typeof files = [];
+    let matched = 0;
+    let googleNative = 0;
+    const seenMd5 = new Set<string>(); // in-Drive duplicate copies count once
+    for (const f of files) {
+      if (!f.md5) {
+        googleNative++;
+        continue;
+      }
+      if (known.has(f.md5)) {
+        matched++;
+        continue;
+      }
+      if (seenMd5.has(f.md5)) {
+        matched++; // duplicate of another NEW file in the tree
+        continue;
+      }
+      seenMd5.add(f.md5);
+      fresh.push(f);
+    }
+
+    fresh.sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime));
+    const byMonth: Record<string, number> = {};
+    for (const f of fresh) {
+      const m = f.modifiedTime.slice(0, 7);
+      byMonth[m] = (byMonth[m] ?? 0) + 1;
+    }
+    return {
+      folders: all.length,
+      driveFiles: files.length,
+      matchedExistingOrDuplicate: matched,
+      googleNativeNoMd5: googleNative,
+      newUniqueFiles: fresh.length,
+      newByMonth: byMonth,
+      newestNew: fresh.slice(0, 25).map((f) => `${f.modifiedTime.slice(0, 10)}  ${f.name}`),
+    };
+  },
+});
+
+/** QA sampling: full observations (provenance) for a set of atoms. */
+export const sampleObservations = internalQuery({
+  args: { atomIds: v.array(v.id("atoms")) },
+  handler: async (ctx, args) => {
+    const out: Array<{
+      atomId: string;
+      statement: string;
+      status: string;
+      observations: Array<{
+        sourceType: string;
+        authorityTier: number | null;
+        documentId: string | null;
+        fileName: string | null;
+        locator: unknown;
+        sourceText: string | null;
+      }>;
+    }> = [];
+    for (const id of args.atomIds) {
+      const atom = await ctx.db.get(id);
+      if (!atom) continue;
+      const obs = await ctx.db
+        .query("atomObservations")
+        .withIndex("by_atom", (q) => q.eq("atomId", id))
+        .collect();
+      const rows = [];
+      for (const o of obs) {
+        const oo = o as any;
+        let fileName: string | null = null;
+        if (oo.documentId) {
+          const doc = await ctx.db.get(oo.documentId);
+          fileName = doc ? ((doc as any).fileName ?? null) : null;
+        }
+        rows.push({
+          sourceType: oo.sourceType,
+          authorityTier: oo.authorityTier ?? null,
+          documentId: oo.documentId ? String(oo.documentId) : null,
+          fileName,
+          locator: oo.locator ?? null,
+          sourceText: oo.sourceText ?? null,
+        });
+      }
+      out.push({
+        atomId: String(id),
+        statement: atom.statement,
+        status: atom.status,
+        observations: rows,
+      });
+    }
+    return out;
+  },
+});
