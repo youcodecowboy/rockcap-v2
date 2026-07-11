@@ -107,17 +107,23 @@ const RING_ATTR_CAP = 48;
 // crashed query. take() reads in index order (oldest first within a status);
 // contested rows are a separate status lane, so contested-first ranking
 // still sees every contested atom.
-const CENTER_SCAN_CAP = 600;
-const RING_EDGE_SCAN_CAP = 150;
-const RING_ATTR_SCAN_CAP = 120;
+// SIZED FOR EMBEDDINGS: atoms rows carry an optional 1024-dim float64
+// embedding (~8KB/row, schema §13), so EVERY atom read costs kilobytes and
+// caps must be far tighter than row-count intuition suggests. ~1,100 atom
+// rows ≈ 9MB, leaving headroom under the 16MiB execution budget for the
+// native-lane table scans + observation counts. The durable fix is moving
+// embeddings to a side table so graph reads stop paying for them — logged.
+const CENTER_SCAN_CAP = 150;
+const RING_EDGE_SCAN_CAP = 60;
+const RING_ATTR_SCAN_CAP = 60;
 // Per-member caps alone were NOT enough (Shawbrook, 2026-07-11): 40 ring
 // members × 120-row scans is still ~10k atom rows, and fat rows blow the
 // byte budget anyway. Each ring pass therefore ALSO shares one global
 // row budget across all its members — the loop stops scanning when the
 // pass has spent its allowance, and later members simply contribute no
 // atoms that call (their native/structural edges are unaffected).
-const RING_EDGE_ROW_BUDGET = 2500;
-const RING_ATTR_ROW_BUDGET = 2500;
+const RING_EDGE_ROW_BUDGET = 250;
+const RING_ATTR_ROW_BUDGET = 250;
 
 /** Mutable row allowance shared across one ring pass. */
 type ScanBudget = { remaining: number };
