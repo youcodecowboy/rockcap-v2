@@ -95,6 +95,21 @@ const INTER_RING_CAP = 40;
  * aggregation cap. Overflow still rides along as a per-member truncatedCount
  * (surfaced as muted "+N (capped)" text, never a badge) and in the counts. */
 const RING_ATTR_CAP = 48;
+// ── Read-budget scan caps (2026-07-11) ──
+// The ring passes used unbounded .collect() per ring member — up to 40
+// members × 2 statuses × 2 directions of atom rows. A hub-heavy ring (a big
+// lender's projects/companies, each carrying hundreds of atoms) blew Convex's
+// 16MiB single-execution read budget inside collectAtomAttributes (live
+// crash on the Lenders tab, 2026-07-11). These caps bound each per-subject
+// index scan with .take(); they sit far above the keep-caps that follow
+// (RING_ATTR_CAP 48, edge limit ≤ HARD_CAP), so ordinary subjects are
+// unaffected — only pathological hubs get a truncated scan instead of a
+// crashed query. take() reads in index order (oldest first within a status);
+// contested rows are a separate status lane, so contested-first ranking
+// still sees every contested atom.
+const CENTER_SCAN_CAP = 600;
+const RING_EDGE_SCAN_CAP = 150;
+const RING_ATTR_SCAN_CAP = 120;
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
@@ -426,16 +441,19 @@ async function collectAtomEdges(
    * read — the inter-ring pass keeps only in-ring endpoints and must not pay
    * a by_atom read for every discarded edge. */
   keep?: (otherType: GraphEntityType, otherId: string) => boolean,
+  /** Read-budget bound per index scan (per status, per direction). Undefined
+   * = unbounded collect() (walk callers manage their own budgets). */
+  scanCap?: number,
 ): Promise<FedEdge[]> {
   const rows: Array<{ atom: Doc<"atoms">; direction: "out" | "in" }> = [];
   if (direction !== "in") {
     for (const status of LIVE_STATUSES) {
-      const out = await ctx.db
+      const q = ctx.db
         .query("atoms")
         .withIndex("by_subject", (q) =>
           q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
-        )
-        .collect();
+        );
+      const out = scanCap ? await q.take(scanCap) : await q.collect();
       for (const atom of out) {
         if (atom.objectEntityId !== undefined) rows.push({ atom, direction: "out" });
       }
@@ -443,12 +461,12 @@ async function collectAtomEdges(
   }
   if (direction !== "out") {
     for (const status of LIVE_STATUSES) {
-      const inbound = await ctx.db
+      const q = ctx.db
         .query("atoms")
         .withIndex("by_object", (q) =>
           q.eq("objectEntityType", entityType).eq("objectEntityId", entityId).eq("status", status),
-        )
-        .collect();
+        );
+      const inbound = scanCap ? await q.take(scanCap) : await q.collect();
       for (const atom of inbound) rows.push({ atom, direction: "in" });
     }
   }
@@ -495,15 +513,17 @@ async function collectAtomAttributes(
   ctx: QueryCtx,
   entityType: GraphEntityType,
   entityId: string,
+  /** Read-budget bound per index scan (per status). Undefined = unbounded. */
+  scanCap?: number,
 ): Promise<AttrWithOwner[]> {
   const attrs: AttrWithOwner[] = [];
   for (const status of LIVE_STATUSES) {
-    const rows = await ctx.db
+    const q = ctx.db
       .query("atoms")
       .withIndex("by_subject", (q) =>
         q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
-      )
-      .collect();
+      );
+    const rows = scanCap ? await q.take(scanCap) : await q.collect();
     for (const atom of rows) {
       if (atom.objectLiteral === undefined) continue;
       attrs.push({
@@ -966,7 +986,7 @@ async function federatedEdges(
   cache: ScanCache = {},
 ): Promise<{ atomEdges: FedEdge[]; nativeEdges: FedEdge[] }> {
   const direction = opts?.direction ?? "both";
-  let atomEdges = await collectAtomEdges(ctx, entityType, entityId, direction);
+  let atomEdges = await collectAtomEdges(ctx, entityType, entityId, direction, undefined, CENTER_SCAN_CAP);
   if (opts?.prospectFilter) {
     atomEdges = await opts.prospectFilter.filter(atomEdges);
   }
@@ -1094,7 +1114,7 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
 
   let attributes: GraphAttribute[] = [];
   if (args.includeAttributes !== false) {
-    let attrsWithOwner = await collectAtomAttributes(ctx, args.entityType, args.entityId);
+    let attrsWithOwner = await collectAtomAttributes(ctx, args.entityType, args.entityId, CENTER_SCAN_CAP);
     if (prospectFilter) {
       attrsWithOwner = await prospectFilter.filter(attrsWithOwner);
     }
@@ -1144,7 +1164,7 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   const interAtomByKey = new Map<string, InterFed>();
   const interNativeCandidates: InterFed[] = [];
   for (const member of ringMembers) {
-    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing);
+    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing, RING_EDGE_SCAN_CAP);
     if (prospectFilter) {
       // Atom lane only, same as the center expansion — a hidden atom edge
       // simply lets its public-record native mirror (if any) win the key.
@@ -1201,7 +1221,7 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   let ringAttributesTotal = 0;
   if (args.includeRingAttributes) {
     for (const member of ringMembers) {
-      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id);
+      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id, RING_ATTR_SCAN_CAP);
       if (prospectFilter) memberAttrs = await prospectFilter.filter(memberAttrs);
       if (memberAttrs.length === 0) continue;
       memberAttrs.sort(rankAttributes);

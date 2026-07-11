@@ -49,6 +49,9 @@ export default function MiniKnowledgeGraph({
     entityType,
     entityId,
     includeRingAttributes: true,
+    // Preview payload: a smaller ring than the drawer's default — the panel
+    // is ~260px tall, and every ring member costs server read budget.
+    limit: 24,
   });
 
   const { nodes, edges, satellites, satelliteTruncation } = useMemo(
@@ -105,6 +108,7 @@ export default function MiniKnowledgeGraph({
               truncatedMore={truncatedMore}
               onSelect={() => {}}
               onSatelliteSelect={() => {}}
+              hideControls
             />
           </div>
 
@@ -156,8 +160,7 @@ export default function MiniKnowledgeGraph({
               pointerEvents: "none",
             }}
           >
-            {nodes.length - 1} connections · {satellites.length} atoms
-            {truncatedMore > 0 ? ` · +${truncatedMore} more` : ""}
+            {satellites.length} atoms
           </div>
         </>
       )}
