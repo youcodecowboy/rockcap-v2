@@ -112,3 +112,6 @@ notes, meetings, emails never atomize. Chat is retired entirely (out of scope).
   retired — bubble removal folded into Phase 1.
 - 2026-07-11: Phase 1 + 2 shipped and deployed (see above). Phase 3 executed
   in worktree `knowledge-phase3` (lender agent active in main tree).
+- 2026-07-11: Phase 3 merged with lender work (f35e22e5) and DEPLOYED to the
+  Convex deployment — old knowledge-bank writers now retired in prod. PR #94
+  (knowledge-cutover → main) open; PR #93 subsumed by it.
