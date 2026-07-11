@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, query } from "../_generated/server";
+import { internalMutation, mutation, query } from "../_generated/server";
 import type { MutationCtx } from "../_generated/server";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -778,5 +778,35 @@ export const listByLender = query({
         totalExecutedGBP: sum(executed),
       },
     };
+  },
+});
+
+// ── Operator write: facility lifecycle status (2026-07-11, Lenders tab) ────
+//
+// The pipeline stamps status from document class and NEVER downgrades
+// (applyFacilityStatus). The operator, however, may know better than the
+// paper trail — a facility the docs say is live may have repaid, a stale
+// indicative quote may be dead. This mutation is the operator override: any
+// enum value, any direction, Clerk-authed. Later pipeline stamps still only
+// upgrade, so an operator downgrade sticks until a genuinely newer executed
+// document arrives. Status is NOT an atom mirror — rematerialize never
+// touches it — so operator edits survive rebuilds.
+const FACILITY_STATUS_VALUES = new Set(["indicative", "live", "repaid", "defaulted"]);
+
+export const operatorSetStatus = mutation({
+  args: {
+    facilityId: v.id("facilities"),
+    status: v.string(), // "indicative" | "live" | "repaid" | "defaulted"
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    if (!FACILITY_STATUS_VALUES.has(args.status)) {
+      throw new Error(`invalid_status: ${args.status}`);
+    }
+    const facility = await ctx.db.get(args.facilityId);
+    if (!facility) throw new Error("facility_not_found");
+    await ctx.db.patch(args.facilityId, { status: args.status });
+    return { ok: true as const, previous: facility.status ?? null, status: args.status };
   },
 });
