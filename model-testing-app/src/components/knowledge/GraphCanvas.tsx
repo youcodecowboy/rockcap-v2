@@ -51,6 +51,9 @@ interface GraphCanvasProps {
   onSelect: (id: string | null) => void;
   /** Satellite click → select its host + highlight the atom row. */
   onSatelliteSelect: (sat: SatelliteVM) => void;
+  /** Hide the zoom HUD + interaction help line — for inert embeds (the
+   * MiniKnowledgeGraph preview) where the only affordance is "expand". */
+  hideControls?: boolean;
 }
 
 /** Satellite render dot radius. */
@@ -216,6 +219,7 @@ export default function GraphCanvas({
   truncatedMore,
   onSelect,
   onSatelliteSelect,
+  hideControls,
 }: GraphCanvasProps) {
   const colors = useColors();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -1599,15 +1603,19 @@ export default function GraphCanvas({
         </div>
       )}
 
-      {/* zoom HUD */}
-      <div style={{ position: "absolute", right: 14, top: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-        <button style={btn} title="Zoom in" onClick={() => zoomBtn(1.25)}>+</button>
-        <button style={btn} title="Zoom out" onClick={() => zoomBtn(0.8)}>−</button>
-        <button style={{ ...btn, fontSize: 11 }} title="Fit" onClick={fit}>fit</button>
-      </div>
-      <div style={{ position: "absolute", left: 16, bottom: 12, color: colors.text.dim, fontSize: 11, pointerEvents: "none" }}>
-        drag canvas to pan · scroll to zoom · drag a node to arrange (it pins — double-click to release) · click a node for its atoms
-      </div>
+      {/* zoom HUD + help line (hidden on inert embeds) */}
+      {!hideControls && (
+        <>
+          <div style={{ position: "absolute", right: 14, top: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+            <button style={btn} title="Zoom in" onClick={() => zoomBtn(1.25)}>+</button>
+            <button style={btn} title="Zoom out" onClick={() => zoomBtn(0.8)}>−</button>
+            <button style={{ ...btn, fontSize: 11 }} title="Fit" onClick={fit}>fit</button>
+          </div>
+          <div style={{ position: "absolute", left: 16, bottom: 12, color: colors.text.dim, fontSize: 11, pointerEvents: "none" }}>
+            drag canvas to pan · scroll to zoom · drag a node to arrange (it pins — double-click to release) · click a node for its atoms
+          </div>
+        </>
+      )}
     </div>
   );
 }
