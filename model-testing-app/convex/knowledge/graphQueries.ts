@@ -110,6 +110,17 @@ const RING_ATTR_CAP = 48;
 const CENTER_SCAN_CAP = 600;
 const RING_EDGE_SCAN_CAP = 150;
 const RING_ATTR_SCAN_CAP = 120;
+// Per-member caps alone were NOT enough (Shawbrook, 2026-07-11): 40 ring
+// members × 120-row scans is still ~10k atom rows, and fat rows blow the
+// byte budget anyway. Each ring pass therefore ALSO shares one global
+// row budget across all its members — the loop stops scanning when the
+// pass has spent its allowance, and later members simply contribute no
+// atoms that call (their native/structural edges are unaffected).
+const RING_EDGE_ROW_BUDGET = 2500;
+const RING_ATTR_ROW_BUDGET = 2500;
+
+/** Mutable row allowance shared across one ring pass. */
+type ScanBudget = { remaining: number };
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
@@ -444,16 +455,27 @@ async function collectAtomEdges(
   /** Read-budget bound per index scan (per status, per direction). Undefined
    * = unbounded collect() (walk callers manage their own budgets). */
   scanCap?: number,
+  /** Shared row allowance across a whole ring pass — decremented by rows
+   * actually fetched; scans stop once exhausted. */
+  budget?: ScanBudget,
 ): Promise<FedEdge[]> {
   const rows: Array<{ atom: Doc<"atoms">; direction: "out" | "in" }> = [];
+  const effCap = (cap?: number) => {
+    if (!budget) return cap;
+    if (budget.remaining <= 0) return 0;
+    return cap ? Math.min(cap, budget.remaining) : budget.remaining;
+  };
   if (direction !== "in") {
     for (const status of LIVE_STATUSES) {
+      const cap = effCap(scanCap);
+      if (cap === 0) break;
       const q = ctx.db
         .query("atoms")
         .withIndex("by_subject", (q) =>
           q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
         );
-      const out = scanCap ? await q.take(scanCap) : await q.collect();
+      const out = cap ? await q.take(cap) : await q.collect();
+      if (budget) budget.remaining -= out.length;
       for (const atom of out) {
         if (atom.objectEntityId !== undefined) rows.push({ atom, direction: "out" });
       }
@@ -461,12 +483,15 @@ async function collectAtomEdges(
   }
   if (direction !== "out") {
     for (const status of LIVE_STATUSES) {
+      const cap = effCap(scanCap);
+      if (cap === 0) break;
       const q = ctx.db
         .query("atoms")
         .withIndex("by_object", (q) =>
           q.eq("objectEntityType", entityType).eq("objectEntityId", entityId).eq("status", status),
         );
-      const inbound = scanCap ? await q.take(scanCap) : await q.collect();
+      const inbound = cap ? await q.take(cap) : await q.collect();
+      if (budget) budget.remaining -= inbound.length;
       for (const atom of inbound) rows.push({ atom, direction: "in" });
     }
   }
@@ -515,15 +540,24 @@ async function collectAtomAttributes(
   entityId: string,
   /** Read-budget bound per index scan (per status). Undefined = unbounded. */
   scanCap?: number,
+  /** Shared row allowance across a whole ring pass — decremented by rows
+   * actually fetched; scans stop once exhausted. */
+  budget?: ScanBudget,
 ): Promise<AttrWithOwner[]> {
   const attrs: AttrWithOwner[] = [];
   for (const status of LIVE_STATUSES) {
+    let cap = scanCap;
+    if (budget) {
+      if (budget.remaining <= 0) break;
+      cap = cap ? Math.min(cap, budget.remaining) : budget.remaining;
+    }
     const q = ctx.db
       .query("atoms")
       .withIndex("by_subject", (q) =>
         q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
       );
-    const rows = scanCap ? await q.take(scanCap) : await q.collect();
+    const rows = cap ? await q.take(cap) : await q.collect();
+    if (budget) budget.remaining -= rows.length;
     for (const atom of rows) {
       if (atom.objectLiteral === undefined) continue;
       attrs.push({
@@ -1163,8 +1197,9 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   type InterFed = { fromType: GraphEntityType; fromId: string; edge: FedEdge };
   const interAtomByKey = new Map<string, InterFed>();
   const interNativeCandidates: InterFed[] = [];
+  const interScanBudget: ScanBudget = { remaining: RING_EDGE_ROW_BUDGET };
   for (const member of ringMembers) {
-    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing, RING_EDGE_SCAN_CAP);
+    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing, RING_EDGE_SCAN_CAP, interScanBudget);
     if (prospectFilter) {
       // Atom lane only, same as the center expansion — a hidden atom edge
       // simply lets its public-record native mirror (if any) win the key.
@@ -1219,9 +1254,10 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   const ringAttributes: Record<string, AttributeRow[]> = {};
   const ringAttributeTruncated: Record<string, number> = {};
   let ringAttributesTotal = 0;
+  const ringAttrScanBudget: ScanBudget = { remaining: RING_ATTR_ROW_BUDGET };
   if (args.includeRingAttributes) {
     for (const member of ringMembers) {
-      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id, RING_ATTR_SCAN_CAP);
+      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id, RING_ATTR_SCAN_CAP, ringAttrScanBudget);
       if (prospectFilter) memberAttrs = await prospectFilter.filter(memberAttrs);
       if (memberAttrs.length === 0) continue;
       memberAttrs.sort(rankAttributes);
