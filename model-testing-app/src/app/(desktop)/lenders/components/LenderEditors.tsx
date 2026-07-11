@@ -184,9 +184,12 @@ export function EditableTermCell({
 
   const save = async () => {
     const t = text.trim();
-    if (!t) { setEditing(false); return; }
-    let patch: { amountGBP?: number; interestRate?: number; maturityDate?: string };
-    if (field === 'maturityDate') {
+    let patch: { amountGBP?: number | null; interestRate?: number | null; maturityDate?: string | null };
+    if (!t) {
+      // Emptying the input clears the stored value.
+      if (value == null) { setEditing(false); return; }
+      patch = { [field]: null } as typeof patch;
+    } else if (field === 'maturityDate') {
       patch = { maturityDate: t };
     } else {
       const n = Number(t.replace(/[£$€,%\s]/g, ''));

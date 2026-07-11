@@ -968,29 +968,32 @@ async function updateFacilityTermsCore(
   ctx: MutationCtx,
   args: {
     facilityId: Id<"facilities">;
-    amountGBP?: number;
-    interestRate?: number;
-    maturityDate?: string;
+    amountGBP?: number | null;
+    interestRate?: number | null;
+    maturityDate?: string | null;
   },
 ) {
   const facility = await ctx.db.get(args.facilityId);
   if (!facility) throw new Error("facility_not_found");
-  const patch: Partial<Doc<"facilities">> = {};
-  if (args.amountGBP !== undefined) patch.amountGBP = args.amountGBP;
-  if (args.interestRate !== undefined) patch.interestRate = args.interestRate;
-  if (args.maturityDate !== undefined) patch.maturityDate = args.maturityDate;
+  // null = CLEAR the field (patch with undefined unsets it in Convex);
+  // omitted = leave unchanged. Operators need to erase a wrong value, not
+  // just overwrite it.
+  const patch: Record<string, number | string | undefined> = {};
+  if (args.amountGBP !== undefined) patch.amountGBP = args.amountGBP ?? undefined;
+  if (args.interestRate !== undefined) patch.interestRate = args.interestRate ?? undefined;
+  if (args.maturityDate !== undefined) patch.maturityDate = args.maturityDate ?? undefined;
   if (Object.keys(patch).length === 0) {
     return { ok: false as const, error: "nothing_to_update" as const };
   }
-  await ctx.db.patch(args.facilityId, patch);
+  await ctx.db.patch(args.facilityId, patch as Partial<Doc<"facilities">>);
   return { ok: true as const, updated: Object.keys(patch) };
 }
 
 const TERMS_ARGS = {
   facilityId: v.id("facilities"),
-  amountGBP: v.optional(v.number()),
-  interestRate: v.optional(v.number()),
-  maturityDate: v.optional(v.string()),
+  amountGBP: v.optional(v.union(v.number(), v.null())),
+  interestRate: v.optional(v.union(v.number(), v.null())),
+  maturityDate: v.optional(v.union(v.string(), v.null())),
 };
 
 export const operatorUpdateTerms = mutation({
