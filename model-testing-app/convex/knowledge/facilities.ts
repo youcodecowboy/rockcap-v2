@@ -893,3 +893,65 @@ export const operatorCreate = mutation({
     return { ok: true as const, facilityId };
   },
 });
+
+// MCP lane twins (bearer-token callers have no Clerk identity — the same
+// pattern as appetiteSignals.recordInternal, commit 40d70700). The MCP
+// handler authenticates before calling; bodies mirror the public mutations.
+export const operatorSetStatusInternal = internalMutation({
+  args: { facilityId: v.id("facilities"), status: v.string() },
+  handler: async (ctx, args) => {
+    if (!FACILITY_STATUS_VALUES.has(args.status)) {
+      throw new Error(`invalid_status: ${args.status}`);
+    }
+    const facility = await ctx.db.get(args.facilityId);
+    if (!facility) throw new Error("facility_not_found");
+    await ctx.db.patch(args.facilityId, { status: args.status });
+    return { ok: true as const, previous: facility.status ?? null, status: args.status };
+  },
+});
+
+export const operatorCreateInternal = internalMutation({
+  args: {
+    lenderClientId: v.id("clients"),
+    projectId: v.id("projects"),
+    borrowerClientId: v.optional(v.id("clients")),
+    tranche: v.optional(v.string()),
+    amountGBP: v.optional(v.number()),
+    interestRate: v.optional(v.number()),
+    maturityDate: v.optional(v.string()),
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.status && !FACILITY_STATUS_VALUES.has(args.status)) {
+      throw new Error(`invalid_status: ${args.status}`);
+    }
+    const tranche = normalizeTranche(args.tranche);
+    const dedupeKey = `${args.projectId}:${args.lenderClientId}:${tranche ?? "single"}`;
+    const existing = await ctx.db
+      .query("facilities")
+      .withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey))
+      .first();
+    if (existing) {
+      return {
+        ok: false as const,
+        error: "facility_exists" as const,
+        facilityId: existing._id,
+        message: "A facility for this project + lender + tranche already exists — update it instead.",
+      };
+    }
+    const facilityId = await ctx.db.insert("facilities", {
+      projectId: args.projectId,
+      lenderClientId: args.lenderClientId,
+      borrowerClientId: args.borrowerClientId,
+      tranche,
+      amountGBP: args.amountGBP,
+      interestRate: args.interestRate,
+      maturityDate: args.maturityDate,
+      status: args.status,
+      dedupeKey,
+      createdFrom: "operator",
+      lastRebuiltAt: new Date().toISOString(),
+    });
+    return { ok: true as const, facilityId };
+  },
+});

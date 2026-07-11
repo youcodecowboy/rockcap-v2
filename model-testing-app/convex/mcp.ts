@@ -1217,6 +1217,81 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "facilities.create",
+    description:
+      "Manually add a facility to a lender's book — the operator lane for a facility the documents haven't evidenced (market intel, a call, a deal RockCap wasn't on). Args: lenderClientId (clients row, type=lender), projectId (required — facilities are project-anchored), optional borrowerClientId, tranche (senior/mezzanine/bridge/equity; anything else collapses to the whole-facility 'single' bucket), amountGBP, interestRate, maturityDate (ISO date), status (indicative/live/repaid/defaulted). Flagged createdFrom:'operator' — the Lenders tab shows it as manually added (orange provenance dot). Uses the SAME dedupeKey scheme as the pipeline minter, so a later document-evidenced mint for the same (project, lender, tranche) lands on this row instead of duplicating; returns {ok:false, error:'facility_exists', facilityId} if the row already exists. NOT for facilities a document evidences — atomize the document instead (atomize-document skill) so provenance is real.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender's clients row" },
+        projectId: { type: "string", description: "Convex id of the project the facility funds/quotes" },
+        borrowerClientId: { type: "string", description: "Optional Convex id of the borrower's clients row" },
+        tranche: { type: "string", description: "senior | mezzanine | bridge | equity (omit for a whole facility)" },
+        amountGBP: { type: "number" },
+        interestRate: { type: "number", description: "Percent, e.g. 9.5" },
+        maturityDate: { type: "string", description: "ISO date, e.g. 2027-03-31" },
+        status: { type: "string", description: "indicative | live | repaid | defaulted (default unset)" },
+      },
+      required: ["lenderClientId", "projectId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorCreateInternal, {
+        lenderClientId: args.lenderClientId,
+        projectId: args.projectId,
+        borrowerClientId: args.borrowerClientId,
+        tranche: args.tranche,
+        amountGBP: args.amountGBP,
+        interestRate: args.interestRate,
+        maturityDate: args.maturityDate,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "facilities.setStatus",
+    description:
+      "Set a facility's lifecycle status — the operator override. The pipeline stamps status from document class and never downgrades; this tool permits ANY transition (a facility the paper says is live may have repaid; a stale indicative quote may be dead). Args: facilityId + status (indicative/live/repaid/defaulted). Status is not an atom mirror, so rematerialisation never clobbers the edit; later pipeline stamps still only upgrade. Get facilityIds from facilities.audit, lender.getDeepContext's graph section, or the atoms.createBatch facilities return.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        facilityId: { type: "string", description: "Convex id of the facilities row" },
+        status: { type: "string", description: "indicative | live | repaid | defaulted" },
+      },
+      required: ["facilityId", "status"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorSetStatusInternal, {
+        facilityId: args.facilityId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getDocuments",
+    description:
+      "The lender's DOCUMENT EVIDENCE TRAIL: every document that evidences this lender, federated from four lanes — the lender row's sourceDocumentIds (lender.create evidence), atoms where the lender is subject/object (via observations), the facility book's atoms (term sheets, facility agreements, the later-stage deal paper), and appetite signals sourced from documents. Each document returns {documentId, fileName, fileTypeDetected, category, summary, uploadedAt, clientId/clientName, projectId/projectName, atomCount (knowledge pulled from it for this lender), via[] (which lanes cited it)}. Newest first, default 60 / cap 100 (totalFound carries the pre-cap count). Use to answer 'which documents did this lender's terms come from?', to group a lender's paper by project, or to pick the right documentId for document.get / document.extractText follow-ups. Powers the Lenders-tab Documents view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender's clients row" },
+        limit: { type: "number", description: "Max documents (default 60, cap 100)" },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.lenderDocuments, {
+        lenderClientId: args.lenderClientId,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
+  {
     name: "facilities.audit",
     description:
       "Find (and optionally fix) FRAGMENTED facilities — the multiple facility rows that free-text tranche descriptors used to mint for one negotiation (e.g. Allica Bank: 8 rows on one project from successive quote revisions). Groups facilities by project + lender + normalized tranche (senior/mezzanine/bridge/equity/single); any group with >1 row is a fragment cluster of what should be ONE facility. Dry-run (default) reports each cluster with its rows (id/tranche/amount/status/atomCount) and the suggested canonical row (most attached atoms, then richest mirror columns). Pass `execute:true` to collapse each fragment into the canonical via the completed facility merge path (fills mirrors, recomputes dedupeKey under the enum scheme, deletes the fragment, rematerializes) and return the merge count. Scope to one project with `projectId`, or omit to audit the whole corpus. External/unrostered facilities (no lender id) are excluded — two such rows can't be confirmed duplicates.",
