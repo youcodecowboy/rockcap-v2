@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
@@ -8,6 +8,8 @@ import { Id } from '../../../../../convex/_generated/dataModel';
 import {
   Panel,
   KpiRow,
+  TabStrip,
+  type TabDef,
   type Kpi,
   DataTable,
   type Column,
@@ -20,6 +22,7 @@ import {
 } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
 import MiniKnowledgeGraph from '@/components/knowledge/MiniKnowledgeGraph';
+import LenderDocumentsTab from './LenderDocumentsTab';
 import {
   FacilityStatusSelect,
   AppetitePanelContent,
@@ -89,9 +92,15 @@ interface LenderProfileProps {
   onOpenGraph: () => void;
 }
 
+const PROFILE_TABS: TabDef[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'documents', label: 'Documents' },
+];
+
 export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfileProps) {
   const colors = useColors();
   const lenderTone = colors.entityTypes.lender;
+  const [activeTab, setActiveTab] = useState('overview');
 
   const deep = useQuery(api.appetiteSignals.lenderGetDeepContext, {
     lenderClientId: lenderId,
@@ -312,7 +321,15 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
         {/* KPIs — observed behaviour + stated appetite at a glance */}
         <KpiRow items={kpis} />
 
+        {/* Overview / Documents */}
+        <div style={{ margin: '0 -8px' }}>
+          <TabStrip tabs={PROFILE_TABS} activeTab={activeTab} onChange={setActiveTab} entityType="lender" />
+        </div>
+
+        {activeTab === 'documents' && <LenderDocumentsTab lenderId={lenderId} />}
+
         {/* Panels */}
+        {activeTab === 'overview' && (
         <div className="grid grid-cols-3 gap-4 items-start">
           {/* Left 2/3: the book + appetite */}
           <div className="col-span-2 space-y-4">
@@ -445,6 +462,7 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
             </Panel>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

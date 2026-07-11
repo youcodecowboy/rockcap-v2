@@ -597,3 +597,139 @@ export const lenderGetDeepContext = query({
     };
   },
 });
+
+// ── Lender document trail (2026-07-11, Lenders tab Documents view) ────────
+//
+// Every document that evidences this lender, federated from four lanes:
+//   • the lender row's sourceDocumentIds (lender.create evidence)
+//   • atoms where the lender is subject/object → observations → documents
+//   • the facility book's atoms → observations → documents
+//   • appetite signals whose sourceRef is a document id
+// Each document rides with its summary + client/project scope and an
+// atomCount (how much knowledge was pulled from it for THIS lender), so the
+// profile can show what came from where and click through. Bounded scans.
+export const lenderDocuments = query({
+  args: { lenderClientId: v.id("clients"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cap = Math.min(args.limit ?? 60, 100);
+    const lenderId = args.lenderClientId as string;
+    // documentId → { via: Set<lane>, atomCount }
+    const hits = new Map<string, { via: Set<string>; atomCount: number }>();
+    const bump = (docId: string, via: string, atoms = 0) => {
+      const h = hits.get(docId) ?? { via: new Set<string>(), atomCount: 0 };
+      h.via.add(via);
+      h.atomCount += atoms;
+      hits.set(docId, h);
+    };
+
+    // Lane 1: lender-row evidence.
+    const lender = await ctx.db.get(args.lenderClientId);
+    for (const id of ((lender as any)?.sourceDocumentIds ?? []) as string[]) {
+      bump(id, "lender evidence");
+    }
+
+    // Lane 2: the lender's own knowledge atoms (both directions, capped —
+    // atom rows carry ~8KB embeddings, keep scans tight).
+    const collectDocs = async (atomId: any, via: string) => {
+      const obs = await ctx.db
+        .query("atomObservations")
+        .withIndex("by_atom", (q) => q.eq("atomId", atomId))
+        .take(4);
+      let seen = false;
+      for (const o of obs) {
+        if (o.documentId) {
+          bump(o.documentId as string, via, seen ? 0 : 1);
+          seen = true;
+        }
+      }
+    };
+    for (const status of ["active", "contested"] as const) {
+      const subj = await ctx.db
+        .query("atoms")
+        .withIndex("by_subject", (q) =>
+          q.eq("subjectType", "client").eq("subjectId", lenderId).eq("status", status),
+        )
+        .take(120);
+      for (const a of subj) await collectDocs(a._id, "knowledge");
+      const obj = await ctx.db
+        .query("atoms")
+        .withIndex("by_object", (q) =>
+          q.eq("objectEntityType", "client").eq("objectEntityId", lenderId).eq("status", status),
+        )
+        .take(120);
+      for (const a of obj) await collectDocs(a._id, "knowledge");
+    }
+
+    // Lane 3: facility-book atoms — the executed/later-stage deal paper.
+    const facilities = await ctx.db
+      .query("facilities")
+      .withIndex("by_lender", (q) => q.eq("lenderClientId", args.lenderClientId))
+      .collect();
+    for (const f of facilities) {
+      for (const status of ["active", "contested"] as const) {
+        const atoms = await ctx.db
+          .query("atoms")
+          .withIndex("by_subject", (q) =>
+            q.eq("subjectType", "facility").eq("subjectId", f._id as string).eq("status", status),
+          )
+          .take(30);
+        for (const a of atoms) await collectDocs(a._id, "facility");
+      }
+    }
+
+    // Lane 4: appetite signals sourced from documents.
+    const signals = await ctx.db
+      .query("appetiteSignals")
+      .withIndex("by_lender_current", (q) =>
+        q.eq("lenderClientId", args.lenderClientId).eq("isCurrent", true),
+      )
+      .collect();
+    for (const sig of signals) {
+      if (!sig.sourceRef) continue;
+      const docId = ctx.db.normalizeId("documents", sig.sourceRef);
+      if (docId) bump(docId as string, "appetite");
+    }
+
+    // Resolve documents (skip dangling ids), newest first.
+    const documents: Array<{
+      documentId: string;
+      fileName: string;
+      fileTypeDetected?: string;
+      category?: string;
+      summary: string;
+      uploadedAt: string;
+      clientId?: string;
+      clientName?: string;
+      projectId?: string;
+      projectName?: string;
+      atomCount: number;
+      via: string[];
+    }> = [];
+    for (const [docId, h] of hits) {
+      const normalized = ctx.db.normalizeId("documents", docId);
+      if (!normalized) continue;
+      const doc = await ctx.db.get(normalized);
+      if (!doc || (doc as any).isDeleted === true) continue;
+      const d = doc as any;
+      documents.push({
+        documentId: docId,
+        fileName: d.fileName,
+        fileTypeDetected: d.fileTypeDetected,
+        category: d.category,
+        summary: d.summary ?? "",
+        uploadedAt: d.uploadedAt,
+        clientId: d.clientId,
+        clientName: d.clientName,
+        projectId: d.projectId,
+        projectName: d.projectName,
+        atomCount: h.atomCount,
+        via: [...h.via],
+      });
+    }
+    documents.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""));
+    return {
+      documents: documents.slice(0, cap),
+      totalFound: documents.length,
+    };
+  },
+});
