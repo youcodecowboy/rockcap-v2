@@ -20,6 +20,7 @@ import {
 } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
 import type { ColorPalette } from '@/lib/colors';
+import MiniKnowledgeGraph from '@/components/knowledge/MiniKnowledgeGraph';
 import {
   Network,
   ArrowUpRight,
@@ -399,6 +400,15 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
 
           {/* Right 1/3: connections */}
           <div className="space-y-4">
+            <Panel title="Knowledge graph" accent={lenderTone} padded={false}>
+              <MiniKnowledgeGraph
+                entityType="client"
+                entityId={lenderId}
+                height={260}
+                onExpand={onOpenGraph}
+              />
+            </Panel>
+
             <Panel title={`Projects · ${linkedProjects.length}`}>
               {linkedProjects.length === 0 ? (
                 <div style={{ fontSize: 11, color: colors.text.muted }}>

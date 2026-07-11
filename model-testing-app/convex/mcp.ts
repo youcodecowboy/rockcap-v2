@@ -2331,6 +2331,32 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // The people behind a synced company. companies.syncCompaniesHouse persists
+  // officers/PSCs but returns only counts — this reads the names back, which
+  // is the seed for contact discovery (apollo.findEmail needs a name; there
+  // is no company-wide people search).
+  {
+    name: "companies.getOfficers",
+    description:
+      "Officers + PSCs of a Companies House company ALREADY SYNCED into RockCap's mirror tables, by CH number. Read-only. Call companies.syncCompaniesHouse({chNumber}) first if not yet synced (this returns error company_not_synced otherwise). Returns { ok, companyNumber, companyName, activeOfficerCount, officers: [{name, officerRole, appointedOn, resignedOn, isActive, occupation, nationality, appointmentsLink}] (active first, newest appointment first), psc: [{name, pscType, naturesOfControl, ceasedOn}] }. This is the name-seed for contact discovery: apollo.findEmail can only enrich a NAMED person (no company-wide people search exists), so lender-intel's enrich gauntlet and prospect-intel's director step read names here, then enrich each via apollo.findEmail and persist keepers via contact.create. appointmentsLink feeds companies.getOfficerAppointments for cross-company group walks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyNumber: {
+          type: "string",
+          description: "Companies House number (normalised to uppercase + trimmed).",
+        },
+      },
+      required: ["companyNumber"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companiesHouse.getOfficersByCompanyNumber, {
+        companyNumber: args.companyNumber,
+      });
+      return asText(result);
+    },
+  },
+
   // prospect-intel corporate-group resolution: an individual's other CH
   // appointments. Given an officer's stored appointments link, returns the
   // person's full appointment list so the resolve-related-entities sub-skill
