@@ -19,14 +19,18 @@ import {
   projectStatusTone,
 } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
-import type { ColorPalette } from '@/lib/colors';
 import MiniKnowledgeGraph from '@/components/knowledge/MiniKnowledgeGraph';
+import {
+  FacilityStatusSelect,
+  AppetitePanelContent,
+  PeoplePanelContent,
+  type LenderContact,
+} from './LenderEditors';
 import {
   Network,
   ArrowUpRight,
   Landmark,
   Briefcase,
-  Users,
   Building,
   Globe,
 } from 'lucide-react';
@@ -76,24 +80,6 @@ function fmtAppetiteValue(entry: AppetiteEntry): string {
   }
   if (valueType === 'boolean') return value ? 'yes' : 'no';
   return String(value).replace(/_/g, ' ');
-}
-
-const SOURCE_LABELS: Record<string, string> = {
-  bdm_meeting: 'BDM meeting',
-  lender_doc: 'lender doc',
-  publication: 'publication',
-  deal_behaviour: 'deal behaviour',
-  manual: 'manual',
-};
-
-function facilityStatusTone(status: string | undefined, colors: ColorPalette): string {
-  switch ((status ?? '').toLowerCase()) {
-    case 'live': return colors.accent.green;
-    case 'indicative': return colors.accent.yellow;
-    case 'repaid': return colors.accent.blue;
-    case 'defaulted': return colors.accent.red;
-    default: return colors.text.muted;
-  }
 }
 
 // ── Component ───────────────────────────────────────────────────────────
@@ -220,12 +206,7 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
       key: 'status',
       header: 'Status',
       width: 100,
-      render: (f) =>
-        f.status ? (
-          <StatusPill label={f.status} tone={facilityStatusTone(f.status, colors)} />
-        ) : (
-          '—'
-        ),
+      render: (f) => <FacilityStatusSelect facilityId={f._id} status={f.status ?? undefined} />,
     },
   ];
 
@@ -353,48 +334,12 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
             </Panel>
 
             <Panel title="Stated appetite" accent={lenderTone}>
-              {appetiteGroups.length === 0 ? (
-                <EmptyState
-                  icon={<Landmark className="w-8 h-8" />}
-                  title="No appetite signals yet"
-                  body="Appetite is captured from lender packets, BDM meetings, and deal behaviour via lender.recordAppetite."
-                />
-              ) : (
-                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-                  {appetiteGroups.map(([group, entries]) => (
-                    <div key={group}>
-                      <div
-                        style={{
-                          fontFamily: MONO,
-                          fontSize: 9,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          color: colors.text.muted,
-                          marginBottom: 6,
-                        }}
-                      >
-                        {group}
-                      </div>
-                      <div className="space-y-1.5">
-                        {entries.map(({ fieldPath, entry }) => (
-                          <div key={fieldPath} className="flex items-baseline justify-between gap-3">
-                            <span style={{ fontSize: 11, color: colors.text.secondary }}>
-                              {fieldPathLeaf(fieldPath)}
-                            </span>
-                            <span
-                              className="text-right"
-                              style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}
-                              title={`${SOURCE_LABELS[entry.sourceType] ?? entry.sourceType}${entry.asOfDate ? ` · as of ${entry.asOfDate}` : ''}${entry.confidence != null ? ` · confidence ${entry.confidence}` : ''}`}
-                            >
-                              {fmtAppetiteValue(entry)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <AppetitePanelContent
+                lenderId={lenderId}
+                groups={appetiteGroups}
+                formatValue={fmtAppetiteValue}
+                formatLeaf={fieldPathLeaf}
+              />
             </Panel>
           </div>
 
@@ -443,40 +388,11 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
             </Panel>
 
             <Panel title={`People · ${contacts.length}`}>
-              {contacts.length === 0 ? (
-                <div style={{ fontSize: 11, color: colors.text.muted }}>
-                  No contacts linked yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {(contacts as Array<{ _id: string; name: string; role?: string; jobTitle?: string; email?: string }>).map(
-                    (c) => (
-                      <div key={c._id} className="flex items-start gap-2">
-                        <Users className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: colors.entityTypes.contact }} />
-                        <div className="min-w-0">
-                          <div style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
-                            {c.name}
-                          </div>
-                          {(c.jobTitle || c.role) && (
-                            <div style={{ fontSize: 10, color: colors.text.muted }}>
-                              {c.jobTitle || c.role}
-                            </div>
-                          )}
-                          {c.email && (
-                            <a
-                              href={`mailto:${c.email}`}
-                              className="hover:underline"
-                              style={{ fontSize: 10, color: colors.accent.blue }}
-                            >
-                              {c.email}
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
-              )}
+              <PeoplePanelContent
+                lenderId={lenderId}
+                lenderName={lender.name}
+                contacts={contacts as LenderContact[]}
+              />
             </Panel>
 
             <Panel title="Companies House">
