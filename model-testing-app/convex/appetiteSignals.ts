@@ -514,12 +514,26 @@ export const lenderGetDeepContext = query({
       .collect();
     const appetiteMap: Record<string, any> = {};
     for (const s of currentSignals) {
+      // Resolve a human-readable source label: a sourceRef that is a document
+      // id becomes the document's fileName; anything else passes through.
+      let sourceLabel: string | undefined = s.sourceRef ?? undefined;
+      if (s.sourceRef) {
+        const docId = ctx.db.normalizeId("documents", s.sourceRef);
+        if (docId) {
+          const doc = await ctx.db.get(docId);
+          if (doc) sourceLabel = (doc as any).fileName;
+        }
+      }
       appetiteMap[s.fieldPath] = {
         value: s.value,
         valueType: s.valueType,
         sourceType: s.sourceType,
         asOfDate: s.asOfDate,
         confidence: s.confidence,
+        sourceRef: s.sourceRef,
+        sourceLabel,
+        notes: s.notes,
+        recordedAt: s._creationTime,
       };
     }
 
@@ -595,6 +609,72 @@ export const lenderGetDeepContext = query({
       cadences,
       pendingApprovals,
     };
+  },
+});
+
+// ── Lender activity timeline (2026-07-11, Lenders tab) ────────────────────
+//
+// One merged, recency-ordered feed of what changed on a lender profile and
+// when: appetite signals recorded, facilities minted/rebuilt/added, contacts
+// added, notes filed. Answers "when was this information actually put in
+// place?" so the profile's freshness is legible. Bounded per lane; capped.
+export const lenderActivity = query({
+  args: { lenderClientId: v.id("clients"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cap = Math.min(args.limit ?? 25, 50);
+    type Item = { at: number; kind: string; label: string; detail?: string };
+    const items: Item[] = [];
+
+    const signals = await ctx.db
+      .query("appetiteSignals")
+      .withIndex("by_lender", (q) => q.eq("lenderClientId", args.lenderClientId))
+      .collect();
+    for (const s of signals) {
+      items.push({
+        at: s._creationTime,
+        kind: "appetite",
+        label: `${s.fieldPath} ${s.supersededBy ? "recorded (since superseded)" : "recorded"}`,
+        detail: s.sourceType,
+      });
+    }
+
+    const facilities = await ctx.db
+      .query("facilities")
+      .withIndex("by_lender", (q) => q.eq("lenderClientId", args.lenderClientId))
+      .collect();
+    for (const f of facilities) {
+      const project = await ctx.db.get(f.projectId);
+      const name = (project as any)?.name ?? "unknown project";
+      items.push({
+        at: f._creationTime,
+        kind: "facility",
+        label: `facility on ${name} ${f.createdFrom === "operator" ? "added manually" : "minted from documents"}`,
+        detail: f.tranche ?? undefined,
+      });
+      const rebuilt = Date.parse(f.lastRebuiltAt);
+      if (Number.isFinite(rebuilt) && rebuilt - f._creationTime > 60_000) {
+        items.push({ at: rebuilt, kind: "facility", label: `facility on ${name} updated`, detail: f.createdFrom });
+      }
+    }
+
+    const contacts = await ctx.db
+      .query("contacts")
+      .withIndex("by_client", (q) => q.eq("clientId", args.lenderClientId))
+      .collect();
+    for (const c of contacts) {
+      items.push({ at: c._creationTime, kind: "person", label: `${(c as any).name} added`, detail: (c as any).emailSource ?? undefined });
+    }
+
+    const notes = await ctx.db
+      .query("notes")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.lenderClientId))
+      .collect();
+    for (const n of notes) {
+      items.push({ at: n._creationTime, kind: "note", label: `note: ${(n as any).title}` });
+    }
+
+    items.sort((a, b) => b.at - a.at);
+    return items.slice(0, cap);
   },
 });
 

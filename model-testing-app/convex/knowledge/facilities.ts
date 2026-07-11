@@ -747,11 +747,36 @@ export const listByLender = query({
       rows.map(async (f) => {
         const project = await ctx.db.get(f.projectId);
         const borrower = f.borrowerClientId ? await ctx.db.get(f.borrowerClientId) : null;
+        // Provenance: the documents that evidenced this facility — atoms
+        // anchored to it, through their observations, to source documents.
+        // Bounded scans (a facility carries dozens of atoms at most).
+        const docIds = new Set<string>();
+        for (const status of ["active", "contested"] as const) {
+          const atoms = await ctx.db
+            .query("atoms")
+            .withIndex("by_subject", (q) =>
+              q.eq("subjectType", "facility").eq("subjectId", f._id as string).eq("status", status),
+            )
+            .take(30);
+          for (const atom of atoms) {
+            const obs = await ctx.db
+              .query("atomObservations")
+              .withIndex("by_atom", (q) => q.eq("atomId", atom._id))
+              .take(5);
+            for (const o of obs) if (o.documentId) docIds.add(o.documentId as string);
+          }
+        }
+        const sources: Array<{ documentId: string; fileName: string }> = [];
+        for (const id of [...docIds].slice(0, 6)) {
+          const doc = await ctx.db.get(id as Id<"documents">);
+          if (doc) sources.push({ documentId: id, fileName: (doc as Doc<"documents">).fileName });
+        }
         return {
           ...f,
           projectName: (project as Doc<"projects"> | null)?.name ?? "Unknown project",
           projectClientId: (project as Doc<"projects"> | null)?.clientId,
           borrowerName: (borrower as Doc<"clients"> | null)?.name,
+          sources,
         };
       }),
     );
@@ -811,8 +836,66 @@ export const operatorSetStatus = mutation({
   },
 });
 
+// ── Operator write: manually add a facility (2026-07-11, Lenders tab) ──────
+//
+// The pipeline mints facilities from atoms; this is the operator's lane for
+// a facility the documents haven't evidenced (market intel, a call, a deal
+// RockCap wasn't on). Flagged createdFrom: "operator" — the UI shows it as
+// manually added. Uses the SAME dedupeKey scheme as the minter, so if the
+// pipeline later sees the same (project, lender, tranche) it lands on this
+// row instead of a duplicate. NOTE: amount/rate/maturity on operator rows
+// are plain values, not atom mirrors — a later rematerialize only overwrites
+// them if atoms actually anchor to this facility.
+export const operatorCreate = mutation({
+  args: {
+    lenderClientId: v.id("clients"),
+    projectId: v.id("projects"),
+    borrowerClientId: v.optional(v.id("clients")),
+    tranche: v.optional(v.string()),
+    amountGBP: v.optional(v.number()),
+    interestRate: v.optional(v.number()),
+    maturityDate: v.optional(v.string()),
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    if (args.status && !FACILITY_STATUS_VALUES.has(args.status)) {
+      throw new Error(`invalid_status: ${args.status}`);
+    }
+    const tranche = normalizeTranche(args.tranche);
+    const dedupeKey = `${args.projectId}:${args.lenderClientId}:${tranche ?? "single"}`;
+    const existing = await ctx.db
+      .query("facilities")
+      .withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey))
+      .first();
+    if (existing) {
+      return {
+        ok: false as const,
+        error: "facility_exists" as const,
+        facilityId: existing._id,
+        message: "A facility for this project + lender + tranche already exists.",
+      };
+    }
+    const facilityId = await ctx.db.insert("facilities", {
+      projectId: args.projectId,
+      lenderClientId: args.lenderClientId,
+      borrowerClientId: args.borrowerClientId,
+      tranche,
+      amountGBP: args.amountGBP,
+      interestRate: args.interestRate,
+      maturityDate: args.maturityDate,
+      status: args.status,
+      dedupeKey,
+      createdFrom: "operator",
+      lastRebuiltAt: new Date().toISOString(),
+    });
+    return { ok: true as const, facilityId };
+  },
+});
+
 // MCP lane twins (bearer-token callers have no Clerk identity — the same
-// pattern as appetiteSignals.recordInternal, commit 40d07700). The MCP
+// pattern as appetiteSignals.recordInternal, commit 40d70700). The MCP
 // handler authenticates before calling; bodies mirror the public mutations.
 export const operatorSetStatusInternal = internalMutation({
   args: { facilityId: v.id("facilities"), status: v.string() },
