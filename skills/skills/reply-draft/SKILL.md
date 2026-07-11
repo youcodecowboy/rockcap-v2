@@ -28,7 +28,7 @@ Narrow, read-only atomic tools (no writes):
 - `getContact` — who replied.
 - `getClient` — the prospect/relationship.
 - `getProject` — any associated project.
-- `getClientIntelligence` — grounded specifics for the "what we can do" sentence and to check which qualification gaps are already closed.
+- `atoms.search` — grounded specifics for the "what we can do" sentence and to check which qualification gaps are already closed (graph-first: hybrid fact + prose-chunk retrieval). `getClientIntelligence` is the fallback when the client's graph is empty (not yet atomized).
 
 ## Output contract
 
@@ -56,7 +56,7 @@ On `escalate` (or any HTTP/parse failure), the processor falls back to an operat
 Inherits the qualify-and-draft style rules (`../qualify-and-draft/SKILL.md` + `../../CONVENTIONS.md`). The five that matter:
 
 - **Cite the inbound.** Open by acknowledging the specific thing they wrote.
-- **Cite our intel.** Ground the "what we can do" sentence in real knowledge from `getClientIntelligence`, not generic claims.
+- **Cite our intel.** Ground the "what we can do" sentence in real knowledge from `atoms.search` (falling back to `getClientIntelligence` for a not-yet-atomized client), not generic claims.
 - **Three questions maximum** (info_question): ask only the highest-leverage qualification gaps; hold the rest for the call.
 - **Match the register.** Mirror their length and warmth.
 - **Propose the next step.** Close with a call (info_question) or the next concrete action (positive).

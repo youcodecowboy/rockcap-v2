@@ -33,13 +33,40 @@ notes, meetings, emails never atomize. Chat is retired entirely (out of scope).
 - [x] Convex pushed (`--typecheck=disable` — HEAD already carries 82 tsc
       errors incl. pre-existing facilities.ts:753 project.clientId bug);
       `npx next build` passes.
-- [ ] Commit + push + PR.
+- [x] Committed (33645f04, + 91de86cf for the pre-existing coverageAudit
+      helpers so api.d.ts stays consistent) and pushed to
+      `origin/knowledge-cutover`. PR pending — branch is based on
+      `coverage-audit` (3 unmerged commits), so either merge coverage-audit
+      first or PR the combined branch.
 
-## Phase 2 — repoint readers (next PR)
+## Phase 2 — repoint readers (same branch, second commit)
 
-- [ ] Profile Intelligence tabs (desktop + m- + native) → atoms-backed panel.
-- [ ] Project page graph entry point (KnowledgeGraphDrawer).
-- [ ] Skills that read getClientIntelligence/knowledgeItems → atoms/graph tools.
+- [x] Desktop client + project "Intelligence" tabs → atoms-backed
+      `KnowledgeAtomsTab` (expandEntity + ringAttributes; contested
+      adjudication inline via resolveContested; relabelled "Knowledge").
+      Beauhurst cards kept above the client tab.
+- [x] Project page gets a "Knowledge graph" header button + drawer
+      (entryEntityType "project").
+- [x] Mobile-web m-clients Client/Project IntelligenceTab rewritten in place
+      to atoms (same filenames/props; native mobile app still legacy —
+      fold into mobile facelift).
+- [x] Meetings + emails atomize: "meeting"/"email" observation sourceTypes,
+      `atomizedAt` stamps on meetings/replyEvents, one-shot
+      `knowledge/sourceAtomizer` (createAtomsBatch + externalRef anchors,
+      tier 2/1 forced), triggers on fireflies insert (60s), meetings.create,
+      replyEvents.createInternal; roster/route call factored into
+      `knowledge/rosterAssembly.ts` (noteAtomizer refactored onto it);
+      atomize route accepts `sourceRef`.
+- [x] skills/CONVENTIONS.md: graph-first read chain codified (§5); legacy
+      writes marked no-new-writes (§2).
+- [x] Per-skill SKILL.md read repointing — 15 files (9 skills + 6 sub-skills)
+      lead with getDeepContext graph section → atoms.search → graph.*;
+      legacy reads demoted to not-yet-atomized fallback; writes untouched
+      (Phase 3). Skips were write-only references (meeting-capture,
+      deal-intake, terms-comparison, info-request-grader, monitoring-watcher,
+      deal-triage, client-context-capture, case-study-author, lender-intel).
+- [ ] Native mobile app tabs (mobile-app/) still read knowledgeItems — fold
+      into the mobile facelift branch.
 
 ## Phase 3 — retire old system (final PR)
 

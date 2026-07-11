@@ -34,7 +34,7 @@ Persisted to Convex:
 ## Workflow
 
 1. Load full project context via `deal.get_full_context` (BL-5.4, planned): project, intelligence, lenderApproaches, milestones, info requests, recent docs, recent touchpoints.
-2. Load the lender's profile: static fields from `clientIntelligence.lenderProfile`, recent `appetiteSignals`, behavioural data computed from prior `lenderApproaches` with this lender.
+2. Load the lender's profile: `lender.getDeepContext` (read its `graph` section — facilities, atom/contested counts, top edges) plus `atoms.search` for lender-specific facts, alongside recent `appetiteSignals` and behavioural data computed from prior `lenderApproaches` with this lender. If the graph section is empty (lender not yet atomized), fall back to the static fields on `clientIntelligence.lenderProfile`.
 3. Pick the template. If the lender has a known IC format (a `documents` row of type "IC Template" linked to that client), use it. Otherwise use the generic IC paper template from `skills/templates/ic-paper.docx`.
 4. Compose the paper in sections:
    - **Executive summary**: facility, sponsor, scheme, indicative terms agreed at step 8 (or step 9 final), timing
@@ -44,7 +44,7 @@ Persisted to Convex:
    - **Risks**: scheme-specific, sponsor-specific, market-level; how each is mitigated
    - **Recommendation to credit**: the borrower-side ask in a single paragraph
 5. Use `template.populate` (BL-5.6) to render the docx with extracted variables.
-6. Identify the lender's specific information requirements. These come from the lender's `clientIntelligence.lenderProfile.icRequirements` if populated, or from `documents` rows linked to this lender of type "IC Submission Pack". Parse and add as graded `knowledgeChecklistItems` with `lenderStatus: "not_requested"` initially.
+6. Identify the lender's specific information requirements. Search the graph first (`atoms.search` on the lender for IC-requirement facts) or use `documents` rows linked to this lender of type "IC Submission Pack"; if the lender's graph is empty (not yet atomized), fall back to `clientIntelligence.lenderProfile.icRequirements` if populated. Parse and add as graded `knowledgeChecklistItems` with `lenderStatus: "not_requested"` initially.
 7. Stage the docx as an `approvals` row of type `document_publish` with `relatedClientId` set to the lender and `relatedProjectId` set to the project.
 8. Return a brief: paper sections drafted, information requirements added to checklist, what the operator should review before approving.
 
@@ -59,7 +59,7 @@ All CONVENTIONS apply. Three that matter most:
 ## Tool dependencies
 
 - `deal.get_full_context` (BL-5.4, planned)
-- `intelligence.getClientIntelligence` (the lender's)
+- `lender.getDeepContext` (graph section: facilities + atoms) + `atoms.search` (the lender's; `intelligence.getClientIntelligence` fallback only when the graph section is empty — lender not yet atomized)
 - `appetite.getCurrentForLender`, `lenderApproach.getBehaviouralSummary`
 - `documents.getByProject`, `documents.getByClient` (for IC templates)
 - `template.populate` (BL-5.6, planned)

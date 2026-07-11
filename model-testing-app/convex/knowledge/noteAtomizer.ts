@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internalAction, internalQuery } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { tipTapDocToPlainText } from "../lib/markdownToTipTap";
 import { textFallbackChecksum } from "./chunker";
+import { assembleRoster, callAtomizeRoute } from "./rosterAssembly";
 
 // Note-atomization lane (knowledge cutover 2026-07-11). Filed operator notes
 // (client/project scope) are knowledge sources like documents: they ride the
@@ -95,90 +96,20 @@ export const atomizeNote = internalAction({
       return { status: "skipped" as const, reason: "client_not_knowledge_enabled" };
     }
 
-    const apiBase = process.env.NEXT_APP_URL;
-    const secret = process.env.CRON_SECRET;
-    if (!apiBase || !secret) {
-      throw new Error(
-        "NEXT_APP_URL / CRON_SECRET not configured on the Convex deployment",
-      );
-    }
-
-    // Roster assembled from the operational tables — parity with
-    // atomizerLane.sweep (§4): the client, its projects + contacts, and ALL
-    // lenders (global, high-value).
-    const clientId = note.clientId;
-    const [client, projects, contacts, lenders] = await Promise.all([
-      ctx.runQuery(api.clients.get, { id: clientId }),
-      ctx.runQuery(api.projects.getByClient, { clientId }),
-      ctx.runQuery(api.contacts.getByClient, { clientId }),
-      ctx.runQuery(api.appetiteSignals.listLenders, { limit: 200 }),
-    ]);
-    const roster = {
-      client: client
-        ? {
-            id: (client as any)._id,
-            name: (client as any).name ?? null,
-            companyName: (client as any).companyName ?? null,
-            companiesHouseNumber:
-              (client as any).companiesHouseNumber ?? null,
-          }
-        : null,
-      projects: (projects as any[]).map((p) => ({
-        id: p._id,
-        name: p.name ?? null,
-        shortcode: p.projectShortcode ?? null,
-      })),
-      contacts: (contacts as any[]).map((c) => ({
-        id: c._id,
-        name: c.name ?? null,
-        role: c.role ?? null,
-        email: c.email ?? null,
-      })),
-      lenders: (lenders as any[]).map((l) => ({
-        id: l._id,
-        name: l.name ?? l.companyName ?? null,
-      })),
-    };
-
-    const normalized = apiBase.match(/^https?:\/\//)
-      ? apiBase
-      : `https://${apiBase}`;
-    const resp = await fetch(
-      `${normalized.replace(/\/$/, "")}/api/knowledge/atomize`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-cron-secret": secret,
-        },
-        body: JSON.stringify({
-          noteId: args.noteId,
-          contentChecksum,
-          textContent: note.text,
-          meta: {
-            clientId,
-            projectId: note.projectId,
-            category: "Note",
-            fileTypeDetected: "Operator Note",
-            fileName: note.title || "Untitled note",
-            roster,
-          },
-        }),
+    const roster = await assembleRoster(ctx, note.clientId);
+    const candidates = await callAtomizeRoute({
+      noteId: args.noteId,
+      contentChecksum,
+      textContent: note.text,
+      meta: {
+        clientId: note.clientId,
+        projectId: note.projectId,
+        category: "Note",
+        fileTypeDetected: "Operator Note",
+        fileName: note.title || "Untitled note",
+        roster,
       },
-    );
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`atomize route ${resp.status}: ${text.slice(0, 300)}`);
-    }
-    const payload: any = await resp.json().catch(() => null);
-    if (!payload?.ok) {
-      throw new Error(
-        `atomize route error: ${String(payload?.error ?? "unknown").slice(0, 300)}`,
-      );
-    }
-    const candidates = Array.isArray(payload.candidates)
-      ? payload.candidates
-      : [];
+    });
     const result: any = await ctx.runMutation(
       internal.knowledge.atomsCore.reatomizeNoteDiff,
       { noteId: args.noteId, contentChecksum, candidates },
@@ -187,7 +118,7 @@ export const atomizeNote = internalAction({
       `[knowledge-atomize-note] ${args.noteId} ("${note.title}") → ` +
         `candidates=${candidates.length} created=${result.created?.length ?? 0} ` +
         `kept=${result.kept?.length ?? 0} changed=${result.changed?.length ?? 0} ` +
-        `rejected=${result.rejected?.length ?? 0}${payload.isMock ? " [MOCK]" : ""}`,
+        `rejected=${result.rejected?.length ?? 0}`,
     );
     return {
       status: "ok" as const,

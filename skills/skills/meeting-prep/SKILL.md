@@ -76,7 +76,7 @@ Returns the structured JSON output contract documented below. The route's caller
 
 2. **Call `skillRun.start`** with `skillName: "meeting-prep"`, the appropriate `dedupKey`, `dedupWindowDays: 1`.
 
-3. **Load full context — single call.** Call `prospect.getDeepContext({clientId})` (or `client.getDeepContext` — same query). One round-trip returns: identity, contacts, cadences (history of what we've sent), reply events (any inbound), meetings (upcoming + past), intel run, CH profile + charges, clientIntelligence, recent touchpoints, deals, projects, pending approvals.
+3. **Load full context — single call.** Call `prospect.getDeepContext({clientId})` (or `client.getDeepContext` — same query). One round-trip returns: identity, contacts, cadences (history of what we've sent), reply events (any inbound), meetings (upcoming + past), intel run, CH profile + charges, the knowledge-graph `graph` section (atom/contested counts, top edges, facilities), clientIntelligence, recent touchpoints, deals, projects, pending approvals. For counterparty specifics beyond the payload, follow up with `atoms.search` (facts + cited quotes) and `graph.expandEntity` on the counterparty (relationships, track record). The `clientIntelligence` payload is the fallback source only when the graph section is empty — client not yet atomized.
 
 4. **Identify the specific meeting context.** If `meetingId` was given, find it in `getDeepContext.meetings.upcoming` for full attendee + type data. If `meetingDate` only, find the nearest upcoming meeting on or near that date. If no meeting record exists yet, infer from the input.
 
@@ -150,7 +150,8 @@ All `../../CONVENTIONS.md` rules apply. Three that matter most:
 
 This skill calls these MCP-exposed tools (v1.3):
 
-- `prospect.getDeepContext` / `client.getDeepContext` — one-shot context load (replaces 5-7 individual reads)
+- `prospect.getDeepContext` / `client.getDeepContext` — one-shot context load (replaces 5-7 individual reads; includes the `graph` section)
+- `atoms.search` / `graph.expandEntity` — counterparty facts + relationships beyond the deep-context payload
 - `meeting.get` — single meeting detail when meetingId given
 - `meeting.listUpcoming` — for "what calls do I have today" inventory
 - `reply.get` — responder mode entry

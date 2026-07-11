@@ -156,6 +156,8 @@ export const observationInputValidator = v.object({
   sourceType: v.union(
     v.literal("document"),
     v.literal("note"),
+    v.literal("meeting"),
+    v.literal("email"),
     v.literal("companies_house"),
     v.literal("apollo"),
     v.literal("operator"),

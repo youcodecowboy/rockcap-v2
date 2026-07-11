@@ -40,7 +40,7 @@ type ConflictCheck = {
 
 ## Workflow
 
-1. Query `knowledgeItems` (or the structured intelligence singleton) by `(scope, entityId, fieldPath)` and `isCurrent: true`.
+1. Query the knowledge graph first: `atoms.getForSubject` / `atoms.search` scoped to the entity for current atoms on the same fact (the graph surfaces contested atoms natively). If the entity's graph is empty (not yet atomized), fall back to querying `knowledgeItems` (or the structured intelligence singleton) by `(scope, entityId, fieldPath)` and `isCurrent: true`.
 2. If no existing value: `conflictFound: false`, recommend `no_conflict_write_new`.
 3. If existing value matches the new value (equality or within tolerance for numeric values): no conflict, but mark the existing row's `asOfDate` updated to reflect the corroboration.
 4. If existing value differs:
@@ -70,8 +70,8 @@ CONVENTIONS apply. Two that matter most:
 
 ## Tool dependencies
 
-- `knowledge.queryIntelligence`, `knowledge.queryByFieldPath`
-- `intelligence.getClientIntelligence`, `intelligence.getProjectIntelligence` (for structured singletons)
+- `atoms.getForSubject`, `atoms.search` — current-state reads (graph-first)
+- `knowledge.queryIntelligence`, `knowledge.queryByFieldPath`, `intelligence.getClientIntelligence`, `intelligence.getProjectIntelligence` — fallback reads only, when the entity's graph is empty (not yet atomized)
 - `intelligenceConflicts.create` (when `write_new_pending_review`)
 - `knowledge.markSuperseded` (when `write_new_supersedes_old`)
 

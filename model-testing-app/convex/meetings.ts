@@ -393,6 +393,14 @@ export const create = mutation({
       updatedAt: now,
     });
 
+    // Knowledge feed — one-shot meeting atomization (the action re-checks the
+    // atomizedAt stamp, text presence, and the cost wall).
+    await ctx.scheduler.runAfter(
+      0,
+      internal.knowledge.sourceAtomizer.atomizeMeeting,
+      { meetingId },
+    );
+
     // v3: booking advances a prospect to warm_pre_meeting through the canonical
     // stage spine. forward_only never drags a further-along prospect (e.g. one
     // already qualified) back to pre-meeting, and applyPipelineStage no-ops the

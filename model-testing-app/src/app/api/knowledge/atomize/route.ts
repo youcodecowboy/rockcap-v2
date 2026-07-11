@@ -263,12 +263,13 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as {
       documentId?: string;
       noteId?: string; // note lane (knowledge/noteAtomizer) — same extraction, note-anchored persistence
+      sourceRef?: string; // one-shot lanes (knowledge/sourceAtomizer) — `meeting:<id>` / `reply:<id>`
       contentChecksum?: string;
       textContent?: string | null;
       meta?: any;
     } | null;
-    const { documentId, noteId, contentChecksum, textContent, meta } = body ?? {};
-    const sourceId = documentId ?? noteId;
+    const { documentId, noteId, sourceRef, contentChecksum, textContent, meta } = body ?? {};
+    const sourceId = documentId ?? noteId ?? sourceRef;
     if (!sourceId || !contentChecksum) {
       return NextResponse.json(
         { ok: false, error: 'documentId (or noteId) and contentChecksum are required' },

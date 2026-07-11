@@ -3591,6 +3591,9 @@ export default defineSchema({
     createdBy: v.optional(v.id("users")),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
+    // Knowledge lane — stamped when this meeting's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeMeeting); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
     // Fireflies integration (BL-3.x). Set when meeting originated from
@@ -4648,6 +4651,9 @@ export default defineSchema({
     // doesn't always carry the body content.
     replyBodyText: v.optional(v.string()),
     replySubject: v.optional(v.string()),
+    // Knowledge lane — stamped when this reply's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeReply); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
 
     // v1.3 — direct link to the clients row when the contact resolves to
     // one. Speeds up reply.listByClient + the operator-review queue's
@@ -4901,6 +4907,8 @@ export default defineSchema({
     sourceType: v.union(
       v.literal("document"),
       v.literal("note"),
+      v.literal("meeting"), // externalRef `meeting:<meetingId>`; one-shot (meetings are immutable once captured)
+      v.literal("email"),   // externalRef `reply:<replyEventId>`; one-shot inbound replies
       v.literal("companies_house"),
       v.literal("apollo"),
       v.literal("operator"),

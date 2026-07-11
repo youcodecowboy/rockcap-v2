@@ -65,9 +65,9 @@ What it does not do:
 
 2. **Call `skillRun.start`** with `skillName: "qualify-and-draft"`, the appropriate `dedupKey`, `dedupWindowDays: 1`, and `input: {replyEventId or clientId, contactId, tone, mentionPoints}`. Honour `duplicate_found` per the dedup section above.
 
-3. **Load full context — single call.** Call `prospect.getDeepContext({clientId})` (or `client.getDeepContext` — same query). One round-trip returns: prospect identity, contacts (find primary email), cadences (history of what we've sent), reply events (this one + any prior), latest prospect-intel skillRun + intelMarkdown, CH profile + charges, clientIntelligence row, recent touchpoints, pending approvals. This replaces 5-8 individual reads from earlier versions.
+3. **Load full context — single call.** Call `prospect.getDeepContext({clientId})` (or `client.getDeepContext` — same query). One round-trip returns: prospect identity, contacts (find primary email), cadences (history of what we've sent), reply events (this one + any prior), latest prospect-intel skillRun + intelMarkdown, CH profile + charges, the knowledge-graph `graph` section (atom/contested counts, top edges, facilities), clientIntelligence row, recent touchpoints, pending approvals. This replaces 5-8 individual reads from earlier versions.
 
-4. **Identify qualification gaps.** Load `references/qualification-gap-catalogue.md` and `../prospect-intel/references/bridging-vs-developer.md`. Compare what we already know (from `clientIntelligence` + `intelMarkdown`) against the standard gaps (scheme address, GDV, TDC, units, planning status, equity, sponsor experience, timeline). The reply asks about the highest-leverage 3 gaps maximum.
+4. **Identify qualification gaps.** Load `references/qualification-gap-catalogue.md` and `../prospect-intel/references/bridging-vs-developer.md`. Compare what we already know — lead with the deep-context `graph` section plus `atoms.search` for the specific facts (with `intelMarkdown` for narrative); if the graph section is empty (client not yet atomized), fall back to the `clientIntelligence` row — against the standard gaps (scheme address, GDV, TDC, units, planning status, equity, sponsor experience, timeline). The reply asks about the highest-leverage 3 gaps maximum.
 
 5. **Pick the register.** Default formal. If the inbound text uses first names, exclamation marks, or familiar language, register as warm. Match the inbound; do not overcorrect. If `tone` was passed explicitly, honour it.
 
@@ -96,7 +96,8 @@ All voice and output rules from `../../CONVENTIONS.md` apply. Five that matter m
 This skill calls these MCP-exposed tools (v1.3):
 
 - `reply.get` — load the inbound (when classifier-routed)
-- `prospect.getDeepContext` / `client.getDeepContext` — one-shot context load
+- `prospect.getDeepContext` / `client.getDeepContext` — one-shot context load (includes the `graph` section)
+- `atoms.search` — drill into specific facts for step 4 (legacy `intelligence.getClientIntelligence` only as fallback when the graph section is empty — client not yet atomized)
 - `contact.getByClient` — find primary contact if reply is operator-initiated
 - `skillRun.start` (with dedup) — workflow entry
 - `outreach.draftReply` — stage the email draft as a pending approval
