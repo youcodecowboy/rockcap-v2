@@ -107,9 +107,26 @@ const RING_ATTR_CAP = 48;
 // crashed query. take() reads in index order (oldest first within a status);
 // contested rows are a separate status lane, so contested-first ranking
 // still sees every contested atom.
-const CENTER_SCAN_CAP = 600;
-const RING_EDGE_SCAN_CAP = 150;
-const RING_ATTR_SCAN_CAP = 120;
+// SIZED FOR EMBEDDINGS: atoms rows carry an optional 1024-dim float64
+// embedding (~8KB/row, schema §13), so EVERY atom read costs kilobytes and
+// caps must be far tighter than row-count intuition suggests. ~1,100 atom
+// rows ≈ 9MB, leaving headroom under the 16MiB execution budget for the
+// native-lane table scans + observation counts. The durable fix is moving
+// embeddings to a side table so graph reads stop paying for them — logged.
+const CENTER_SCAN_CAP = 150;
+const RING_EDGE_SCAN_CAP = 60;
+const RING_ATTR_SCAN_CAP = 60;
+// Per-member caps alone were NOT enough (Shawbrook, 2026-07-11): 40 ring
+// members × 120-row scans is still ~10k atom rows, and fat rows blow the
+// byte budget anyway. Each ring pass therefore ALSO shares one global
+// row budget across all its members — the loop stops scanning when the
+// pass has spent its allowance, and later members simply contribute no
+// atoms that call (their native/structural edges are unaffected).
+const RING_EDGE_ROW_BUDGET = 250;
+const RING_ATTR_ROW_BUDGET = 250;
+
+/** Mutable row allowance shared across one ring pass. */
+type ScanBudget = { remaining: number };
 /** Per-entity edge cap when a caller needs the whole neighborhood
  * (sharedNeighbors / findPaths) rather than a page of it. */
 const NEIGHBORHOOD_CAP = 200;
@@ -444,16 +461,27 @@ async function collectAtomEdges(
   /** Read-budget bound per index scan (per status, per direction). Undefined
    * = unbounded collect() (walk callers manage their own budgets). */
   scanCap?: number,
+  /** Shared row allowance across a whole ring pass — decremented by rows
+   * actually fetched; scans stop once exhausted. */
+  budget?: ScanBudget,
 ): Promise<FedEdge[]> {
   const rows: Array<{ atom: Doc<"atoms">; direction: "out" | "in" }> = [];
+  const effCap = (cap?: number) => {
+    if (!budget) return cap;
+    if (budget.remaining <= 0) return 0;
+    return cap ? Math.min(cap, budget.remaining) : budget.remaining;
+  };
   if (direction !== "in") {
     for (const status of LIVE_STATUSES) {
+      const cap = effCap(scanCap);
+      if (cap === 0) break;
       const q = ctx.db
         .query("atoms")
         .withIndex("by_subject", (q) =>
           q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
         );
-      const out = scanCap ? await q.take(scanCap) : await q.collect();
+      const out = cap ? await q.take(cap) : await q.collect();
+      if (budget) budget.remaining -= out.length;
       for (const atom of out) {
         if (atom.objectEntityId !== undefined) rows.push({ atom, direction: "out" });
       }
@@ -461,12 +489,15 @@ async function collectAtomEdges(
   }
   if (direction !== "out") {
     for (const status of LIVE_STATUSES) {
+      const cap = effCap(scanCap);
+      if (cap === 0) break;
       const q = ctx.db
         .query("atoms")
         .withIndex("by_object", (q) =>
           q.eq("objectEntityType", entityType).eq("objectEntityId", entityId).eq("status", status),
         );
-      const inbound = scanCap ? await q.take(scanCap) : await q.collect();
+      const inbound = cap ? await q.take(cap) : await q.collect();
+      if (budget) budget.remaining -= inbound.length;
       for (const atom of inbound) rows.push({ atom, direction: "in" });
     }
   }
@@ -515,15 +546,24 @@ async function collectAtomAttributes(
   entityId: string,
   /** Read-budget bound per index scan (per status). Undefined = unbounded. */
   scanCap?: number,
+  /** Shared row allowance across a whole ring pass — decremented by rows
+   * actually fetched; scans stop once exhausted. */
+  budget?: ScanBudget,
 ): Promise<AttrWithOwner[]> {
   const attrs: AttrWithOwner[] = [];
   for (const status of LIVE_STATUSES) {
+    let cap = scanCap;
+    if (budget) {
+      if (budget.remaining <= 0) break;
+      cap = cap ? Math.min(cap, budget.remaining) : budget.remaining;
+    }
     const q = ctx.db
       .query("atoms")
       .withIndex("by_subject", (q) =>
         q.eq("subjectType", entityType).eq("subjectId", entityId).eq("status", status),
       );
-    const rows = scanCap ? await q.take(scanCap) : await q.collect();
+    const rows = cap ? await q.take(cap) : await q.collect();
+    if (budget) budget.remaining -= rows.length;
     for (const atom of rows) {
       if (atom.objectLiteral === undefined) continue;
       attrs.push({
@@ -1163,8 +1203,9 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   type InterFed = { fromType: GraphEntityType; fromId: string; edge: FedEdge };
   const interAtomByKey = new Map<string, InterFed>();
   const interNativeCandidates: InterFed[] = [];
+  const interScanBudget: ScanBudget = { remaining: RING_EDGE_ROW_BUDGET };
   for (const member of ringMembers) {
-    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing, RING_EDGE_SCAN_CAP);
+    let memberAtomEdges = await collectAtomEdges(ctx, member.type, member.id, "out", inRing, RING_EDGE_SCAN_CAP, interScanBudget);
     if (prospectFilter) {
       // Atom lane only, same as the center expansion — a hidden atom edge
       // simply lets its public-record native mirror (if any) win the key.
@@ -1219,9 +1260,10 @@ export async function expandEntityCore(ctx: QueryCtx, args: ExpandEntityArgs) {
   const ringAttributes: Record<string, AttributeRow[]> = {};
   const ringAttributeTruncated: Record<string, number> = {};
   let ringAttributesTotal = 0;
+  const ringAttrScanBudget: ScanBudget = { remaining: RING_ATTR_ROW_BUDGET };
   if (args.includeRingAttributes) {
     for (const member of ringMembers) {
-      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id, RING_ATTR_SCAN_CAP);
+      let memberAttrs = await collectAtomAttributes(ctx, member.type, member.id, RING_ATTR_SCAN_CAP, ringAttrScanBudget);
       if (prospectFilter) memberAttrs = await prospectFilter.filter(memberAttrs);
       if (memberAttrs.length === 0) continue;
       memberAttrs.sort(rankAttributes);
@@ -1785,6 +1827,69 @@ export async function clientGraphSection(
   };
 }
 
+// Project counterpart (knowledge cutover 2026-07-11) — the "reuse the same
+// cores later" case the comment above anticipated. Same near-zero-cost shape:
+// two bounded count reads, then edges/facilities only when atoms exist.
+export async function projectGraphSection(
+  ctx: QueryCtx,
+  projectId: Id<"projects">,
+): Promise<Record<string, unknown>> {
+  const idStr = projectId as string;
+  const countByStatus = async (status: "active" | "contested") => {
+    const ids = new Set<string>();
+    const subject = await ctx.db
+      .query("atoms")
+      .withIndex("by_subject", (q) =>
+        q.eq("subjectType", "project").eq("subjectId", idStr).eq("status", status),
+      )
+      .collect();
+    for (const a of subject) ids.add(a._id as string);
+    // by_project carries no status column — filter in code.
+    const scoped = await ctx.db
+      .query("atoms")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .collect();
+    for (const a of scoped) {
+      if (a.status === status) ids.add(a._id as string);
+    }
+    return ids.size;
+  };
+
+  const atoms = await countByStatus("active");
+  const contested = await countByStatus("contested");
+  if (atoms === 0 && contested === 0) return { atoms: 0 };
+
+  const names = new NameResolver(ctx);
+  const cache: ScanCache = {};
+  const { atomEdges, nativeEdges } = await federatedEdges(ctx, "project", idStr, undefined, cache);
+  const top = [...atomEdges, ...nativeEdges].sort(rankEdges).slice(0, 10);
+
+  const facilityRows = await ctx.db
+    .query("facilities")
+    .withIndex("by_project", (q) => q.eq("projectId", projectId))
+    .collect();
+  const facilities = [];
+  for (const f of facilityRows.slice(0, 10)) {
+    facilities.push({
+      facilityId: f._id,
+      lender: f.lenderClientId
+        ? (await names.ref("client", f.lenderClientId as string)).name
+        : f.lenderCompanyId
+          ? (await names.ref("company", f.lenderCompanyId as string)).name
+          : undefined,
+      amountGBP: f.amountGBP,
+      status: f.status,
+    });
+  }
+
+  return {
+    atoms,
+    contested,
+    topEdges: await resolveEdges(names, top),
+    facilities,
+  };
+}
+
 // ── Validators ──
 
 const entityTypeValidator = v.union(
@@ -1998,5 +2103,54 @@ export const atomsSearch = query({
   handler: async (ctx, args) => {
     await requireIdentity(ctx);
     return atomsSearchCore(ctx, args);
+  },
+});
+
+/** Atoms this document asserted (live observations via by_document → parent
+ * atoms). Powers the file panel's Knowledge tab — the atoms-backed
+ * replacement for the retired per-document knowledgeItems view. Contested
+ * first, then by confidence. */
+export const atomsForDocument = query({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    await requireIdentity(ctx);
+    const obs = await ctx.db
+      .query("atomObservations")
+      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .collect();
+    const seen = new Set<string>();
+    const out: Array<{
+      atomId: Id<"atoms">;
+      statement: string;
+      predicate: string;
+      qualifier?: string;
+      status: "active" | "contested";
+      confidence: number;
+      sourceText?: string;
+    }> = [];
+    for (const o of obs) {
+      if (o.superseded === true) continue;
+      if (seen.has(o.atomId as string)) continue;
+      seen.add(o.atomId as string);
+      const atom = await ctx.db.get(o.atomId);
+      if (!atom || (atom.status !== "active" && atom.status !== "contested")) {
+        continue;
+      }
+      out.push({
+        atomId: atom._id,
+        statement: atom.statement,
+        predicate: atom.predicate,
+        qualifier: atom.qualifier,
+        status: atom.status,
+        confidence: atom.confidence,
+        sourceText: o.sourceText,
+      });
+    }
+    out.sort(
+      (a, b) =>
+        Number(b.status === "contested") - Number(a.status === "contested") ||
+        b.confidence - a.confidence,
+    );
+    return out;
   },
 });

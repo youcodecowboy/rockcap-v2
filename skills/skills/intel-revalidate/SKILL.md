@@ -45,7 +45,7 @@ Resolved if omitted:
 ## Workflow
 
 1. **Start the run.** `skillRun.start` with `skillName: "intel-revalidate"`, `dedupKey` = CH number, `dedupWindowDays: 1`. Honour a `duplicate_found` response (surface the prior verdict, ask before continuing).
-2. **Load the baseline.** Read the prospect (`client.get`) and its captured intelligence (`intelligence.getClientIntelligence`) — this is the "last known state" to diff against.
+2. **Load the baseline.** Read the prospect (`client.get`) and its captured knowledge graph-first: `prospect.getDeepContext` (its `graph` section — atom/contested counts, top edges, facilities) plus `atoms.search` for the specific captured facts — this is the "last known state" to diff against. If the graph section is empty (client not yet atomized), fall back to `intelligence.getClientIntelligence`.
 3. **Pull the current state.** Look up current charge-holder / Companies House data for the company number. Note new charges, satisfied/released charges, and any company-status change versus the baseline.
 4. **Light external check.** Search for new planning or scheme activity and significant news since `sinceIso`. Keep it light — this is a diff, not a full re-investigation.
 5. **Decide the verdict.** Bias **hard** toward `still_valid`. Only return `materially_changed` when there is concrete, citable new evidence (a charge id, a planning reference, a status, a URL). When in doubt, `still_valid`.
@@ -77,7 +77,7 @@ Each finding is evidence-cited so the operator can judge a hold at a glance:
 
 ## Tool surface
 
-- `client.get`, `intelligence.getClientIntelligence`, `intelligence.queryIntelligence` — baseline reads.
+- `client.get`, `prospect.getDeepContext` (graph section), `atoms.search` — baseline reads. Fallback only: `intelligence.getClientIntelligence` / `intelligence.queryIntelligence` when the graph section is empty (client not yet atomized).
 - Companies House / charge-holder lookup for the current-state diff.
 - `intel.revalidate` (operator-driven mode 2, returns verdict + findings), `intel.recordRevalidateResult` (persist verdict + freshness stamps), `skillRun.start` / `skillRun.complete`.
 

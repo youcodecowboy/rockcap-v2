@@ -20,18 +20,23 @@ export const globalSearch = query({
         deals: [],
         documents: [],
         contacts: [],
-        knowledgeBankEntries: [],
+        atoms: [],
       };
     }
 
-    // Search all entities in parallel
-    const [allClients, allCompanies, allDeals, allDocuments, allContacts, allKnowledgeBankEntries] = await Promise.all([
+    // Search all entities in parallel (knowledge cutover: atoms replaced the
+    // retired knowledgeBankEntries source — full-text over atom statements
+    // via the search_statement index, live facts only).
+    const [allClients, allCompanies, allDeals, allDocuments, allContacts, atomHits] = await Promise.all([
       ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
       ctx.db.query("companies").collect(),
       ctx.db.query("deals").collect(),
       ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
       ctx.db.query("contacts").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
-      ctx.db.query("knowledgeBankEntries").filter((q) => q.neq(q.field("isDeleted"), true)).collect(),
+      ctx.db
+        .query("atoms")
+        .withSearchIndex("search_statement", (q) => q.search("statement", searchQuery))
+        .take(25),
     ]);
 
     // Filter clients
@@ -145,35 +150,24 @@ export const globalSearch = query({
         company: contact.company,
       }));
 
-    // Filter knowledge bank entries
-    const knowledgeBankEntries = allKnowledgeBankEntries
-      .filter((entry) => {
-        const titleMatch = entry.title?.toLowerCase().includes(searchQuery);
-        const contentMatch = entry.content?.toLowerCase().includes(searchQuery);
-        const keyPointMatch = entry.keyPoints?.some(kp => kp.toLowerCase().includes(searchQuery));
-        const tagMatch = entry.tags?.some(tag => tag.toLowerCase().includes(searchQuery));
-        
-        return titleMatch || contentMatch || keyPointMatch || tagMatch;
-      })
+    // Knowledge atoms — live facts whose statement matches.
+    const atoms = atomHits
+      .filter((a) => a.status === "active" || a.status === "contested")
       .slice(0, limit)
-      .map((entry) => {
-        // Get client name if available
+      .map((a) => {
         let clientName: string | undefined;
-        if (entry.clientId) {
-          const client = allClients.find(c => c._id === entry.clientId);
+        if (a.clientId) {
+          const client = allClients.find((c) => c._id === a.clientId);
           clientName = client?.name;
         }
-        
         return {
-          id: entry._id,
-          title: entry.title,
-          content: entry.content.substring(0, 150) + (entry.content.length > 150 ? '...' : ''),
-          entryType: entry.entryType,
-          keyPoints: entry.keyPoints,
-          tags: entry.tags,
-          clientId: entry.clientId,
+          id: a._id,
+          statement: a.statement,
+          predicate: a.predicate,
+          status: a.status,
+          clientId: a.clientId,
           clientName,
-          projectId: entry.projectId,
+          projectId: a.projectId,
         };
       });
 
@@ -183,7 +177,7 @@ export const globalSearch = query({
       deals,
       documents,
       contacts,
-      knowledgeBankEntries,
+      atoms,
     };
   },
 });

@@ -358,7 +358,7 @@ export const upsertFirefliesMeeting = internalMutation({
       );
     }
 
-    return ctx.db.insert("meetings", {
+    const meetingId = await ctx.db.insert("meetings", {
       clientId: args.clientId,
       projectId: args.projectId,
       title: args.title,
@@ -382,6 +382,16 @@ export const upsertFirefliesMeeting = internalMutation({
       // move + intel append) run through the single centralised path.
       status: "scheduled",
     });
+
+    // Knowledge feed — one-shot meeting atomization (60s lets the
+    // transcript-arrival completion path settle; the action re-checks the
+    // atomizedAt stamp and the cost wall).
+    await ctx.scheduler.runAfter(
+      60_000,
+      internal.knowledge.sourceAtomizer.atomizeMeeting,
+      { meetingId },
+    );
+    return meetingId;
   },
 });
 

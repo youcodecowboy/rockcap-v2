@@ -51,7 +51,7 @@ import ClientContactsTab from './components/ClientContactsTab';
 import ClientMeetingsTab from './components/ClientMeetingsTab';
 import ClientTasksTab from './components/ClientTasksTab';
 import ClientThreadsTab from './components/ClientThreadsTab';
-import { ClientIntelligenceTab } from '@/components/IntelligenceTab';
+import KnowledgeAtomsTab from '@/components/knowledge/KnowledgeAtomsTab';
 import ClientBeauhurstCards from './components/ClientBeauhurstCards';
 import ClientDealsTab from './components/ClientDealsTab';
 import ClientActivityTab from './components/ClientActivityTab';
@@ -189,7 +189,7 @@ function ClientProfileContent() {
     { id: 'communications', label: 'Communications', count: communications.length },
     { id: 'meetings', label: 'Meetings', count: meetingsCount },
     { id: 'data', label: 'Data' },
-    { id: 'intelligence', label: 'Intelligence' },
+    { id: 'intelligence', label: 'Knowledge' },
     { id: 'checklist', label: 'Checklist' },
     { id: 'notes', label: 'Notes' },
   ];
@@ -264,7 +264,13 @@ function ClientProfileContent() {
         {activeTab === 'intelligence' && (
           <div className="space-y-6">
             <ClientBeauhurstCards clientId={clientId} />
-            <ClientIntelligenceTab clientId={clientId} clientName={client.name} clientType={client.type} projects={projects} />
+            <KnowledgeAtomsTab
+              entityType="client"
+              entityId={clientId}
+              entityName={client.name}
+              isProspect={client.status === 'prospect'}
+              onOpenGraph={() => setGraphOpen(true)}
+            />
           </div>
         )}
         {activeTab === 'company' && <ClientCompanyTab clientId={clientId} client={client} />}

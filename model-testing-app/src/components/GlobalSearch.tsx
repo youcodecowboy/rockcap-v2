@@ -55,13 +55,11 @@ interface SearchResult {
     role?: string;
     company?: string;
   }>;
-  knowledgeBankEntries: Array<{
-    id: Id<"knowledgeBankEntries">;
-    title: string;
-    content: string;
-    entryType: string;
-    keyPoints: string[];
-    tags: string[];
+  atoms: Array<{
+    id: Id<"atoms">;
+    statement: string;
+    predicate: string;
+    status: 'active' | 'contested';
     clientId?: Id<"clients">;
     clientName?: string;
     projectId?: Id<"projects">;
@@ -96,7 +94,7 @@ export default function GlobalSearch() {
   const flatResults = useMemo(() => {
     if (!searchResults) return [];
     
-    const results: Array<{ type: 'client' | 'company' | 'deal' | 'document' | 'contact' | 'knowledgeBankEntry'; id: string; data: any }> = [];
+    const results: Array<{ type: 'client' | 'company' | 'deal' | 'document' | 'contact' | 'atom'; id: string; data: any }> = [];
     
     searchResults.clients.forEach((client) => {
       results.push({ type: 'client', id: client.id, data: client });
@@ -113,8 +111,8 @@ export default function GlobalSearch() {
     searchResults.contacts.forEach((contact) => {
       results.push({ type: 'contact', id: contact.id, data: contact });
     });
-    searchResults.knowledgeBankEntries.forEach((entry) => {
-      results.push({ type: 'knowledgeBankEntry', id: entry.id, data: entry });
+    searchResults.atoms.forEach((atom) => {
+      results.push({ type: 'atom', id: atom.id, data: atom });
     });
     
     return results;
@@ -137,11 +135,11 @@ export default function GlobalSearch() {
       case 'contact':
         router.push(`/contacts/${result.id}`);
         break;
-      case 'knowledgeBankEntry':
+      case 'atom':
         if (result.data?.clientId) {
-          router.push(`/knowledge-bank/${result.data.clientId}`);
+          router.push(`/clients/${result.data.clientId}?tab=intelligence`);
         } else {
-          router.push(`/knowledge-bank`);
+          router.push(`/knowledge`);
         }
         break;
     }
@@ -221,7 +219,7 @@ export default function GlobalSearch() {
     searchResults.deals.length > 0 ||
     searchResults.documents.length > 0 ||
     searchResults.contacts.length > 0 ||
-    searchResults.knowledgeBankEntries.length > 0
+    searchResults.atoms.length > 0
   );
 
   const isLoading = debouncedQuery.trim() !== '' && searchResults === undefined;
@@ -257,7 +255,7 @@ export default function GlobalSearch() {
               <Input
                 ref={inputRef}
                 type="text"
-                placeholder="Search clients, companies, deals, files, contacts, knowledge bank..."
+                placeholder="Search clients, companies, deals, files, contacts, knowledge..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -518,23 +516,23 @@ export default function GlobalSearch() {
                         </div>
                       )}
 
-                      {/* Knowledge Bank Entries Section */}
-                      {searchResults.knowledgeBankEntries.length > 0 && (
+                      {/* Knowledge Atoms Section */}
+                      {searchResults.atoms.length > 0 && (
                         <div>
                           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                             <div className="flex items-center gap-2">
                               <BookOpen className="w-4 h-4 text-gray-600" />
-                              <p className="text-xs font-semibold text-gray-700 uppercase">Knowledge Bank</p>
-                              <span className="text-xs text-gray-500">({searchResults.knowledgeBankEntries.length})</span>
+                              <p className="text-xs font-semibold text-gray-700 uppercase">Knowledge</p>
+                              <span className="text-xs text-gray-500">({searchResults.atoms.length})</span>
                             </div>
                           </div>
-                          {searchResults.knowledgeBankEntries.map((entry, idx) => {
+                          {searchResults.atoms.map((atom, idx) => {
                             const flatIdx = searchResults.clients.length + searchResults.companies.length + searchResults.deals.length + searchResults.documents.length + searchResults.contacts.length + idx;
                             const isSelected = selectedIndex === flatIdx;
                             return (
                               <button
-                                key={entry.id}
-                                onClick={() => handleResultClick({ type: 'knowledgeBankEntry', id: entry.id, data: entry })}
+                                key={atom.id}
+                                onClick={() => handleResultClick({ type: 'atom', id: atom.id, data: atom })}
                                 className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
                                   isSelected ? 'bg-gray-50' : ''
                                 }`}
@@ -544,21 +542,17 @@ export default function GlobalSearch() {
                                     <BookOpen className="w-4 h-4 text-teal-600" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">{entry.title}</p>
+                                    <p className="text-sm font-medium text-gray-900 line-clamp-2">{atom.statement}</p>
                                     <div className="flex items-center gap-2 mt-1">
-                                      {entry.clientName && (
-                                        <p className="text-xs text-gray-500">{entry.clientName}</p>
+                                      {atom.clientName && (
+                                        <p className="text-xs text-gray-500">{atom.clientName}</p>
                                       )}
-                                      {entry.entryType && entry.clientName && (
-                                        <span className="text-xs text-gray-400">•</span>
-                                      )}
-                                      {entry.entryType && (
-                                        <p className="text-xs text-gray-500 capitalize">{entry.entryType.replace('_', ' ')}</p>
+                                      {atom.clientName && <span className="text-xs text-gray-400">•</span>}
+                                      <p className="text-xs text-gray-500 font-mono">{atom.predicate}</p>
+                                      {atom.status === 'contested' && (
+                                        <p className="text-xs text-red-500 uppercase">contested</p>
                                       )}
                                     </div>
-                                    {entry.content && (
-                                      <p className="text-xs text-gray-400 mt-1 line-clamp-1">{entry.content}</p>
-                                    )}
                                   </div>
                                 </div>
                               </button>

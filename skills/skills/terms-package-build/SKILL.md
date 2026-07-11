@@ -33,7 +33,7 @@ Persisted to Convex:
 
 ## Workflow
 
-1. Load the project, including: latest `modelRuns` row (the underwriting model output), `projectIntelligence`, the appraisal and cashflow documents, the sponsor's track record from `clientIntelligence`.
+1. Load the project, including: `project.getDeepContext` (read its `graph` section — atom/contested counts, top edges, facilities), the latest `modelRuns` row (the underwriting model output), and the appraisal and cashflow documents. Pull the sponsor's track record via `atoms.search` + `graph.expandEntity` on the sponsor. If the graph section is empty (client not yet atomized), fall back to `projectIntelligence` / `clientIntelligence`.
 2. Verify the inputs are complete enough to package. If the model has no validated outputs or the appraisal is missing, stop and surface what's needed.
 3. Compute the indicative terms RockCap is putting in front of the client. Use the underwriting model's facility scenarios. Pick the central case; note one stretch case.
 4. Compose the client-facing indicative terms document using `template.populate` against the `client-indicative-terms.docx` template (BL-5.6, planned). Variables include facility, LTGDV, LTC, all-in rate, key conditions, target timeline.
@@ -49,11 +49,11 @@ All CONVENTIONS apply. Three that matter most:
 
 - **The client-facing doc and the lender pack are different shapes.** Client-facing is short, focused on what they care about (size, rate, timeline). Lender pack is dense, defensive, anticipates objections.
 - **Conservative on rate quotes.** State the all-in rate as "based on current SONIA plus a market-typical margin in the range X to Y bps" rather than a single number. Locks in expectations only after a lender's indicative terms arrive.
-- **No fabricated sponsor accolades.** Sponsor bio uses what's actually in `clientIntelligence`. Do not invent track record numbers.
+- **No fabricated sponsor accolades.** Sponsor bio uses what's actually in the knowledge graph (`atoms.search` / `graph.expandEntity` on the sponsor; `clientIntelligence` fallback for a not-yet-atomized sponsor). Do not invent track record numbers.
 
 ## Tool dependencies
 
-- `project.get`, `intelligence.getProjectIntelligence`, `intelligence.getClientIntelligence`
+- `project.get`, `project.getDeepContext` (graph section), `atoms.search`, `graph.expandEntity` (fallback only, when the graph section is empty — not yet atomized: `intelligence.getProjectIntelligence`, `intelligence.getClientIntelligence`)
 - `modelRuns.getLatest`
 - `documents.getByProject` (to find the appraisal, cashflow, sponsor bio)
 - `appetite.searchLenders` (for lender shortlist)

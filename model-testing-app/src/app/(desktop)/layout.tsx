@@ -1,6 +1,5 @@
 import NavigationBar from "@/components/NavigationBar";
 import Sidebar from "@/components/Sidebar";
-import ChatAssistantButton from "@/components/ChatAssistantButton";
 import GmailReconnectBanner from "@/components/GmailReconnectBanner";
 import DriveReconnectBanner from "@/components/DriveReconnectBanner";
 import { MessengerProvider } from "@/contexts/MessengerContext";
@@ -21,7 +20,6 @@ export default function DesktopLayout({
           <DriveReconnectBanner />
           {children}
         </main>
-        <ChatAssistantButton />
       </MessengerProvider>
     </ThemeProvider>
   );

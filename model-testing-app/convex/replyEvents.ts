@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // Internal API for the replyEvents table. Written by the Gmail push webhook
@@ -51,10 +52,18 @@ export const createInternal = internalMutation({
     replyBodyHtml: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("replyEvents", {
+    const replyEventId = await ctx.db.insert("replyEvents", {
       ...args,
       processed: false,
     });
+    // Knowledge feed — one-shot inbound-reply atomization (the action skips
+    // rows without a linked client, body text, or a knowledge-enabled client).
+    await ctx.scheduler.runAfter(
+      0,
+      internal.knowledge.sourceAtomizer.atomizeReply,
+      { replyEventId },
+    );
+    return replyEventId;
   },
 });
 

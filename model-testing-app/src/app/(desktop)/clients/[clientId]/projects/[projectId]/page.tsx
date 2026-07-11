@@ -36,7 +36,8 @@ import ProjectDataTab from './components/ProjectDataTab';
 import ProjectActivityTab from './components/ProjectActivityTab';
 import ProjectTasksTab from './components/ProjectTasksTab';
 import ProjectThreadsTab from './components/ProjectThreadsTab';
-import { ProjectIntelligenceTab } from '@/components/IntelligenceTab';
+import KnowledgeAtomsTab from '@/components/knowledge/KnowledgeAtomsTab';
+import KnowledgeGraphDrawer from '@/components/knowledge/KnowledgeGraphDrawer';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 
 type TabType = 'overview' | 'documents' | 'activity' | 'intelligence' | 'checklist' | 'threads' | 'data' | 'notes' | 'tasks';
@@ -55,6 +56,7 @@ function ProjectDetailContent() {
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState<'general' | 'naming' | 'fields' | 'folders'>('general');
   const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
 
   // Queries
   const client = useQuery(api.clients.get, { id: clientId });
@@ -131,7 +133,7 @@ function ProjectDetailContent() {
     { id: 'documents', label: 'Documents', icon: FileText, count: documents.length },
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'tasks', label: 'Tasks', icon: ListTodo, count: activeTasksCount > 0 ? activeTasksCount : undefined },
-    { id: 'intelligence', label: 'Intelligence', icon: Brain },
+    { id: 'intelligence', label: 'Knowledge', icon: Brain },
     { id: 'checklist', label: 'Checklist', icon: CheckSquare },
     { id: 'threads', label: 'Threads', icon: Flag, count: openFlagCount > 0 ? openFlagCount : undefined },
     { id: 'data', label: 'Data', icon: Database },
@@ -150,6 +152,9 @@ function ProjectDetailContent() {
 
   const actions = (
     <>
+      <Button size="sm" variant="ghost" onClick={() => setGraphOpen(true)} title="Knowledge graph">
+        <Brain className="w-3.5 h-3.5" /> Knowledge graph
+      </Button>
       <Button size="sm" variant="ghost" onClick={() => { setSettingsDefaultTab('general'); setShowSettingsPanel(true); }}>
         <Settings className="w-3.5 h-3.5" /> Settings
       </Button>
@@ -209,7 +214,14 @@ function ProjectDetailContent() {
         {activeTab === 'notes' && <ProjectNotesTab projectId={projectId} projectName={project.name} clientId={clientId} />}
         {activeTab === 'tasks' && <ProjectTasksTab projectId={projectId} projectName={project.name} clientId={clientId} />}
         {activeTab === 'threads' && <ProjectThreadsTab projectId={projectId} clientId={clientId} />}
-        {activeTab === 'intelligence' && <ProjectIntelligenceTab projectId={projectId} />}
+        {activeTab === 'intelligence' && (
+          <KnowledgeAtomsTab
+            entityType="project"
+            entityId={projectId}
+            entityName={project.name}
+            onOpenGraph={() => setGraphOpen(true)}
+          />
+        )}
         {activeTab === 'data' && <ProjectDataTab projectId={projectId} projectName={project.name} />}
         {activeTab === 'activity' && <ProjectActivityTab projectId={projectId} />}
       </EntityDetailScaffold>
@@ -233,6 +245,15 @@ function ProjectDetailContent() {
       <ProjectSettingsPanel isOpen={showSettingsPanel} onClose={() => setShowSettingsPanel(false)} projectId={projectId} clientId={clientId} defaultTab={settingsDefaultTab} onTrash={() => router.push(`/clients/${clientId}?tab=projects`)} />
 
       <FlagCreationModal isOpen={flagModalOpen} onClose={() => setFlagModalOpen(false)} entityType="project" entityId={projectId} entityName={project.name} entityContext={client.name} clientId={clientId} projectId={projectId} />
+
+      {graphOpen && (
+        <KnowledgeGraphDrawer
+          entryEntityType="project"
+          entryEntityId={projectId}
+          entryName={project.name}
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
     </>
   );
 }

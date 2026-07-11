@@ -37,9 +37,9 @@ type DealSummary = {
 
 ## Workflow
 
-1. Load the project, `projectIntelligence`, recent `touchpoints`, open `milestones`, outstanding `knowledgeChecklistItems`, and any `flags` rows.
+1. Load the project via `project.getDeepContext` (read its `graph` section — atom counts, top edges, facilities), plus recent `touchpoints`, open `milestones`, outstanding `knowledgeChecklistItems`, and any `flags` rows. If the graph section is empty (project not yet atomized), fall back to `projectIntelligence`.
 2. Build `headlineFigures`:
-   - GDV from `projectIntelligence.financials.gdv` if populated
+   - GDV from the graph (`atoms.search` for the GDV atom); fall back to `projectIntelligence.financials.gdv` for a not-yet-atomized project
    - Facility from the selected lenderApproach's `finalTerms` (or `indicativeTerms` if pre-credit)
    - Selected lender's name if a lenderApproach is past `indicative_received`
    - Timeline from the nearest upcoming milestone
@@ -62,7 +62,7 @@ CONVENTIONS apply. Three that matter most:
 
 ## Tool dependencies
 
-- `project.get`, `intelligence.getProjectIntelligence`
+- `project.get`, `project.getDeepContext` (graph section), `atoms.search` (fallback only, when the graph section is empty — project not yet atomized: `intelligence.getProjectIntelligence`)
 - `touchpoint.getByProject`
 - `milestone.listByProject`
 - `knowledge.getChecklistByProject`

@@ -3591,6 +3591,9 @@ export default defineSchema({
     createdBy: v.optional(v.id("users")),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
+    // Knowledge lane — stamped when this meeting's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeMeeting); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
     // Fireflies integration (BL-3.x). Set when meeting originated from
@@ -4648,6 +4651,9 @@ export default defineSchema({
     // doesn't always carry the body content.
     replyBodyText: v.optional(v.string()),
     replySubject: v.optional(v.string()),
+    // Knowledge lane — stamped when this reply's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeReply); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
 
     // v1.3 — direct link to the clients row when the contact resolves to
     // one. Speeds up reply.listByClient + the operator-review queue's
@@ -4900,6 +4906,9 @@ export default defineSchema({
     atomId: v.id("atoms"),
     sourceType: v.union(
       v.literal("document"),
+      v.literal("note"),
+      v.literal("meeting"), // externalRef `meeting:<meetingId>`; one-shot (meetings are immutable once captured)
+      v.literal("email"),   // externalRef `reply:<replyEventId>`; one-shot inbound replies
       v.literal("companies_house"),
       v.literal("apollo"),
       v.literal("operator"),
@@ -4907,6 +4916,7 @@ export default defineSchema({
       v.literal("migration"),
     ),
     documentId: v.optional(v.id("documents")),
+    noteId: v.optional(v.id("notes")), // note-lane anchor (sourceType "note"); reatomizeNoteDiff keys the same-lineage diff on it
     contentChecksum: v.optional(v.string()), // WHICH revision asserted this
     locator: v.optional(
       v.object({
@@ -4925,7 +4935,8 @@ export default defineSchema({
     superseded: v.optional(v.boolean()), // same-lineage replacement marker
   })
     .index("by_atom", ["atomId"])
-    .index("by_document", ["documentId"]),
+    .index("by_document", ["documentId"])
+    .index("by_note", ["noteId"]),
 
   // The n-ary hub — spec §3.3. Minted deterministically from atoms when
   // facility-shaped predicates arrive; columns are mirrors of winning atoms,

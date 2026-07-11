@@ -22,10 +22,10 @@ These come from the brief and apply to every word a skill produces. For external
 These apply to the structure of what skills produce.
 
 1. **Draft, do not send.** Outputs that leave the building, emails, lender submissions, client communications, public document publications, route through the Approval table. A skill creates an `approvals` row; a human approves; an internal action executes. Skills never bypass.
-2. **Hold structured artefacts in Convex.** Intelligence findings go into `clientIntelligence` or `projectIntelligence` or `knowledgeItems` or `appetiteSignals`, depending on shape. Skill output that lives only in chat history is lost work.
+2. **Hold structured artefacts in Convex.** Discrete facts belong in the knowledge graph (`atoms.createBatch` — anchored, discriminating, material); lender appetite goes to `appetiteSignals`. The legacy stores (`clientIntelligence` / `projectIntelligence` / `knowledgeItems`) are being retired — do not add NEW writes to them; existing skill flows that still write there migrate as each skill is hardened. Skill output that lives only in chat history is lost work.
 3. **One artefact per concept.** Do not write the same finding into three tables hoping one stays current. Choose the canonical location per CONVENTIONS, write once, link from others if needed.
-4. **Cite the source.** When writing intelligence or notes, set `sourceType` and `sourceRef` so the trail back to the document or meeting is preserved.
-5. **Prefer queryIntelligence and loadReference first.** Before triggering a deep extraction or a reclassify, check whether the answer is already in structured intelligence. The brief's "resolution chain" is references first, then `queryIntelligence`, then ordinary tools, then `reclassify` only if those cannot answer.
+4. **Cite the source.** When writing atoms or notes, set the observation's `sourceType` / `externalRef` / `sourceText` so the trail back to the document, meeting, or email is preserved.
+5. **Knowledge reads go through the graph first.** The resolution chain for "what do we know about X" is: `getDeepContext` (its `graph` section) → `atoms.search` (facts + chunk quotes) → `graph.expandEntity` / `graph.findPaths` for relationships and multi-hop provenance → `loadReference` for doc-type guidance → deep extraction / `reclassify` only if those cannot answer. The legacy reads (`intelligence.getClientIntelligence`, `intelligence.getKnowledgeItemsByClient`, `queryIntelligence`) are deprecated — reach for them only when the graph section comes back empty for a client that hasn't been atomized yet.
 
 ## File structure
 

@@ -90,7 +90,7 @@ CONVENTIONS apply. Three that matter most:
 - `modelRuns.getLatest`, `modelRuns.getByPeriod`
 - `documents.getByProject` (for monitoring docs)
 - The V4 extraction primitive with monitoring schema
-- `knowledge.queryIntelligence` (for prior periods)
+- `atoms.search` (for prior periods; `knowledge.queryIntelligence` fallback only, when the project's graph is empty — not yet atomized)
 
 ## What goes wrong
 

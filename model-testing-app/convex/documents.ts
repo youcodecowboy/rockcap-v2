@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
+import { recordUploadIngestion } from "./knowledge/ingestUpload";
 import {
   buildDocumentName,
   buildInternalDocumentName,
@@ -468,66 +469,15 @@ export const create = mutation({
       classificationReasoning: args.classificationReasoning,
     });
 
-    // Automatically create knowledge bank entry if document is linked to a client
+    // Knowledge feed — the upload lane's ingestionEvents row + prose chunking.
+    if (args.status !== "error") {
+      await recordUploadIngestion(ctx, documentId);
+    }
+
+    // (Knowledge-bank entry write retired 2026-07-11 — the knowledge feed
+    // above is the sole knowledge side effect; knowledgeBankEntries is
+    // read-only legacy data.)
     if (args.clientId && args.status !== "error") {
-      try {
-        // Determine entry type based on category and file type
-        let entryType: "deal_update" | "call_transcript" | "email" | "document_summary" | "project_status" | "general" = "document_summary";
-        
-        const categoryLower = args.category.toLowerCase();
-        const fileNameLower = args.fileName.toLowerCase();
-        
-        if (categoryLower.includes("deal") || categoryLower.includes("loan") || categoryLower.includes("term")) {
-          entryType = "deal_update";
-        } else if (categoryLower.includes("project") || categoryLower.includes("development")) {
-          entryType = "project_status";
-        } else if (fileNameLower.includes("call") || fileNameLower.includes("transcript")) {
-          entryType = "call_transcript";
-        } else if (categoryLower.includes("email") || fileNameLower.includes("email")) {
-          entryType = "email";
-        }
-
-        // Extract key points from summary (first 3-5 sentences or bullet points)
-        const keyPoints: string[] = [];
-        const summaryLines = args.summary.split(/[.!?]\s+/).filter(line => line.trim().length > 0);
-        keyPoints.push(...summaryLines.slice(0, 5).map(line => line.trim()));
-
-        // Extract metadata from extractedData if available
-        const metadata: any = {};
-        if (args.extractedData) {
-          // Store relevant extracted data in metadata
-          if (args.extractedData.loanAmount) metadata.loanAmount = args.extractedData.loanAmount;
-          if (args.extractedData.interestRate) metadata.interestRate = args.extractedData.interestRate;
-          if (args.extractedData.loanNumber) metadata.loanNumber = args.extractedData.loanNumber;
-          if (args.extractedData.costsTotal) metadata.costsTotal = args.extractedData.costsTotal;
-          if (args.extractedData.detectedCurrency) metadata.currency = args.extractedData.detectedCurrency;
-        }
-
-        // Generate tags from category and file type
-        const tags: string[] = [args.category];
-        if (args.fileTypeDetected) tags.push(args.fileTypeDetected);
-        if (args.projectName) tags.push("project-related");
-
-        // Create knowledge bank entry
-        await ctx.db.insert("knowledgeBankEntries", {
-          clientId: args.clientId,
-          projectId: args.projectId,
-          sourceType: "document",
-          sourceId: documentId,
-          entryType: entryType,
-          title: `${args.fileName} - ${args.category}`,
-          content: args.summary,
-          keyPoints: keyPoints,
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-          tags: tags,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        // Log error but don't fail document creation if knowledge bank entry fails
-        console.error("Failed to create knowledge bank entry:", error);
-      }
-
       // Meeting extraction: Check if this is a meeting document
       const meetingTypes = ['Meeting Minutes', 'Meeting Notes', 'Minutes'];
       const fileTypeLower = args.fileTypeDetected.toLowerCase();
@@ -2550,5 +2500,17 @@ export const linkToProject = mutation({
         unlinked: true,
       };
     }
+  },
+});
+
+// Operator "Analyze document" (file panel) — after a manual text
+// (re-)extraction, re-enter the knowledge feed: ingestionEvents row + prose
+// chunking now, atomization on the next sweep tick. Idempotent — the sweep's
+// observation probe skips checksums it has already handled.
+export const requestKnowledgeIngestion = mutation({
+  args: { id: v.id("documents") },
+  handler: async (ctx, args) => {
+    await recordUploadIngestion(ctx, args.id);
+    return { ok: true };
   },
 });

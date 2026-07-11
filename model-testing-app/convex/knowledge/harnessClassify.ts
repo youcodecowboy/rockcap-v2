@@ -764,74 +764,10 @@ export const applyClassification = internalMutation({
     // legacy doc, so each side effect probes for a prior row before insert.
     if (firstExtraction && clientId) {
       const fileNameLower = String(doc.fileName ?? "").toLowerCase();
-      try {
-        const existingEntry = await ctx.db
-          .query("knowledgeBankEntries")
-          .withIndex("by_client", (q: any) => q.eq("clientId", clientId))
-          .filter((q: any) => q.eq(q.field("sourceId"), args.documentId))
-          .first();
-        if (!existingEntry) {
-          let entryType:
-            | "deal_update"
-            | "call_transcript"
-            | "email"
-            | "document_summary"
-            | "project_status"
-            | "general" = "document_summary";
-          const categoryLower = effectiveCategory.toLowerCase();
-          if (
-            categoryLower.includes("deal") ||
-            categoryLower.includes("loan") ||
-            categoryLower.includes("term")
-          ) {
-            entryType = "deal_update";
-          } else if (
-            categoryLower.includes("project") ||
-            categoryLower.includes("development")
-          ) {
-            entryType = "project_status";
-          } else if (
-            fileNameLower.includes("call") ||
-            fileNameLower.includes("transcript")
-          ) {
-            entryType = "call_transcript";
-          } else if (
-            categoryLower.includes("email") ||
-            fileNameLower.includes("email")
-          ) {
-            entryType = "email";
-          }
+      // (Knowledge-bank entry write retired 2026-07-11 — the ingestionEvents
+      // row + chunk scheduling above are the knowledge side effects now.)
 
-          const keyPoints = summary
-            .split(/[.!?]\s+/)
-            .filter((line) => line.trim().length > 0)
-            .slice(0, 5)
-            .map((line) => line.trim());
-
-          const tags: string[] = [effectiveCategory, effectiveFileTypeDetected];
-          if (projectId) tags.push("project-related");
-
-          await ctx.db.insert("knowledgeBankEntries", {
-            clientId,
-            projectId,
-            sourceType: "document",
-            sourceId: args.documentId,
-            entryType,
-            title: `${doc.fileName} - ${effectiveCategory}`,
-            content: summary,
-            keyPoints,
-            metadata: undefined,
-            tags,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-      } catch (error) {
-        // Parity with documents.create: never fail the write on a KB miss.
-        console.error("[harnessClassify] knowledge bank entry failed:", error);
-      }
-
-      // Meeting extraction job — same heuristics as documents.create /
+      // Meeting extraction job — same heuristics as documents.create /      // Meeting extraction job — same heuristics as documents.create /
       // applyExtraction, plus an existing-job probe (legacy docs may
       // already carry one). Needs stored bytes.
       const meetingTypes = ["Meeting Minutes", "Meeting Notes", "Minutes"];
