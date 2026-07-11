@@ -813,3 +813,68 @@ export const lenderDocuments = query({
     };
   },
 });
+
+// ── Per-document atom expansion (2026-07-11, Documents tab drill-in) ──────
+//
+// "Which atoms came from THIS document, and what do they tell us about the
+// lender?" — fetched lazily when the operator expands a document row.
+// Observations by_document → atoms; atoms touching the lender (directly or
+// via its facility book) are flagged lenderLinked and sorted first.
+export const lenderDocumentAtoms = query({
+  args: { lenderClientId: v.id("clients"), documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    const lenderId = args.lenderClientId as string;
+    const facilityIds = new Set(
+      (
+        await ctx.db
+          .query("facilities")
+          .withIndex("by_lender", (q) => q.eq("lenderClientId", args.lenderClientId))
+          .collect()
+      ).map((f) => f._id as string),
+    );
+
+    const obs = await ctx.db
+      .query("atomObservations")
+      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .take(80);
+    const atomIds = [...new Set(obs.map((o) => o.atomId))];
+
+    const atoms: Array<{
+      atomId: string;
+      statement: string;
+      predicate: string;
+      status: string;
+      confidence: number;
+      lenderLinked: boolean;
+      subjectType: string;
+    }> = [];
+    for (const id of atomIds) {
+      const atom = await ctx.db.get(id);
+      if (!atom) continue;
+      if (atom.status !== "active" && atom.status !== "contested") continue;
+      const touches = (t: string | undefined, i: string | undefined) =>
+        (t === "client" && i === lenderId) || (t === "facility" && !!i && facilityIds.has(i));
+      atoms.push({
+        atomId: id as string,
+        statement: atom.statement,
+        predicate: atom.predicate,
+        status: atom.status,
+        confidence: atom.confidence,
+        lenderLinked:
+          touches(atom.subjectType, atom.subjectId) ||
+          touches(atom.objectEntityType as string | undefined, atom.objectEntityId as string | undefined),
+        subjectType: atom.subjectType,
+      });
+    }
+    // Lender-linked first, contested before active, then confidence.
+    atoms.sort((a, b) => {
+      if (a.lenderLinked !== b.lenderLinked) return a.lenderLinked ? -1 : 1;
+      if (a.status !== b.status) return a.status === "contested" ? -1 : 1;
+      return b.confidence - a.confidence;
+    });
+    return {
+      atoms,
+      lenderLinkedCount: atoms.filter((a) => a.lenderLinked).length,
+    };
+  },
+});
