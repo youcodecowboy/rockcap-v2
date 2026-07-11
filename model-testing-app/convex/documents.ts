@@ -1568,14 +1568,19 @@ export const getUnfiled = query({
 });
 
 // Query: Get count of unfiled documents
+//
+// 2026-07-11 rewrite: the old version .collect()ed the ENTIRE documents table
+// (rows carry full textContent) and blew Convex's 16MiB read budget once the
+// corpus grew. Unfiled documents in EVERY scope have no clientId — client
+// scope by definition, internal/personal structurally — so the by_client
+// undefined index lane bounds the scan to unfiled candidates + unfiled-able
+// internal/personal rows. Capped at 150 rows: the badge saturates instead of
+// the query crashing (an inbox past 150 has bigger problems than the badge).
 export const getUnfiledCount = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
 
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-
-    // Get current user for personal document access
     let currentUserId: string | null = null;
     if (identity) {
       const user = await ctx.db
@@ -1585,11 +1590,17 @@ export const getUnfiledCount = query({
       currentUserId = user?._id ?? null;
     }
 
-    return allDocs.filter(doc => {
+    const candidates = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q) => q.eq("clientId", undefined))
+      .take(150);
+
+    return candidates.filter((doc) => {
+      if (doc.isDeleted === true) return false;
       const scope = doc.scope || "client";
 
       if (scope === "client") {
-        return !doc.clientId;
+        return true; // no clientId by the index lane — unfiled
       }
 
       if (scope === "internal") {
