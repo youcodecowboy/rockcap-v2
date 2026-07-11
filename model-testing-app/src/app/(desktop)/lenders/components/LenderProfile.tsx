@@ -24,6 +24,11 @@ import {
   FacilityStatusSelect,
   AppetitePanelContent,
   PeoplePanelContent,
+  AddFacilityButton,
+  NotesPanelContent,
+  ActivityPanelContent,
+  ProvenanceDot,
+  relTime,
   type LenderContact,
 } from './LenderEditors';
 import {
@@ -149,8 +154,35 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
   const { summary, contacts, linkedProjects } = deep;
   const { stats, facilities } = book;
 
+  // Freshness stamps for the panel headers.
+  const facilityBookUpdatedAt =
+    facilities.length > 0
+      ? facilities.reduce((max, f) => (f.lastRebuiltAt > max ? f.lastRebuiltAt : max), facilities[0].lastRebuiltAt)
+      : null;
+  const appetiteUpdatedAt =
+    deep.currentSignals.length > 0
+      ? Math.max(...deep.currentSignals.map((s: { _creationTime: number }) => s._creationTime))
+      : null;
+
   type FacilityRow = (typeof facilities)[number];
   const facilityColumns: Column<FacilityRow>[] = [
+    {
+      key: 'provenance',
+      header: '',
+      width: 30,
+      align: 'center',
+      render: (f) => {
+        const manual = f.createdFrom === 'operator';
+        const lines = [
+          manual ? 'added manually by operator' : `origin: ${f.createdFrom}`,
+          `updated ${relTime(f.lastRebuiltAt)}`,
+          ...(f.sources.length > 0
+            ? ['sources:', ...f.sources.map((s) => `  ${s.fileName}`)]
+            : manual ? [] : ['no source documents recorded']),
+        ];
+        return <ProvenanceDot tip={lines.join('\n')} manual={manual} />;
+      },
+    },
     {
       key: 'project',
       header: 'Project',
@@ -244,7 +276,7 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-4" style={{ maxWidth: 1280 }}>
+      <div className="p-6 space-y-4">
         {/* Profile header */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
@@ -316,7 +348,21 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
         <div className="grid grid-cols-3 gap-4 items-start">
           {/* Left 2/3: the book + appetite */}
           <div className="col-span-2 space-y-4">
-            <Panel title="Facility book — observed behaviour" accent={lenderTone} padded={false}>
+            <Panel
+              title="Facility book — observed behaviour"
+              accent={lenderTone}
+              padded={false}
+              actions={
+                <div className="flex items-center gap-3">
+                  {facilityBookUpdatedAt && (
+                    <span style={{ fontSize: 9, color: colors.text.dim, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                      updated {relTime(facilityBookUpdatedAt)}
+                    </span>
+                  )}
+                  <AddFacilityButton lenderId={lenderId} />
+                </div>
+              }
+            >
               <div style={{ padding: facilities.length === 0 ? 16 : 0 }}>
                 <DataTable
                   columns={facilityColumns}
@@ -333,7 +379,17 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
               </div>
             </Panel>
 
-            <Panel title="Stated appetite" accent={lenderTone}>
+            <Panel
+              title="Stated appetite"
+              accent={lenderTone}
+              actions={
+                appetiteUpdatedAt ? (
+                  <span style={{ fontSize: 9, color: colors.text.dim, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                    updated {relTime(appetiteUpdatedAt)}
+                  </span>
+                ) : undefined
+              }
+            >
               <AppetitePanelContent
                 lenderId={lenderId}
                 groups={appetiteGroups}
@@ -393,6 +449,14 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
                 lenderName={lender.name}
                 contacts={contacts as LenderContact[]}
               />
+            </Panel>
+
+            <Panel title="Notes">
+              <NotesPanelContent lenderId={lenderId} />
+            </Panel>
+
+            <Panel title="Activity">
+              <ActivityPanelContent lenderId={lenderId} />
             </Panel>
 
             <Panel title="Companies House">

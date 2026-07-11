@@ -45,7 +45,7 @@ function LendersPageContent() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: colors.bg.base }}>
+    <div className="h-[calc(100vh-4rem)] flex flex-col" style={{ background: colors.bg.base }}>
       {/* Header */}
       <header
         className="px-4 py-3 flex items-center justify-between flex-shrink-0"

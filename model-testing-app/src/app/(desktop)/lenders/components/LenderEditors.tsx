@@ -13,21 +13,54 @@ import { useMemo, useState } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
+import { useQuery } from 'convex/react';
 import {
   Button,
   IconButton,
   Field,
   Input,
   Select,
+  Textarea,
   Modal,
   EmptyState,
   StatusPill,
 } from '@/components/layouts';
 import { useColors } from '@/lib/useColors';
 import type { ColorPalette } from '@/lib/colors';
-import { Pencil, Plus, Check, X, Users, Landmark, Lock } from 'lucide-react';
+import { Pencil, Plus, Check, X, Users, Landmark, Lock, Info, Activity as ActivityIcon, StickyNote, Briefcase } from 'lucide-react';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+// ── Shared bits ─────────────────────────────────────────────────────────
+
+/** Compact relative time: "3m ago", "2h ago", "5d ago", else a date. */
+export function relTime(input: number | string | undefined): string {
+  if (input == null) return '';
+  const t = typeof input === 'number' ? input : Date.parse(input);
+  if (!Number.isFinite(t)) return '';
+  const diff = Date.now() - t;
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 45) return `${d}d ago`;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** The provenance dot — a small ⓘ whose tooltip says where a value came from. */
+export function ProvenanceDot({ tip, manual }: { tip: string; manual?: boolean }) {
+  const colors = useColors();
+  return (
+    <span title={tip} style={{ display: 'inline-flex', cursor: 'help', flexShrink: 0 }}>
+      <Info
+        className="w-3 h-3"
+        style={{ color: manual ? colors.accent.orange : colors.text.dim }}
+      />
+    </span>
+  );
+}
 
 // ── Facility status ─────────────────────────────────────────────────────
 
@@ -116,6 +149,20 @@ export interface AppetiteEntry {
   sourceType: string;
   asOfDate?: string;
   confidence?: number;
+  sourceRef?: string;
+  sourceLabel?: string;
+  notes?: string;
+  recordedAt?: number;
+}
+
+/** Tooltip text for an appetite signal's provenance dot. */
+export function appetiteProvenanceTip(entry: AppetiteEntry): string {
+  const lines = [`source: ${entry.sourceType}${entry.sourceLabel ? ` — ${entry.sourceLabel}` : ''}`];
+  if (entry.asOfDate) lines.push(`as of ${entry.asOfDate}`);
+  if (entry.recordedAt) lines.push(`recorded ${relTime(entry.recordedAt)}`);
+  if (entry.confidence != null) lines.push(`confidence ${entry.confidence}`);
+  if (entry.notes) lines.push(entry.notes);
+  return lines.join('\n');
 }
 
 /** Standard fieldPaths from the appetite-signal catalogue (matching-critical
@@ -261,10 +308,10 @@ function AppetiteRow({
         <span
           className="text-right truncate"
           style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}
-          title={`${entry.sourceType}${entry.asOfDate ? ` · as of ${entry.asOfDate}` : ''}${entry.confidence != null ? ` · confidence ${entry.confidence}` : ''}`}
         >
           {display}
         </span>
+        <ProvenanceDot tip={appetiteProvenanceTip(entry)} manual={entry.sourceType === 'manual'} />
         {locked ? (
           hover && (
             <Lock
@@ -614,5 +661,265 @@ export function PeoplePanelContent({
         </div>
       </Modal>
     </>
+  );
+}
+
+// ── Add facility (manual) ───────────────────────────────────────────────
+
+/** "Add facility" affordance for the facility-book panel. Operator-created
+ * rows are flagged createdFrom: "operator" and surface as manually added. */
+export function AddFacilityButton({ lenderId }: { lenderId: Id<'clients'> }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    projectId: '',
+    tranche: '',
+    amount: '',
+    rate: '',
+    maturity: '',
+    status: 'indicative',
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const projects = useQuery(api.projects.list, open ? {} : 'skip');
+  const createFacility = useMutation(api.knowledge.facilities.operatorCreate);
+
+  const sortedProjects = useMemo(
+    () =>
+      [...(projects ?? [])].sort((a: { name: string }, b: { name: string }) =>
+        a.name.localeCompare(b.name),
+      ),
+    [projects],
+  );
+
+  const save = async () => {
+    setError(null);
+    if (!form.projectId) { setError('Pick a project'); return; }
+    const amount = form.amount.trim() ? Number(form.amount.replace(/[£,\s]/g, '')) : undefined;
+    const rate = form.rate.trim() ? Number(form.rate.replace(/[%\s]/g, '')) : undefined;
+    if (form.amount.trim() && !Number.isFinite(amount)) { setError('Amount is not a number'); return; }
+    if (form.rate.trim() && !Number.isFinite(rate)) { setError('Rate is not a number'); return; }
+    setSaving(true);
+    try {
+      const res = await createFacility({
+        lenderClientId: lenderId,
+        projectId: form.projectId as Id<'projects'>,
+        tranche: form.tranche || undefined,
+        amountGBP: amount,
+        interestRate: rate,
+        maturityDate: form.maturity || undefined,
+        status: form.status || undefined,
+      });
+      if (res && 'error' in res && res.error === 'facility_exists') {
+        setError('A facility for this project + tranche already exists on this lender.');
+        return;
+      }
+      setOpen(false);
+      setForm({ projectId: '', tranche: '', amount: '', rate: '', maturity: '', status: 'indicative' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        <Plus className="w-3.5 h-3.5" />
+        Add facility
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Add facility (manual)"
+        footer={
+          <div className="flex items-center gap-2 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="primary" size="sm" disabled={saving} onClick={save}>
+              <Check className="w-3.5 h-3.5" />
+              Add facility
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="Project" error={error ?? undefined}>
+            <Select value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>
+              <option value="">Select a project…</option>
+              {sortedProjects.map((p: { _id: string; name: string }) => (
+                <option key={p._id} value={p._id}>{p.name}</option>
+              ))}
+            </Select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tranche">
+              <Select value={form.tranche} onChange={(e) => setForm({ ...form, tranche: e.target.value })}>
+                <option value="">single (whole facility)</option>
+                <option value="senior">senior</option>
+                <option value="mezzanine">mezzanine</option>
+                <option value="bridge">bridge</option>
+                <option value="equity">equity</option>
+              </Select>
+            </Field>
+            <Field label="Status">
+              <Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="indicative">indicative</option>
+                <option value="live">live</option>
+                <option value="repaid">repaid</option>
+                <option value="defaulted">defaulted</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Amount (GBP)">
+              <Input placeholder="6500000" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            </Field>
+            <Field label="Rate (%)">
+              <Input placeholder="9.5" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} />
+            </Field>
+            <Field label="Maturity">
+              <Input type="date" value={form.maturity} onChange={(e) => setForm({ ...form, maturity: e.target.value })} />
+            </Field>
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.7 }}>
+            Manually added facilities are flagged as such — document-sourced ones cite their source documents.
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+// ── Notes ───────────────────────────────────────────────────────────────
+
+/** Plain-text preview from a TipTap doc (notes.content) — walks text nodes. */
+function tipTapText(content: unknown, cap = 180): string {
+  const parts: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    const n = node as { text?: string; content?: unknown[] };
+    if (typeof n.text === 'string') parts.push(n.text);
+    if (Array.isArray(n.content)) n.content.forEach(walk);
+  };
+  walk(content);
+  const s = parts.join(' ').trim();
+  return s.length > cap ? `${s.slice(0, cap - 1)}…` : s;
+}
+
+/** Notes panel body: quick-add textarea + recent notes. Writes through the
+ * markdown lane, so lender notes atomize into the knowledge graph too. */
+export function NotesPanelContent({ lenderId }: { lenderId: Id<'clients'> }) {
+  const colors = useColors();
+  const notes = useQuery(api.notes.getByClient, { clientId: lenderId });
+  const createNote = useMutation(api.notes.createFromMarkdown);
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const body = text.trim();
+    if (!body) return;
+    setSaving(true);
+    try {
+      const firstLine = body.split('\n')[0];
+      await createNote({
+        title: firstLine.length > 60 ? `${firstLine.slice(0, 59)}…` : firstLine,
+        markdown: body,
+        clientId: lenderId,
+        tags: ['lender'],
+      });
+      setText('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Textarea
+          rows={2}
+          placeholder="Jot a note on this lender…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        {text.trim() && (
+          <div className="flex justify-end">
+            <Button variant="primary" size="sm" disabled={saving} onClick={save}>
+              <Check className="w-3.5 h-3.5" />
+              Save note
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {(notes ?? []).length === 0 ? (
+        <div style={{ fontSize: 11, color: colors.text.muted }}>No notes yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {(notes ?? []).slice(0, 5).map((n) => (
+            <div key={n._id} className="flex items-start gap-2">
+              <StickyNote className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: colors.accent.yellow }} />
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span style={{ fontSize: 12, fontWeight: 500, color: colors.text.primary }}>
+                    {n.title}
+                  </span>
+                  <span style={{ fontSize: 9, color: colors.text.dim, fontFamily: MONO }}>
+                    {relTime(n._creationTime)}
+                  </span>
+                </div>
+                {tipTapText(n.content) && tipTapText(n.content) !== n.title && (
+                  <div style={{ fontSize: 10, color: colors.text.muted }}>
+                    {tipTapText(n.content)}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Activity ────────────────────────────────────────────────────────────
+
+const ACTIVITY_KIND_ICON: Record<string, typeof ActivityIcon> = {
+  appetite: ActivityIcon,
+  facility: Briefcase,
+  person: Users,
+  note: StickyNote,
+};
+
+/** Activity panel body: the merged when-did-this-change timeline. */
+export function ActivityPanelContent({ lenderId }: { lenderId: Id<'clients'> }) {
+  const colors = useColors();
+  const items = useQuery(api.appetiteSignals.lenderActivity, {
+    lenderClientId: lenderId,
+    limit: 20,
+  });
+
+  if (items === undefined) {
+    return <div style={{ fontSize: 11, color: colors.text.muted }}>Loading…</div>;
+  }
+  if (items.length === 0) {
+    return <div style={{ fontSize: 11, color: colors.text.muted }}>No activity recorded yet.</div>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((it, i) => {
+        const Icon = ACTIVITY_KIND_ICON[it.kind] ?? ActivityIcon;
+        return (
+          <div key={i} className="flex items-baseline gap-2">
+            <Icon className="w-3 h-3 flex-shrink-0 self-center" style={{ color: colors.text.dim }} />
+            <span className="min-w-0 truncate" style={{ fontSize: 11, color: colors.text.secondary }} title={it.detail ? `${it.label} · ${it.detail}` : it.label}>
+              {it.label}
+            </span>
+            <span className="ml-auto flex-shrink-0" style={{ fontSize: 9, color: colors.text.dim, fontFamily: MONO }}>
+              {relTime(it.at)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }

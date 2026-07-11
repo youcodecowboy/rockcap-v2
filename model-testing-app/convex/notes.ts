@@ -101,6 +101,37 @@ export const create = mutation({
 // Notes are a separate lane from intelligence; these tools exist so the agent
 // can drop a note when a note is the right home (a to-do, a reminder), not to
 // route intelligence here.
+// Public (Clerk-authed) markdown note creation — the Lenders-tab notes panel
+// writes through here. Same conversion + side effects as the internal MCP
+// path (context-cache invalidation, debounced note atomization), so a lender
+// note lands in the knowledge graph like any other filed note.
+export const createFromMarkdown = mutation({
+  args: {
+    title: v.string(),
+    markdown: v.string(),
+    emoji: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+    return await ctx.runMutation(internal.notes.createFromMarkdownInternal, {
+      userId,
+      title: args.title,
+      markdown: args.markdown,
+      emoji: args.emoji,
+      clientId: args.clientId,
+      projectId: args.projectId,
+      tags: args.tags,
+    });
+  },
+});
+
 export const createFromMarkdownInternal = internalMutation({
   args: {
     userId: v.id("users"),
