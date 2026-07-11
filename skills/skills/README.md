@@ -19,7 +19,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
-| `lender-intel/` | **v2 hardened** | v1.3 Sprint F |
+| `lender-intel/` | **v2.1 hardened** | v1.3 Sprint F; enrich gauntlet 2026-07-11 |
 | `cadence-fire/` | **v1.1** | substrate / runtime contract — not a Claude-invokable skill |
 | `deal-intake/` | **v2 hardened** | v1.4 Sprint I |
 | `deal-triage/` | skeleton | — |
@@ -65,7 +65,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 | 15 | (reserved) | | |
 
 **Parallel systems** (not deal-lifecycle steps):
-- [`lender-intel/`](./lender-intel/) — v2 hardened. Lender appetite capture + matching. Used by terms-package-build (step 8) to shortlist lenders.
+- [`lender-intel/`](./lender-intel/) — v2.1 hardened. Lender appetite capture + matching, plus the ENRICH gauntlet (2026-07-11): the miniature prospecting run for thin lender rows — CH identity link, officers→contacts via Apollo, charges-register footprint at the `footprint.*` fieldPaths. Used by terms-package-build (step 8) to shortlist lenders.
 - [`classification-critic/`](./classification-critic/) — skeleton. V4 document-pipeline critic.
 - [`document-author/`](./document-author/) — **v1**. Document-generation substrate: composes a document under prose guardrails and stages a `document_publish` approval (renders via `/api/documents/generate`, files to the client on approval). The deal-doc skills (terms-package-build, ic-paper-drafter, case-study-author) will build on it.
 - [`corporate-structure/`](./corporate-structure/) — skeleton (spec + libs landed). Discover, stress-test, and chart a prospect/borrower's corporate structure; produces a StructureGraph + SVG for the Intel tab and lender briefs. Invoked by prospect-intel step 8b and directly by operator.
@@ -81,7 +81,7 @@ The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 9 v2-
 - **qualify-and-draft**: classifier-routed (reply intent = `info_question`) OR operator says "draft a response to {prospect}'s reply" OR operator says "draft a follow-up for {client} mentioning X"
 - **meeting-prep**: classifier-routed (reply intent = `book_meeting` → `/api/meeting-prep-respond` route) OR operator says "prep me for the {meeting}"
 - **meeting-capture**: operator says "capture the {meeting}: {pasted notes}" OR Fireflies auto-sync (when Pub/Sub provisioned)
-- **lender-intel**: capture mode (operator after BDM call) OR matching mode (auto-triggered by terms-package-build OR operator says "which lenders for this deal?")
+- **lender-intel**: capture mode (operator after BDM call) OR matching mode (auto-triggered by terms-package-build OR operator says "which lenders for this deal?") OR enrich mode (operator says "backfill / enrich the lenders")
 
 ## Skill-side conventions (every v2-hardened SKILL.md has these sections)
 
