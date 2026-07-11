@@ -68,17 +68,47 @@ notes, meetings, emails never atomize. Chat is retired entirely (out of scope).
 - [ ] Native mobile app tabs (mobile-app/) still read knowledgeItems — fold
       into the mobile facelift branch.
 
-## Phase 3 — retire old system (final PR)
+## Phase 3 — retire old system (worktree `knowledge-phase3`)
 
-- [ ] Stop dual-writes: knowledgeBankEntries writes in documents.create /
-      driveHydration / directUpload / bulkUpload / harnessClassify;
-      intelligence-extract legacy updateClientIntelligence write.
-- [ ] Migrate valuable knowledgeItems → atoms; then remove intelligence_* +
-      knowledgeBank MCP/chat tools, KnowledgeBankView, ConsolidationModal,
-      GlobalSearch knowledgeBankEntries source; update skills + CATALOGUE.md.
-- [ ] Keep: operator contextMarkdown lane; intelMarkdown as report artifact.
+- [x] knowledgeBankEntries writes removed (all 5 automatic writers):
+      documents.create, driveHydration.applyExtraction, directUpload,
+      bulkUpload fileItem + fileBatch, harnessClassify. Table is read-only
+      legacy data now.
+- [x] bulkUpload automatic knowledgeItems extraction sections removed (both
+      filing paths). Deliberate writes kept: user-note add-to-intelligence
+      toggle, intelligence.addKnowledgeItem MCP, document.saveIntelligence
+      (retire with the skill write-migration).
+- [x] /api/intelligence-extract route DELETED (with its legacy
+      updateClientIntelligence dual-write). Its two callers repointed:
+      AddIntelligenceModal deleted (no mounts); FileDetailPanel "Analyze"
+      now = classify (if text missing) + documents.requestKnowledgeIngestion
+      (new mutation → upload knowledge feed); panel Intelligence tab renders
+      graphQueries.atomsForDocument (new query — atoms this doc asserted).
+- [x] Prospect KnowledgeTab: knowledgeItems facts list → KnowledgeAtomsTab;
+      operator contextMarkdown lane kept as designed. Nav count →
+      clientAtomTotals.
+- [x] Dead desktop UI deleted: IntelligenceTab.tsx, KnowledgeBankView,
+      AddKnowledgeEntryModal, ConsolidationModal, ChatAssistantButton/Drawer
+      (all had zero importers).
+- [x] Global search: knowledgeBankEntries source → atoms (search_statement
+      index, live facts, routes to client Knowledge tab / atlas).
+- [x] CATALOGUE.md: legacy intelligence_* reads marked DEPRECATED
+      (fallback-only), writes marked LEGACY WRITE.
+- [x] Kept: operator contextMarkdown lane; intelMarkdown report artifact;
+      legacy MCP read tools (skills' not-yet-atomized fallback); knowledge
+      checklist feature (separate concern, not a knowledge store).
+- [ ] NOT deployed from worktree (Convex dev = prod; lender agent has
+      in-flight deploys) — deploy after merge to knowledge-cutover.
+- [ ] Deferred to Phase 3b: skill write-migration (addKnowledgeItem /
+      updateClientIntelligence / saveIntelligence → atoms), knowledgeItems
+      data migration/archive, knowledgeBank.ts + knowledgeLibrary.ts module
+      removal, chat library deletion (chatTools/agenticLoop/routes), native
+      mobile tabs, aiNotesContext / contextCache KB reads, note-template
+      knowledgeBankFields.
 
 ## Log
 
 - 2026-07-11: audit complete (4 parallel sweeps); plan approved; chat declared
   retired — bubble removal folded into Phase 1.
+- 2026-07-11: Phase 1 + 2 shipped and deployed (see above). Phase 3 executed
+  in worktree `knowledge-phase3` (lender agent active in main tree).

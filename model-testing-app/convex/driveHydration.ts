@@ -503,82 +503,9 @@ export const applyExtraction = internalMutation({
     });
 
     if (firstExtraction && effectiveClientId) {
-      // ── First-extraction side effects (previously the create branch).
-      // Knowledge bank entry — replicated minimally from documents.create
-      // (convex/documents.ts, "Automatically create knowledge bank entry"
-      // block) so Drive-ingested documents get side-effect parity. Kept in
-      // sync by hand; if the heuristics there change, change these too.
-      try {
-        let entryType:
-          | "deal_update"
-          | "call_transcript"
-          | "email"
-          | "document_summary"
-          | "project_status"
-          | "general" = "document_summary";
-        const categoryLower = effectiveCategory.toLowerCase();
-        const fileNameLower = row.name.toLowerCase();
-        if (
-          categoryLower.includes("deal") ||
-          categoryLower.includes("loan") ||
-          categoryLower.includes("term")
-        ) {
-          entryType = "deal_update";
-        } else if (
-          categoryLower.includes("project") ||
-          categoryLower.includes("development")
-        ) {
-          entryType = "project_status";
-        } else if (
-          fileNameLower.includes("call") ||
-          fileNameLower.includes("transcript")
-        ) {
-          entryType = "call_transcript";
-        } else if (
-          categoryLower.includes("email") ||
-          fileNameLower.includes("email")
-        ) {
-          entryType = "email";
-        }
-
-        const keyPoints = summary
-          .split(/[.!?]\s+/)
-          .filter((line) => line.trim().length > 0)
-          .slice(0, 5)
-          .map((line) => line.trim());
-
-        const metadata: Record<string, unknown> = {};
-        const extracted = contentFields.extractedData as any;
-        if (extracted) {
-          if (extracted.loanAmount) metadata.loanAmount = extracted.loanAmount;
-          if (extracted.interestRate) metadata.interestRate = extracted.interestRate;
-          if (extracted.loanNumber) metadata.loanNumber = extracted.loanNumber;
-          if (extracted.costsTotal) metadata.costsTotal = extracted.costsTotal;
-          if (extracted.detectedCurrency) metadata.currency = extracted.detectedCurrency;
-        }
-
-        const tags: string[] = [effectiveCategory, effectiveFileTypeDetected];
-        if (effectiveProjectId) tags.push("project-related");
-
-        await ctx.db.insert("knowledgeBankEntries", {
-          clientId: effectiveClientId,
-          projectId: effectiveProjectId,
-          sourceType: "document",
-          sourceId: documentId,
-          entryType,
-          title: `${row.name} - ${effectiveCategory}`,
-          content: summary,
-          keyPoints,
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-          tags,
-          createdAt: now,
-          updatedAt: now,
-        });
-      } catch (error) {
-        // Parity with documents.create: never fail the ingest on a KB miss.
-        console.error("[driveHydration] knowledge bank entry failed:", error);
-      }
-
+      // ── First-extraction side effects. (Knowledge-bank entry write
+      // retired 2026-07-11 — the ingestionEvents feed + chunking above are
+      // the knowledge side effects now.)
       // Meeting extraction job — same heuristics as documents.create. Runs
       // only on FIRST extraction, so this documentId can't already have a
       // job; the existing-job probe there is skipped here.

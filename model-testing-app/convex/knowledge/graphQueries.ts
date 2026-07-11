@@ -2105,3 +2105,52 @@ export const atomsSearch = query({
     return atomsSearchCore(ctx, args);
   },
 });
+
+/** Atoms this document asserted (live observations via by_document → parent
+ * atoms). Powers the file panel's Knowledge tab — the atoms-backed
+ * replacement for the retired per-document knowledgeItems view. Contested
+ * first, then by confidence. */
+export const atomsForDocument = query({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => {
+    await requireIdentity(ctx);
+    const obs = await ctx.db
+      .query("atomObservations")
+      .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
+      .collect();
+    const seen = new Set<string>();
+    const out: Array<{
+      atomId: Id<"atoms">;
+      statement: string;
+      predicate: string;
+      qualifier?: string;
+      status: "active" | "contested";
+      confidence: number;
+      sourceText?: string;
+    }> = [];
+    for (const o of obs) {
+      if (o.superseded === true) continue;
+      if (seen.has(o.atomId as string)) continue;
+      seen.add(o.atomId as string);
+      const atom = await ctx.db.get(o.atomId);
+      if (!atom || (atom.status !== "active" && atom.status !== "contested")) {
+        continue;
+      }
+      out.push({
+        atomId: atom._id,
+        statement: atom.statement,
+        predicate: atom.predicate,
+        qualifier: atom.qualifier,
+        status: atom.status,
+        confidence: atom.confidence,
+        sourceText: o.sourceText,
+      });
+    }
+    out.sort(
+      (a, b) =>
+        Number(b.status === "contested") - Number(a.status === "contested") ||
+        b.confidence - a.confidence,
+    );
+    return out;
+  },
+});

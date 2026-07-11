@@ -115,10 +115,10 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId } : "skip",
   );
 
-  // Knowledge tab: structured facts captured against this prospect (for the
-  // nav count). The tab itself reads contextMarkdown + the facts list directly.
-  const knowledgeFacts = useQuery(
-    api.knowledgeLibrary.getKnowledgeItemsByClient,
+  // Knowledge tab nav count — live atoms on this prospect (the tab renders
+  // the atoms list + the operator contextMarkdown lane).
+  const atomTotals = useQuery(
+    api.knowledge.graphQueries.clientAtomTotals,
     prospect ? { clientId: prospectId } : "skip",
   );
 
@@ -174,7 +174,7 @@ export default function ProspectDetailPage() {
         meetingsCount={meetings?.length ?? 0}
         schemesCount={((schemes as any)?.live?.length ?? 0) + ((schemes as any)?.past?.length ?? 0)}
         threadsCount={(threads as any[])?.length ?? 0}
-        knowledgeCount={(knowledgeFacts as any[])?.length ?? 0}
+        knowledgeCount={((atomTotals as any)?.active ?? 0) + ((atomTotals as any)?.contested ?? 0)}
         lenderTierConflict={lenderTierConflict as any}
         onOpenGraph={() => setGraphOpen(true)}
       />
