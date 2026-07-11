@@ -955,3 +955,57 @@ export const operatorCreateInternal = internalMutation({
     return { ok: true as const, facilityId };
   },
 });
+
+// ── Operator write: facility terms (2026-07-11, Lenders tab inline edit) ──
+//
+// Amount / rate / maturity are atom MIRRORS on pipeline-minted rows —
+// rematerialize rebuilds them from winning atoms whenever new facility atoms
+// arrive. An operator edit therefore holds until newer DOCUMENT evidence
+// lands, which is the honest semantic: the operator's number is the current
+// truth, a later executed document is newer truth. Operator-created rows
+// (createdFrom "operator", no atoms) are never rebuilt, so edits are final.
+async function updateFacilityTermsCore(
+  ctx: MutationCtx,
+  args: {
+    facilityId: Id<"facilities">;
+    amountGBP?: number | null;
+    interestRate?: number | null;
+    maturityDate?: string | null;
+  },
+) {
+  const facility = await ctx.db.get(args.facilityId);
+  if (!facility) throw new Error("facility_not_found");
+  // null = CLEAR the field (patch with undefined unsets it in Convex);
+  // omitted = leave unchanged. Operators need to erase a wrong value, not
+  // just overwrite it.
+  const patch: Record<string, number | string | undefined> = {};
+  if (args.amountGBP !== undefined) patch.amountGBP = args.amountGBP ?? undefined;
+  if (args.interestRate !== undefined) patch.interestRate = args.interestRate ?? undefined;
+  if (args.maturityDate !== undefined) patch.maturityDate = args.maturityDate ?? undefined;
+  if (Object.keys(patch).length === 0) {
+    return { ok: false as const, error: "nothing_to_update" as const };
+  }
+  await ctx.db.patch(args.facilityId, patch as Partial<Doc<"facilities">>);
+  return { ok: true as const, updated: Object.keys(patch) };
+}
+
+const TERMS_ARGS = {
+  facilityId: v.id("facilities"),
+  amountGBP: v.optional(v.union(v.number(), v.null())),
+  interestRate: v.optional(v.union(v.number(), v.null())),
+  maturityDate: v.optional(v.union(v.string(), v.null())),
+};
+
+export const operatorUpdateTerms = mutation({
+  args: TERMS_ARGS,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    return await updateFacilityTermsCore(ctx, args);
+  },
+});
+
+export const operatorUpdateTermsInternal = internalMutation({
+  args: TERMS_ARGS,
+  handler: async (ctx, args) => updateFacilityTermsCore(ctx, args),
+});
