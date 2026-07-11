@@ -155,6 +155,7 @@ const locatorValidator = v.object({
 export const observationInputValidator = v.object({
   sourceType: v.union(
     v.literal("document"),
+    v.literal("note"),
     v.literal("companies_house"),
     v.literal("apollo"),
     v.literal("operator"),
@@ -162,6 +163,7 @@ export const observationInputValidator = v.object({
     v.literal("migration"),
   ),
   documentId: v.optional(v.id("documents")),
+  noteId: v.optional(v.id("notes")),
   contentChecksum: v.optional(v.string()),
   locator: v.optional(locatorValidator),
   sourceText: v.optional(v.string()),
@@ -188,6 +190,7 @@ const candidateValidator = v.object({
 export type ObservationInput = {
   sourceType: Doc<"atomObservations">["sourceType"];
   documentId?: Id<"documents">;
+  noteId?: Id<"notes">;
   contentChecksum?: string;
   locator?: Doc<"atomObservations">["locator"];
   sourceText?: string;
@@ -374,6 +377,7 @@ async function insertObservation(
     atomId,
     sourceType: cand.observation.sourceType,
     documentId: cand.observation.documentId,
+    noteId: cand.observation.noteId,
     contentChecksum: cand.observation.contentChecksum,
     locator: cand.observation.locator,
     sourceText: cand.observation.sourceText,
@@ -431,8 +435,8 @@ async function liveObservations(
   return all.filter((o) => o.superseded !== true);
 }
 
-/** An observation on this atom from the SAME source — same document (any
- * revision) or same non-document externalRef. Re-assertions from the same
+/** An observation on this atom from the SAME source — same document or note
+ * (any revision) or same non-document externalRef. Re-assertions from the same
  * source refresh rather than append (and never bump confidence). */
 function findSameSourceObservation(
   observations: Doc<"atomObservations">[],
@@ -441,6 +445,7 @@ function findSameSourceObservation(
   return observations.find((o) => {
     if (o.sourceType !== obs.sourceType) return false;
     if (obs.documentId !== undefined) return o.documentId === obs.documentId;
+    if (obs.noteId !== undefined) return o.noteId === obs.noteId;
     if (obs.externalRef !== undefined) return o.externalRef === obs.externalRef;
     return false;
   });
@@ -1597,28 +1602,41 @@ export const mergeEntities = internalMutation({
 // atoms the new revision no longer asserts, and which no other live
 // observation supports, close out as superseded/removed_from_source.
 
-export const reatomizeDiff = internalMutation({
-  args: {
-    documentId: v.id("documents"),
-    contentChecksum: v.string(),
-    candidates: v.array(candidateValidator),
-  },
-  handler: async (ctx, args) => {
-    if (args.candidates.length > MAX_BATCH) {
+// The same-lineage diff is source-anchored: the document lane keys provenance
+// on documentId, the note lane (operator notes re-atomized on edit) on noteId.
+// Both flow through the identical resolution core below.
+type ReatomizeAnchor =
+  | { kind: "document"; documentId: Id<"documents"> }
+  | { kind: "note"; noteId: Id<"notes"> };
+
+async function reatomizeCore(
+  ctx: MutationCtx,
+  anchor: ReatomizeAnchor,
+  contentChecksum: string,
+  candidates: Candidate[],
+) {
+    if (candidates.length > MAX_BATCH) {
       throw new Error(
-        `batch_too_large: ${args.candidates.length} candidates (max ${MAX_BATCH}); chunk the batch`,
+        `batch_too_large: ${candidates.length} candidates (max ${MAX_BATCH}); chunk the batch`,
       );
     }
     const now = new Date().toISOString();
 
     // 1. Supersede the prior revision's observations, grouped by atom.
     const priorObs = (
-      await ctx.db
-        .query("atomObservations")
-        .withIndex("by_document", (q) => q.eq("documentId", args.documentId))
-        .collect()
+      anchor.kind === "document"
+        ? await ctx.db
+            .query("atomObservations")
+            .withIndex("by_document", (q) =>
+              q.eq("documentId", anchor.documentId),
+            )
+            .collect()
+        : await ctx.db
+            .query("atomObservations")
+            .withIndex("by_note", (q) => q.eq("noteId", anchor.noteId))
+            .collect()
     ).filter(
-      (o) => o.superseded !== true && o.contentChecksum !== args.contentChecksum,
+      (o) => o.superseded !== true && o.contentChecksum !== contentChecksum,
     );
     const priorAtomIds = new Set<Id<"atoms">>();
     for (const obs of priorObs) {
@@ -1627,20 +1645,21 @@ export const reatomizeDiff = internalMutation({
     }
 
     // 2. Run the new revision's candidates through the shared core, with
-    //    this document/revision stamped on every observation.
+    //    this source/revision stamped on every observation.
     const outcomes: Outcome[] = [];
     const rejected: Array<{ index: number; statement: string; reason: string }> =
       [];
     const lenderEdgeSources: LenderEdgeSource[] = [];
-    for (let i = 0; i < args.candidates.length; i++) {
-      const raw = args.candidates[i] as Candidate;
+    for (let i = 0; i < candidates.length; i++) {
+      const raw = candidates[i];
       const cand: Candidate = {
         ...raw,
         observation: {
           ...raw.observation,
-          sourceType: "document",
-          documentId: args.documentId,
-          contentChecksum: args.contentChecksum,
+          ...(anchor.kind === "document"
+            ? { sourceType: "document" as const, documentId: anchor.documentId }
+            : { sourceType: "note" as const, noteId: anchor.noteId }),
+          contentChecksum,
         },
       };
       const reason = await validateCandidate(ctx, cand);
@@ -1736,7 +1755,36 @@ export const reatomizeDiff = internalMutation({
       facilities,
       lenderEdges: lenderEdges.emissions,
     };
+}
+
+export const reatomizeDiff = internalMutation({
+  args: {
+    documentId: v.id("documents"),
+    contentChecksum: v.string(),
+    candidates: v.array(candidateValidator),
   },
+  handler: async (ctx, args) =>
+    reatomizeCore(
+      ctx,
+      { kind: "document", documentId: args.documentId },
+      args.contentChecksum,
+      args.candidates as Candidate[],
+    ),
+});
+
+export const reatomizeNoteDiff = internalMutation({
+  args: {
+    noteId: v.id("notes"),
+    contentChecksum: v.string(),
+    candidates: v.array(candidateValidator),
+  },
+  handler: async (ctx, args) =>
+    reatomizeCore(
+      ctx,
+      { kind: "note", noteId: args.noteId },
+      args.contentChecksum,
+      args.candidates as Candidate[],
+    ),
 });
 
 // ── upsertChunks — disposable narrative dual index (spec §3.4) ──

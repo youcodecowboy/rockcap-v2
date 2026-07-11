@@ -4900,6 +4900,7 @@ export default defineSchema({
     atomId: v.id("atoms"),
     sourceType: v.union(
       v.literal("document"),
+      v.literal("note"),
       v.literal("companies_house"),
       v.literal("apollo"),
       v.literal("operator"),
@@ -4907,6 +4908,7 @@ export default defineSchema({
       v.literal("migration"),
     ),
     documentId: v.optional(v.id("documents")),
+    noteId: v.optional(v.id("notes")), // note-lane anchor (sourceType "note"); reatomizeNoteDiff keys the same-lineage diff on it
     contentChecksum: v.optional(v.string()), // WHICH revision asserted this
     locator: v.optional(
       v.object({
@@ -4925,7 +4927,8 @@ export default defineSchema({
     superseded: v.optional(v.boolean()), // same-lineage replacement marker
   })
     .index("by_atom", ["atomId"])
-    .index("by_document", ["documentId"]),
+    .index("by_document", ["documentId"])
+    .index("by_note", ["noteId"]),
 
   // The n-ary hub — spec §3.3. Minted deterministically from atoms when
   // facility-shaped predicates arrive; columns are mirrors of winning atoms,

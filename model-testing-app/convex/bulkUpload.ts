@@ -3,6 +3,7 @@ import { mutation, query, action } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { extractIntelligenceFromDocumentAnalysis, ExtractedField, FieldType } from "./intelligenceHelpers";
+import { recordUploadIngestion } from "./knowledge/ingestUpload";
 
 // Fallback project folder types (matches convex/projects.ts)
 const BULK_UPLOAD_FALLBACK_FOLDERS = [
@@ -1430,6 +1431,9 @@ export const fileItem = mutation({
       savedAt: now,
     });
 
+    // Knowledge feed — the upload lane's ingestionEvents row + prose chunking.
+    await recordUploadIngestion(ctx, documentId);
+
     // Update item status
     await ctx.db.patch(args.itemId, {
       status: "filed",
@@ -2262,7 +2266,10 @@ export const fileBatch = mutation({
           status: "completed",
           savedAt: now,
         });
-        
+
+        // Knowledge feed — the upload lane's ingestionEvents row + prose chunking.
+        await recordUploadIngestion(ctx, documentId);
+
         // Update item status
         await ctx.db.patch(item._id, {
           status: "filed",

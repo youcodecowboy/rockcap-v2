@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
+import { projectGraphSection } from "./knowledge/graphQueries";
 
 // Query: Get all projects
 export const list = query({
@@ -1050,6 +1051,10 @@ export const getDeepContext = query({
       .collect();
     const pendingApprovals = allApprovals.filter((a: any) => a.status === "pending");
 
+    // 11. Knowledge graph section (atoms/edges/facilities) — parity with
+    // prospects.getDeepContext; near-zero cost when the project has no atoms.
+    const graph = await projectGraphSection(ctx, args.projectId);
+
     // Compose summary
     const summary = {
       name: (project as any).name,
@@ -1075,12 +1080,14 @@ export const getDeepContext = query({
       // reference. Full md rides along on `projectIntelligence`.
       hasOperatorContext: Boolean((projectIntelligence as any)?.contextMarkdown),
       contextUpdatedAt: (projectIntelligence as any)?.contextMarkdownUpdatedAt,
+      graphAtoms: (graph as any).atoms ?? 0,
     };
 
     return {
       summary,
       project,
       projectIntelligence,
+      graph,
       linkedClients,
       meetings: { upcoming: meetingsUpcoming, past: meetingsPast },
       documents,

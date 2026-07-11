@@ -496,6 +496,11 @@ export const applyExtraction = internalMutation({
       kind: firstExtraction ? "created" : "reextracted",
       at: now,
     });
+    // Prose chunks refresh on every (re-)extraction — parity with the harness
+    // lane (chunkDocument is idempotent per revision and no-ops on non-prose).
+    await ctx.scheduler.runAfter(0, internal.knowledge.chunks.chunkDocument, {
+      documentId,
+    });
 
     if (firstExtraction && effectiveClientId) {
       // ── First-extraction side effects (previously the create branch).

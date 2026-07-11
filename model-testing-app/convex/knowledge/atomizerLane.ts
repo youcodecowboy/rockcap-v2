@@ -7,9 +7,11 @@ import type { Id } from "../_generated/dataModel";
 // (docs/spec-2-knowledge-layer.md)
 //
 // This is the CHEAP incremental path. The `ingestionEvents` feed (Spec 1)
-// appends one row per document that enters/changes in the corpus; this
-// consumer tails it and re-atomizes changed documents at API cost (a couple
-// of cents each). Bulk work — onboarding, backfills, the pre-Drive migration
+// appends one row per document that enters/changes in the corpus (Drive,
+// harness classification, and — since the 2026-07-11 knowledge cutover — the
+// upload lane); this consumer tails it and atomizes changed documents, plus
+// first imports for knowledge-enabled clients, at API cost (a couple of
+// cents each). Bulk work — onboarding, backfills, the pre-Drive migration
 // — runs through the Claude Code harness lane (the atomize-document skill +
 // atoms.* MCP tools) at subscription cost, never here.
 //
@@ -96,12 +98,13 @@ export const clientHasAtoms = internalQuery({
   },
 });
 
-/** TIGHTENED cost wall (operator decision 2026-07-07): the API lane only
- * re-atomizes documents that were ALREADY atomized once (observations exist
- * for this documentId under some PRIOR checksum). A never-atomized document —
- * even for a knowledge-enabled client — is harness-lane work (bulk import
- * batches must never ride the API meter). "Automate ingestion on CHANGES to
- * files, not on first import." */
+/** Prior-atoms probe: has this document been atomized under some PRIOR
+ * checksum? Re-atomization of a changed doc always rides the API lane; a
+ * never-atomized document additionally needs its client knowledge-enabled
+ * (clientHasAtoms) — the 2026-07-11 knowledge-cutover revision of the
+ * 2026-07-07 tightened wall, so upload/Drive first imports for onboarded
+ * clients atomize automatically while never-onboarded clients' backlogs stay
+ * harness-lane (bulk import batches must never ride the API meter). */
 export const docHasPriorAtoms = internalQuery({
   args: {
     documentId: v.id("documents"),
@@ -175,7 +178,15 @@ export const sweep = internalAction({
         internal.knowledge.atomizerLane.docHasPriorAtoms,
         { documentId, excludeChecksum: checksum },
       );
-      if (!isChange) continue; // tightened cost wall — first-time atomization is harness-lane only
+      if (!isChange) {
+        // First-time atomization rides the API lane only for knowledge-enabled
+        // clients (§14b.1 wall); never-onboarded clients stay harness-lane.
+        const enabled = await ctx.runQuery(
+          internal.knowledge.atomizerLane.clientHasAtoms,
+          { clientId: doc.clientId },
+        );
+        if (!enabled) continue;
+      }
       seen.add(key);
       selected.push({ documentId, contentChecksum: checksum, doc });
     }

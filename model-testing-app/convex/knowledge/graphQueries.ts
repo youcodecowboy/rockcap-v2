@@ -1765,6 +1765,69 @@ export async function clientGraphSection(
   };
 }
 
+// Project counterpart (knowledge cutover 2026-07-11) — the "reuse the same
+// cores later" case the comment above anticipated. Same near-zero-cost shape:
+// two bounded count reads, then edges/facilities only when atoms exist.
+export async function projectGraphSection(
+  ctx: QueryCtx,
+  projectId: Id<"projects">,
+): Promise<Record<string, unknown>> {
+  const idStr = projectId as string;
+  const countByStatus = async (status: "active" | "contested") => {
+    const ids = new Set<string>();
+    const subject = await ctx.db
+      .query("atoms")
+      .withIndex("by_subject", (q) =>
+        q.eq("subjectType", "project").eq("subjectId", idStr).eq("status", status),
+      )
+      .collect();
+    for (const a of subject) ids.add(a._id as string);
+    // by_project carries no status column — filter in code.
+    const scoped = await ctx.db
+      .query("atoms")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .collect();
+    for (const a of scoped) {
+      if (a.status === status) ids.add(a._id as string);
+    }
+    return ids.size;
+  };
+
+  const atoms = await countByStatus("active");
+  const contested = await countByStatus("contested");
+  if (atoms === 0 && contested === 0) return { atoms: 0 };
+
+  const names = new NameResolver(ctx);
+  const cache: ScanCache = {};
+  const { atomEdges, nativeEdges } = await federatedEdges(ctx, "project", idStr, undefined, cache);
+  const top = [...atomEdges, ...nativeEdges].sort(rankEdges).slice(0, 10);
+
+  const facilityRows = await ctx.db
+    .query("facilities")
+    .withIndex("by_project", (q) => q.eq("projectId", projectId))
+    .collect();
+  const facilities = [];
+  for (const f of facilityRows.slice(0, 10)) {
+    facilities.push({
+      facilityId: f._id,
+      lender: f.lenderClientId
+        ? (await names.ref("client", f.lenderClientId as string)).name
+        : f.lenderCompanyId
+          ? (await names.ref("company", f.lenderCompanyId as string)).name
+          : undefined,
+      amountGBP: f.amountGBP,
+      status: f.status,
+    });
+  }
+
+  return {
+    atoms,
+    contested,
+    topEdges: await resolveEdges(names, top),
+    facilities,
+  };
+}
+
 // ── Validators ──
 
 const entityTypeValidator = v.union(

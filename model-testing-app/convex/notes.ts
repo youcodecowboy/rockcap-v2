@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { markdownToTipTapDoc, wordCount as countWords } from "./lib/markdownToTipTap";
+import { NOTE_ATOMIZE_DEBOUNCE_MS } from "./knowledge/noteAtomizer";
 
 // Mutation: Create new note
 export const create = mutation({
@@ -77,6 +78,16 @@ export const create = mutation({
       });
     }
 
+    // Knowledge feed — filed notes atomize (debounced; the action re-checks
+    // scope, text, and the checksum so stale schedules no-op).
+    if (args.clientId || args.projectId) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId },
+      );
+    }
+
     return noteId;
   },
 });
@@ -136,6 +147,13 @@ export const createFromMarkdownInternal = internalMutation({
         contextId: args.projectId,
       });
     }
+    if (args.clientId || args.projectId) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId },
+      );
+    }
     return noteId;
   },
 });
@@ -170,6 +188,13 @@ export const updateFromMarkdownInternal = internalMutation({
         contextType: "project",
         contextId: existing.projectId,
       });
+    }
+    if (args.markdown !== undefined && (existing.clientId || existing.projectId)) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId: args.noteId },
+      );
     }
     return { ok: true, noteId: args.noteId };
   },
@@ -300,6 +325,17 @@ export const update = mutation({
         contextType: "project",
         contextId: existing.projectId,
       });
+    }
+
+    // Knowledge feed — re-atomize on content change or on filing an existing
+    // note into a client/project scope (debounced; checksum-idempotent).
+    const becameFiled = wasUnfiled && !isUnfiled;
+    if ((updates.content !== undefined || becameFiled) && !isUnfiled) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId: id },
+      );
     }
 
     return id;

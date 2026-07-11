@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
+import { recordUploadIngestion } from "./knowledge/ingestUpload";
 import {
   buildDocumentName,
   buildInternalDocumentName,
@@ -467,6 +468,11 @@ export const create = mutation({
       documentAnalysis: args.documentAnalysis,
       classificationReasoning: args.classificationReasoning,
     });
+
+    // Knowledge feed — the upload lane's ingestionEvents row + prose chunking.
+    if (args.status !== "error") {
+      await recordUploadIngestion(ctx, documentId);
+    }
 
     // Automatically create knowledge bank entry if document is linked to a client
     if (args.clientId && args.status !== "error") {

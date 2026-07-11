@@ -262,14 +262,16 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => null)) as {
       documentId?: string;
+      noteId?: string; // note lane (knowledge/noteAtomizer) — same extraction, note-anchored persistence
       contentChecksum?: string;
       textContent?: string | null;
       meta?: any;
     } | null;
-    const { documentId, contentChecksum, textContent, meta } = body ?? {};
-    if (!documentId || !contentChecksum) {
+    const { documentId, noteId, contentChecksum, textContent, meta } = body ?? {};
+    const sourceId = documentId ?? noteId;
+    if (!sourceId || !contentChecksum) {
       return NextResponse.json(
-        { ok: false, error: 'documentId and contentChecksum are required' },
+        { ok: false, error: 'documentId (or noteId) and contentChecksum are required' },
         { status: 400 },
       );
     }
@@ -295,7 +297,7 @@ export async function POST(request: NextRequest) {
     if (!anthropicApiKey) {
       // Mock mode — mirror /api/drive/ingest's mock behaviour. No atoms.
       console.log(
-        `[knowledge-atomize] MOCK (no ANTHROPIC_API_KEY) for ${documentId}`,
+        `[knowledge-atomize] MOCK (no ANTHROPIC_API_KEY) for ${sourceId}`,
       );
       return NextResponse.json({ ok: true, isMock: true, candidates: [] });
     }
@@ -325,14 +327,14 @@ export async function POST(request: NextRequest) {
     const parsed = extractJson(outText);
     if (!parsed) {
       console.warn(
-        `[knowledge-atomize] ${documentId}: model output did not parse as candidate JSON`,
+        `[knowledge-atomize] ${sourceId}: model output did not parse as candidate JSON`,
       );
       return NextResponse.json({ ok: true, isMock: false, candidates: [] });
     }
 
     const candidates = sanitizeCandidates(parsed.candidates);
     console.log(
-      `[knowledge-atomize] ${documentId} (checksum ${contentChecksum.slice(0, 8)}): ` +
+      `[knowledge-atomize] ${sourceId} (checksum ${contentChecksum.slice(0, 8)}): ` +
         `${parsed.candidates.length} raw → ${candidates.length} well-formed candidates`,
     );
     return NextResponse.json({ ok: true, isMock: false, candidates });
