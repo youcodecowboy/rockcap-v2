@@ -955,3 +955,54 @@ export const operatorCreateInternal = internalMutation({
     return { ok: true as const, facilityId };
   },
 });
+
+// ── Operator write: facility terms (2026-07-11, Lenders tab inline edit) ──
+//
+// Amount / rate / maturity are atom MIRRORS on pipeline-minted rows —
+// rematerialize rebuilds them from winning atoms whenever new facility atoms
+// arrive. An operator edit therefore holds until newer DOCUMENT evidence
+// lands, which is the honest semantic: the operator's number is the current
+// truth, a later executed document is newer truth. Operator-created rows
+// (createdFrom "operator", no atoms) are never rebuilt, so edits are final.
+async function updateFacilityTermsCore(
+  ctx: MutationCtx,
+  args: {
+    facilityId: Id<"facilities">;
+    amountGBP?: number;
+    interestRate?: number;
+    maturityDate?: string;
+  },
+) {
+  const facility = await ctx.db.get(args.facilityId);
+  if (!facility) throw new Error("facility_not_found");
+  const patch: Partial<Doc<"facilities">> = {};
+  if (args.amountGBP !== undefined) patch.amountGBP = args.amountGBP;
+  if (args.interestRate !== undefined) patch.interestRate = args.interestRate;
+  if (args.maturityDate !== undefined) patch.maturityDate = args.maturityDate;
+  if (Object.keys(patch).length === 0) {
+    return { ok: false as const, error: "nothing_to_update" as const };
+  }
+  await ctx.db.patch(args.facilityId, patch);
+  return { ok: true as const, updated: Object.keys(patch) };
+}
+
+const TERMS_ARGS = {
+  facilityId: v.id("facilities"),
+  amountGBP: v.optional(v.number()),
+  interestRate: v.optional(v.number()),
+  maturityDate: v.optional(v.string()),
+};
+
+export const operatorUpdateTerms = mutation({
+  args: TERMS_ARGS,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    return await updateFacilityTermsCore(ctx, args);
+  },
+});
+
+export const operatorUpdateTermsInternal = internalMutation({
+  args: TERMS_ARGS,
+  handler: async (ctx, args) => updateFacilityTermsCore(ctx, args),
+});

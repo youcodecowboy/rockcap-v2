@@ -49,16 +49,213 @@ export function relTime(input: number | string | undefined): string {
   return new Date(t).toISOString().slice(0, 10);
 }
 
-/** The provenance dot — a small ⓘ whose tooltip says where a value came from. */
-export function ProvenanceDot({ tip, manual }: { tip: string; manual?: boolean }) {
+export interface ProvenanceSource {
+  label: string;
+  documentId?: string;
+}
+
+/** The provenance dot — a small ⓘ that opens a styled hover card saying where
+ * a value came from, with clickable source documents (native title tooltips
+ * were too slow/invisible to read as an affordance). */
+export function ProvenanceDot({
+  lines,
+  sources = [],
+  manual,
+  onOpenDocument,
+}: {
+  lines: string[];
+  sources?: ProvenanceSource[];
+  manual?: boolean;
+  onOpenDocument?: (documentId: string) => void;
+}) {
   const colors = useColors();
+  const [open, setOpen] = useState(false);
   return (
-    <span title={tip} style={{ display: 'inline-flex', cursor: 'help', flexShrink: 0 }}>
+    <span
+      style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
       <Info
         className="w-3 h-3"
-        style={{ color: manual ? colors.accent.orange : colors.text.dim }}
+        style={{ color: manual ? colors.accent.orange : colors.text.dim, cursor: 'help' }}
       />
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: -8,
+            marginBottom: 6,
+            width: 280,
+            zIndex: 40,
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.mid}`,
+            borderRadius: 4,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            padding: '10px 12px',
+            textAlign: 'left',
+          }}
+        >
+          {manual && (
+            <div style={{ marginBottom: 6 }}>
+              <StatusPill label="manually added" tone={colors.accent.orange} />
+            </div>
+          )}
+          <div className="space-y-1">
+            {lines.map((l, i) => (
+              <div key={i} style={{ fontSize: 10.5, color: colors.text.secondary, lineHeight: 1.45 }}>
+                {l}
+              </div>
+            ))}
+          </div>
+          {sources.length > 0 && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${colors.border.default}` }}>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 8.5,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: colors.text.muted,
+                  marginBottom: 4,
+                }}
+              >
+                Source documents
+              </div>
+              <div className="space-y-1">
+                {sources.map((src, i) =>
+                  src.documentId && onOpenDocument ? (
+                    <button
+                      key={i}
+                      onClick={() => { setOpen(false); onOpenDocument(src.documentId!); }}
+                      className="block text-left hover:underline"
+                      style={{
+                        fontSize: 10.5,
+                        color: colors.accent.blue,
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={src.label}
+                    >
+                      {src.label}
+                    </button>
+                  ) : (
+                    <div key={i} style={{ fontSize: 10.5, color: colors.text.secondary }}>
+                      {src.label}
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </span>
+  );
+}
+
+/** Inline-editable facility term cell (amount / rate / maturity). Click the
+ * value → typed input → Enter/blur saves via facilities.operatorUpdateTerms.
+ * On pipeline rows the value holds until newer document evidence arrives. */
+export function EditableTermCell({
+  facilityId,
+  field,
+  value,
+  display,
+}: {
+  facilityId: Id<'facilities'>;
+  field: 'amountGBP' | 'interestRate' | 'maturityDate';
+  value: number | string | null | undefined;
+  display: string;
+}) {
+  const colors = useColors();
+  const updateTerms = useMutation(api.knowledge.facilities.operatorUpdateTerms);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [invalid, setInvalid] = useState(false);
+
+  const save = async () => {
+    const t = text.trim();
+    if (!t) { setEditing(false); return; }
+    let patch: { amountGBP?: number; interestRate?: number; maturityDate?: string };
+    if (field === 'maturityDate') {
+      patch = { maturityDate: t };
+    } else {
+      const n = Number(t.replace(/[£$€,%\s]/g, ''));
+      if (!Number.isFinite(n)) { setInvalid(true); return; }
+      patch = field === 'amountGBP' ? { amountGBP: n } : { interestRate: n };
+    }
+    setSaving(true);
+    try {
+      await updateTerms({ facilityId, ...patch });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type={field === 'maturityDate' ? 'date' : 'text'}
+        value={text}
+        disabled={saving}
+        onChange={(e) => { setInvalid(false); setText(e.target.value); }}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        style={{
+          width: field === 'maturityDate' ? 120 : 84,
+          fontFamily: MONO,
+          fontSize: 10.5,
+          padding: '2px 4px',
+          borderRadius: 3,
+          border: `1px solid ${invalid ? colors.accent.red : colors.accent.blue}`,
+          background: colors.bg.card,
+          color: colors.text.primary,
+          outline: 'none',
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => {
+        setText(
+          field === 'maturityDate'
+            ? String(value ?? '')
+            : value == null ? '' : String(value),
+        );
+        setEditing(true);
+      }}
+      title="Click to edit"
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        color: display === '—' ? colors.text.dim : 'inherit',
+        borderBottom: '1px dashed transparent',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderBottomColor = colors.border.mid; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderBottomColor = 'transparent'; }}
+    >
+      {display}
+    </button>
   );
 }
 
@@ -151,18 +348,19 @@ export interface AppetiteEntry {
   confidence?: number;
   sourceRef?: string;
   sourceLabel?: string;
+  sourceDocumentId?: string;
   notes?: string;
   recordedAt?: number;
 }
 
-/** Tooltip text for an appetite signal's provenance dot. */
-export function appetiteProvenanceTip(entry: AppetiteEntry): string {
-  const lines = [`source: ${entry.sourceType}${entry.sourceLabel ? ` — ${entry.sourceLabel}` : ''}`];
+/** Structured hover-card lines for an appetite signal's provenance dot. */
+export function appetiteProvenanceLines(entry: AppetiteEntry): string[] {
+  const lines = [`source: ${entry.sourceType}${entry.sourceLabel && !entry.sourceDocumentId ? ` — ${entry.sourceLabel}` : ''}`];
   if (entry.asOfDate) lines.push(`as of ${entry.asOfDate}`);
   if (entry.recordedAt) lines.push(`recorded ${relTime(entry.recordedAt)}`);
   if (entry.confidence != null) lines.push(`confidence ${entry.confidence}`);
   if (entry.notes) lines.push(entry.notes);
-  return lines.join('\n');
+  return lines;
 }
 
 /** Standard fieldPaths from the appetite-signal catalogue (matching-critical
@@ -219,12 +417,14 @@ function AppetiteRow({
   entry,
   label,
   display,
+  onOpenDocument,
 }: {
   lenderId: Id<'clients'>;
   fieldPath: string;
   entry: AppetiteEntry;
   label: string;
   display: string;
+  onOpenDocument?: (documentId: string) => void;
 }) {
   const colors = useColors();
   const record = useMutation(api.appetiteSignals.record);
@@ -311,7 +511,12 @@ function AppetiteRow({
         >
           {display}
         </span>
-        <ProvenanceDot tip={appetiteProvenanceTip(entry)} manual={entry.sourceType === 'manual'} />
+        <ProvenanceDot
+          lines={appetiteProvenanceLines(entry)}
+          sources={entry.sourceDocumentId ? [{ label: entry.sourceLabel ?? 'source document', documentId: entry.sourceDocumentId }] : []}
+          manual={entry.sourceType === 'manual'}
+          onOpenDocument={onOpenDocument}
+        />
         {locked ? (
           hover && (
             <Lock
@@ -349,11 +554,13 @@ export function AppetitePanelContent({
   groups,
   formatValue,
   formatLeaf,
+  onOpenDocument,
 }: {
   lenderId: Id<'clients'>;
   groups: Array<[string, Array<{ fieldPath: string; entry: AppetiteEntry }>]>;
   formatValue: (entry: AppetiteEntry) => string;
   formatLeaf: (fieldPath: string) => string;
+  onOpenDocument?: (documentId: string) => void;
 }) {
   const colors = useColors();
   const record = useMutation(api.appetiteSignals.record);
@@ -434,6 +641,7 @@ export function AppetitePanelContent({
                     entry={entry}
                     label={formatLeaf(fp)}
                     display={formatValue(entry)}
+                    onOpenDocument={onOpenDocument}
                   />
                 ))}
               </div>

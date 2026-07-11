@@ -517,11 +517,15 @@ export const lenderGetDeepContext = query({
       // Resolve a human-readable source label: a sourceRef that is a document
       // id becomes the document's fileName; anything else passes through.
       let sourceLabel: string | undefined = s.sourceRef ?? undefined;
+      let sourceDocumentId: string | undefined;
       if (s.sourceRef) {
         const docId = ctx.db.normalizeId("documents", s.sourceRef);
         if (docId) {
           const doc = await ctx.db.get(docId);
-          if (doc) sourceLabel = (doc as any).fileName;
+          if (doc) {
+            sourceLabel = (doc as any).fileName;
+            sourceDocumentId = docId as string;
+          }
         }
       }
       appetiteMap[s.fieldPath] = {
@@ -532,6 +536,7 @@ export const lenderGetDeepContext = query({
         confidence: s.confidence,
         sourceRef: s.sourceRef,
         sourceLabel,
+        sourceDocumentId,
         notes: s.notes,
         recordedAt: s._creationTime,
       };

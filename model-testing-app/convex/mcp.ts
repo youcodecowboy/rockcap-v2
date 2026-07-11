@@ -1250,6 +1250,31 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "facilities.updateTerms",
+    description:
+      "Update a facility's terms — amountGBP, interestRate (percent, e.g. 9.5), maturityDate (ISO date). Pass only the fields to change. Semantics: on pipeline-minted rows these columns are atom mirrors, so an operator value holds until NEWER document evidence rematerializes the row (operator number = current truth, later executed doc = newer truth); operator-created rows are never rebuilt, so edits are final. For document-evidenced term changes prefer atomizing the document (facility-anchored atoms) so provenance is real. Returns {ok, updated:[fields]} or nothing_to_update.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        facilityId: { type: "string", description: "Convex id of the facilities row" },
+        amountGBP: { type: "number" },
+        interestRate: { type: "number", description: "Percent, e.g. 9.5" },
+        maturityDate: { type: "string", description: "ISO date, e.g. 2027-03-31" },
+      },
+      required: ["facilityId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorUpdateTermsInternal, {
+        facilityId: args.facilityId,
+        amountGBP: args.amountGBP,
+        interestRate: args.interestRate,
+        maturityDate: args.maturityDate,
+      });
+      return asText(result);
+    },
+  },
+
+  {
     name: "facilities.setStatus",
     description:
       "Set a facility's lifecycle status — the operator override. The pipeline stamps status from document class and never downgrades; this tool permits ANY transition (a facility the paper says is live may have repaid; a stale indicative quote may be dead). Args: facilityId + status (indicative/live/repaid/defaulted). Status is not an atom mirror, so rematerialisation never clobbers the edit; later pipeline stamps still only upgrade. Get facilityIds from facilities.audit, lender.getDeepContext's graph section, or the atoms.createBatch facilities return.",
