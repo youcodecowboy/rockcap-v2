@@ -2209,6 +2209,61 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // Prospecting v3 — manual pipeline-stage promotion (the operator axis)
+  {
+    name: "prospect.promoteStage",
+    description:
+      "Move a prospect between the operator's 5 MANUAL pipeline stages (cold_outreach / warm_pre_meeting / warm_post_meeting / pre_qualification / qualified) — the axis behind the stage-by-stage /prospects dashboards. Any direction (force move), exact parity with the UI's promote control: patches pipelineStage and logs a prospectStageEvents row (kind 'pipeline_stage', reason 'manual') so rolling entered-this-month KPIs stay exact. This is a SEPARATE axis from prospectState (the 9-state position the outreach engine moves — use prospect.transitionState for that; promoting the stage does NOT touch prospectState or fire any outreach). Does NOT change clients.status either — graduating OUT of the pipeline to an active client is client.activate. Only meaningful for status='prospect' rows. Typical use: the operator says 'move Acme to pre-qual' / a stage-workspace chat graduates a company after a held meeting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        toStage: {
+          type: "string",
+          description: "cold_outreach | warm_pre_meeting | warm_post_meeting | pre_qualification | qualified",
+        },
+      },
+      required: ["clientId", "toStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setPipelineStageInternal, {
+        clientId: args.clientId,
+        toStage: args.toStage,
+        reason: "manual",
+        userId,
+        mode: "force",
+      });
+      return asText(result);
+    },
+  },
+
+  // Prospecting v3 — sub-stage ladder step (pre-qualification / qualified)
+  {
+    name: "prospect.setQualSubStage",
+    description:
+      "Set a prospect's current SUB-STAGE ladder step. Two ladders share this field, gated by pipelineStage: the pre_qualification ladder (modelling_required → modelling_review_required → qualitative_feedback_required → feedback_given → feedback_discussed) and the qualified ladder (terms_requested → terms_presented → progression_to_credit → formal_dd → credit_approved). Set the stage first (prospect.promoteStage) if the prospect isn't in the matching stage — this tool does not validate the pairing (parity with the UI mutation). Logs a prospectStageEvents row (kind 'qual_substage') for exact rolling KPIs. Typical use: 'Acme's model is built, mark it for review' → modelling_review_required; 'terms came back from two lenders' → terms_presented.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        subStage: {
+          type: "string",
+          description:
+            "Pre-qual ladder: modelling_required | modelling_review_required | qualitative_feedback_required | feedback_given | feedback_discussed. Qualified ladder: terms_requested | terms_presented | progression_to_credit | formal_dd | credit_approved.",
+        },
+      },
+      required: ["clientId", "subStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setQualSubStageInternal, {
+        clientId: args.clientId,
+        subStage: args.subStage,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
   // v1.2 prospects CRM — operator edit on a single touch
   {
     name: "cadence.update",
