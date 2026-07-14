@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
+import { internal } from "./_generated/api";
+import { resolveEmailToContactClient } from "./contacts";
 
 // Touchpoints (BL-4.9): unified exchange ledger across all integrations.
 // Skills query this for recent history with a contact, deal, or client
@@ -175,5 +177,125 @@ export const getRecent = query({
       .withIndex("by_occurred_at", (q: any) => q.gte("occurredAt", args.sinceIso))
       .order("desc")
       .take(limit);
+  },
+});
+
+// ── Manual-send backfill (backlog reset, 2026-07-14) ──────────────────
+//
+// Outreach that happened OUTSIDE the system (operator sent from a generic
+// Gmail tool) is invisible to touchpoints, so per-prospect history lies and
+// clients.lastOutreachSendAt (which drives the cold-stage split + the
+// intel-freshness Trigger B) stays unset. This batch mutation is the
+// reconciliation write: log each manual send as an outbound email touchpoint,
+// stamp lastOutreachSendAt forward, and advance the prospect state machine
+// exactly as a real send would (markOutreachInFlightInternal, which is
+// no-op-safe on non-pre-outreach states).
+//
+// Dedup: entries carrying a gmailMessageId are idempotent via the
+// (provider "gmail", payloadRef) index — re-running a reset never
+// double-logs. Entries without one always insert (provider "manual").
+
+const MANUAL_LOG_CAP = 50;
+
+export const logManualOutboundBatchInternal = internalMutation({
+  args: {
+    entries: v.array(
+      v.object({
+        contactId: v.optional(v.id("contacts")),
+        contactEmail: v.optional(v.string()),
+        clientId: v.optional(v.id("clients")),
+        occurredAt: v.string(), // ISO — when the manual email was actually sent
+        subject: v.optional(v.string()),
+        gmailMessageId: v.optional(v.string()),
+        note: v.optional(v.string()),
+      }),
+    ),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    logged: number;
+    skipped: Array<{ index: number; reason: string }>;
+  }> => {
+    if (args.entries.length > MANUAL_LOG_CAP) {
+      throw new Error(
+        `Batch too large: ${args.entries.length} > ${MANUAL_LOG_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ index: number; reason: string }> = [];
+    let logged = 0;
+
+    for (let i = 0; i < args.entries.length; i++) {
+      const e = args.entries[i];
+
+      // Resolve contact + client.
+      let contactId = e.contactId as any;
+      let clientId = e.clientId as any;
+      if (!contactId && e.contactEmail) {
+        const hit = await resolveEmailToContactClient(ctx, e.contactEmail);
+        if (hit) {
+          contactId = hit.contactId as any;
+          clientId = clientId ?? (hit.clientId as any);
+        }
+      }
+      if (contactId && !clientId) {
+        const contact: any = await ctx.db.get(contactId);
+        clientId = contact?.clientId;
+      }
+      if (!contactId && !clientId) {
+        skipped.push({ index: i, reason: "no_contact_or_client_match" });
+        continue;
+      }
+
+      // Idempotency on the Gmail message id when supplied.
+      if (e.gmailMessageId) {
+        const dup = await ctx.db
+          .query("touchpoints")
+          .withIndex("by_provider_payload", (q: any) =>
+            q.eq("provider", "gmail").eq("payloadRef", e.gmailMessageId),
+          )
+          .first();
+        if (dup) {
+          skipped.push({ index: i, reason: "already_logged" });
+          continue;
+        }
+      }
+
+      await ctx.db.insert("touchpoints", {
+        provider: e.gmailMessageId ? ("gmail" as const) : ("manual" as const),
+        direction: "outbound" as const,
+        kind: "email" as const,
+        contactId,
+        relatedClientId: clientId,
+        occurredAt: e.occurredAt,
+        payloadRef: e.gmailMessageId,
+        payloadType: e.gmailMessageId ? "gmail.message" : undefined,
+        subject: e.subject,
+        summary: e.note ?? "Manual send logged during backlog reconciliation",
+        capturedBy: args.actorUserId,
+        createdAt: now,
+      });
+      logged++;
+
+      // Truth repair on the prospect: outreach happened.
+      if (clientId) {
+        const client: any = await ctx.db.get(clientId);
+        if (client) {
+          const prev = client.lastOutreachSendAt;
+          if (!prev || prev < e.occurredAt) {
+            await ctx.db.patch(clientId, { lastOutreachSendAt: e.occurredAt });
+          }
+          await ctx.scheduler.runAfter(0, internal.prospects.markOutreachInFlightInternal, {
+            clientId,
+            userId: args.actorUserId,
+          });
+        }
+      }
+    }
+    return { total: args.entries.length, logged, skipped };
   },
 });

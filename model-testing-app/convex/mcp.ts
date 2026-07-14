@@ -4014,6 +4014,68 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "touchpoint.logManualSend",
+    description:
+      "Backfill outbound emails that were sent OUTSIDE the system (operator used a generic Gmail tool) as real outbound touchpoints — up to 50 per call. For each entry: logs the touchpoint, stamps the prospect's lastOutreachSendAt forward, and advances the prospect state machine exactly as a real send would (no-op-safe). THE reconciliation write for sends with NO drafted package — when a manual send matches a drafted package's touch 1, use cadence.adoptManualSend instead (it also refits the follow-ups). Idempotent when gmailMessageId is supplied (re-running a reset never double-logs). Resolve each send from the operator's Gmail Sent search: recipient email, sent date, subject, message id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entries: {
+          type: "array",
+          description: "Manual sends to log (max 50).",
+          items: {
+            type: "object",
+            properties: {
+              contactEmail: { type: "string", description: "Recipient email — resolved to a contact + prospect. Preferred key." },
+              contactId: { type: "string", description: "Convex contacts id, if already known (alternative to contactEmail)." },
+              clientId: { type: "string", description: "Convex clients id override when the contact can't be resolved." },
+              occurredAt: { type: "string", description: "ISO timestamp of the actual manual send (from Gmail)." },
+              subject: { type: "string", description: "Email subject, for the history row." },
+              gmailMessageId: { type: "string", description: "Gmail message id — supplies idempotency; pass it whenever the Gmail search returned one." },
+              note: { type: "string", description: "Optional context, e.g. 'found during 2026-07 backlog reset'." },
+            },
+            required: ["occurredAt"],
+          },
+        },
+      },
+      required: ["entries"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.touchpoints.logManualOutboundBatchInternal, {
+        entries: args.entries,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.adoptManualSend",
+    description:
+      "AUTOFIT a drafted cadence package onto a manual send (backlog reconciliation). When the operator sent touch 1 THEMSELVES outside the system: marks touch 1 fired-externally at the real send date (the dispatcher can never re-send it — no double-email), REFITS the unfired follow-up touches onto the preset schedule anchored at that date (past-due dates pushed forward: min 2 days out, 2 days apart, order kept), logs the send as an outbound touchpoint (idempotent on gmailMessageId), stamps lastOutreachSendAt, and advances the prospect state. The package keeps its approval status: a pending package still needs the operator's normal 'Approve & begin outreach' before follow-ups fire — an already-approved one auto-sends on the new dates (say so explicitly when itemising). Use instead of denying when the operator wants the drafted follow-up sequence to CONTINUE from their manual send. Errors: package_not_found, touch_1_already_fired (nothing to adopt), invalid_sentAt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageId: { type: "string", description: "The drafted package whose touch 1 the operator sent manually." },
+        sentAt: { type: "string", description: "ISO timestamp of the real manual send (from Gmail Sent)." },
+        preset: { type: "string", description: "Follow-up spacing: light / moderate (default) / aggressive." },
+        gmailMessageId: { type: "string", description: "Gmail message id of the manual send — idempotency for the touchpoint." },
+        subject: { type: "string", description: "Subject of the manual send (defaults to the drafted touch-1 subject)." },
+      },
+      required: ["packageId", "sentAt"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.adoptManualSendInternal, {
+        packageId: args.packageId,
+        sentAt: args.sentAt,
+        preset: args.preset,
+        gmailMessageId: args.gmailMessageId,
+        subject: args.subject,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "client.create",
     description:
       "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",

@@ -78,6 +78,15 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   available; deny/resolve/park to zero; going-forward rules to prevent rebuild. Deployed + pushed.
   177 tools. Colleague onboarding suggestion recorded: connect his Gmail at /settings/gmail +
   mint his own MCP token at /settings/mcp-token (ROCKCAP_MCP_TOKEN env) for attribution.
+- 2026-07-14 — Reconciliation WRITE side (operator: "reconciliation must look through his sent
+  and mark it off; if touch 1 was sent it should queue the rest of the cadence back up").
+  cadence.adoptManualSend = the autofit: touch 1 marked fired-externally at the real Gmail date
+  (isActive false, lastResult 'sent' — never re-sends), unfired T2-4 refit onto preset offsets
+  from that date (past dates pushed fwd: ≥2d out, ≥2d apart), touchpoint logged (idempotent on
+  gmailMessageId), lastOutreachSendAt + markOutreachInFlight. Approval status preserved — pending
+  still gates; already-approved auto-sends on new dates (skill must warn). touchpoint.logManualSend
+  = batch backfill (≤50) for manual sends with no package to continue. Reset step 2 rewritten
+  evidence-driven: Gmail Sent search per contact → adopt / deny+log / park. 179 tools. Deployed.
 
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags

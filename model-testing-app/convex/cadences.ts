@@ -552,6 +552,146 @@ export const denyPackageBatchInternal = internalMutation({
   },
 });
 
+// ── Adopt a manual send into a drafted package (backlog reset, 2026-07-14) ──
+//
+// The operator sent touch 1 THEMSELVES (generic Gmail tool, outside the
+// system) after the package was drafted. Denying the package would waste the
+// drafted follow-ups; approving it as-is would re-send touch 1. This adopts
+// reality instead:
+//   1. Touch 1 is marked fired-externally (lastFiredAt = the real send date,
+//      lastResult "sent", isActive false) so the dispatcher can never send it.
+//   2. Unfired touches 2..4 are REFIT onto the preset schedule anchored at
+//      the real send date; anything that would land in the past is pushed
+//      forward (min 2 days from now, min 2 days apart, order preserved).
+//   3. The send is logged as an outbound touchpoint (idempotent on
+//      gmailMessageId), lastOutreachSendAt is stamped, and the prospect state
+//      machine advances exactly as a real send would.
+// The package stays at its current approval status — firing the refit
+// follow-ups still requires the operator's normal "Approve & begin outreach".
+export const adoptManualSendInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    sentAt: v.string(), // ISO — when the operator actually sent touch 1
+    preset: v.optional(
+      v.union(v.literal("light"), v.literal("moderate"), v.literal("aggressive")),
+    ),
+    gmailMessageId: v.optional(v.string()),
+    subject: v.optional(v.string()),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("cadences")
+      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+      .collect();
+    if (rows.length === 0) {
+      return { ok: false as const, error: "package_not_found", packageId: args.packageId };
+    }
+    const sorted = [...rows].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+    const touch1 = sorted[0];
+    if (touch1.lastFiredAt) {
+      return {
+        ok: false as const,
+        error: "touch_1_already_fired",
+        message: `Touch 1 already fired via the system on ${touch1.lastFiredAt} — nothing to adopt.`,
+      };
+    }
+    const sentMs = Date.parse(args.sentAt);
+    if (!Number.isFinite(sentMs)) {
+      return { ok: false as const, error: "invalid_sentAt" };
+    }
+
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    // 1. Touch 1 = fired externally.
+    await ctx.db.patch(touch1._id, {
+      isActive: false,
+      lastFiredAt: args.sentAt,
+      lastResult: "sent",
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: args.userId,
+      updatedAt: now,
+    });
+
+    // 2. Refit the unfired follow-ups off the real send date.
+    const offsets = PRESET_OFFSETS[args.preset ?? "moderate"];
+    let prevDueMs = 0;
+    const rescheduled: Array<{ packageOrder: number; nextDueAt: string }> = [];
+    for (const row of sorted.slice(1)) {
+      const order = row.packageOrder ?? 0;
+      if (row.lastFiredAt || order < 2 || order > 4) continue;
+      const offsetDays = offsets[order - 1] ?? offsets[offsets.length - 1];
+      let dueMs = sentMs + offsetDays * DAY;
+      dueMs = Math.max(dueMs, nowMs + 2 * DAY); // never schedule into the past
+      if (prevDueMs) dueMs = Math.max(dueMs, prevDueMs + 2 * DAY); // keep order + spacing
+      prevDueMs = dueMs;
+      const nextDueAt = new Date(dueMs).toISOString();
+      await ctx.db.patch(row._id, {
+        nextDueAt,
+        editedByOperator: true,
+        editedAt: now,
+        editedBy: args.userId,
+        updatedAt: now,
+      });
+      rescheduled.push({ packageOrder: order, nextDueAt });
+    }
+
+    // 3. Truth repair: touchpoint (idempotent on gmailMessageId) + prospect stamps.
+    let touchpointLogged = false;
+    if (args.gmailMessageId) {
+      const dup = await ctx.db
+        .query("touchpoints")
+        .withIndex("by_provider_payload", (q: any) =>
+          q.eq("provider", "gmail").eq("payloadRef", args.gmailMessageId),
+        )
+        .first();
+      if (dup) touchpointLogged = true;
+    }
+    if (!touchpointLogged) {
+      await ctx.db.insert("touchpoints", {
+        provider: args.gmailMessageId ? ("gmail" as const) : ("manual" as const),
+        direction: "outbound" as const,
+        kind: "email" as const,
+        contactId: touch1.contactId,
+        relatedClientId: touch1.relatedClientId,
+        occurredAt: args.sentAt,
+        payloadRef: args.gmailMessageId,
+        payloadType: args.gmailMessageId ? "gmail.message" : undefined,
+        subject: args.subject ?? touch1.preDraftedTouch?.subject,
+        summary: "Manual send adopted into cadence package during backlog reconciliation",
+        capturedBy: args.userId,
+        createdAt: now,
+      });
+      touchpointLogged = true;
+    }
+    if (touch1.relatedClientId) {
+      const client: any = await ctx.db.get(touch1.relatedClientId);
+      if (client && (!client.lastOutreachSendAt || client.lastOutreachSendAt < args.sentAt)) {
+        await ctx.db.patch(touch1.relatedClientId, { lastOutreachSendAt: args.sentAt });
+      }
+      await ctx.scheduler.runAfter(0, internal.prospects.markOutreachInFlightInternal, {
+        clientId: touch1.relatedClientId,
+        userId: args.userId,
+      });
+    }
+
+    return {
+      ok: true as const,
+      packageId: args.packageId,
+      touch1MarkedSentAt: args.sentAt,
+      rescheduled,
+      packageApprovalStatus: touch1.packageApprovalStatus ?? null,
+      note:
+        touch1.packageApprovalStatus === "approved"
+          ? "Package already approved — refit follow-ups will auto-send on their new dates."
+          : "Follow-ups refit but still need the normal package approval before they send.",
+    };
+  },
+});
+
 // ── Hold / release a cadence for an in-flight intel run ──
 // holdForIntelInternal pauses a cadence while intel is (re)gathered: deactivate
 // it but PRESERVE nextDueAt so clearIntelHoldInternal can reactivate it in
