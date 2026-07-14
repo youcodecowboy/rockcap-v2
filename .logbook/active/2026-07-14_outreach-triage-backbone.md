@@ -59,6 +59,12 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   inert, delete via dashboard (CLI env rm + raw API both fail on this machine: stale project
   link / 403 with the CLI token — multi-account quirk, also why operator's env pull failed).
   PRE-EXISTING WART noted: .mcp.json commits a literal fallback bearer token to the repo.
+- 2026-07-14 — LIVE. Convex deployed to incredible-kudu-562 (--typecheck=disable, the standing
+  workaround for the 6 pre-existing knowledge/* TS errors). /triage-digest verified: 200 with
+  MCP token, 401 without. First real read: 56 pending packages, 50+ unrouted replies, 50+
+  dead-end replies, 3 failed sends, 63 touches due in 7 days — ALL 63 blocked (the reported
+  "cadences not firing" symptom, now measurable). PR #96 opened (knowledge-cutover → main).
+  Next session: run /outreach and work that backlog down.
 
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags
