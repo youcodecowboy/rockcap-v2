@@ -43,8 +43,15 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   total. tools-manifest.json was stale (135 vs 167 live) — refreshed from meta.listTools, which
   also cleared 3 pre-existing dangerous phantom refs in other skills. next build ✓, convex tsc ✓
   (6 pre-existing knowledge/* errors untouched), validate-skills ✓, audit-tool-refs ✓.
-  NOT YET DONE: deploy Convex + set TRIAGE_DIGEST_KEY on the app + export ROCKCAP_APP_URL /
-  ROCKCAP_TRIAGE_KEY on the operator laptop (hook is a silent no-op until then).
+  NOT YET DONE: deploy Convex + get knowledge-cutover into production (the digest route 404s
+  on prod until then) + export ROCKCAP_APP_URL / ROCKCAP_TRIAGE_KEY on operator laptops
+  (hook is a silent no-op until then).
+- 2026-07-14 — TRIAGE_DIGEST_KEY generated + set on Vercel (Production + Preview, encrypted,
+  never printed to transcript). Prod URL = https://app.rockcap.uk. Laptop retrieval path:
+  `vercel env pull` from the linked model-testing-app dir (needs Vercel team access) or share
+  from the Vercel dashboard via password manager. Per-stage slash commands shipped
+  (/reach-out-cold /follow-up-cold /warm-pre-meeting /warm-post-meeting /pre-qual /qualified,
+  plus /outreach cwd inference) — RockCap-MCP e1dc804.
 
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags
