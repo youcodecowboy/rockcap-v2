@@ -46,13 +46,19 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   NOT YET DONE: deploy Convex + get knowledge-cutover into production (the digest route 404s
   on prod until then) + export ROCKCAP_APP_URL / ROCKCAP_TRIAGE_KEY on operator laptops
   (hook is a silent no-op until then).
-- 2026-07-14 — TRIAGE_DIGEST_KEY generated + set on Vercel (Production + Preview, encrypted,
-  never printed to transcript). App URL = https://rockcap-v2.vercel.app (operator confirmed the
-  custom domain is not in use). Laptop retrieval path:
-  `vercel env pull` from the linked model-testing-app dir (needs Vercel team access) or share
-  from the Vercel dashboard via password manager. Per-stage slash commands shipped
-  (/reach-out-cold /follow-up-cold /warm-pre-meeting /warm-post-meeting /pre-qual /qualified,
-  plus /outreach cwd inference) — RockCap-MCP e1dc804.
+- 2026-07-14 — Per-stage slash commands shipped (/reach-out-cold /follow-up-cold
+  /warm-pre-meeting /warm-post-meeting /pre-qual /qualified, plus /outreach cwd inference)
+  — RockCap-MCP e1dc804.
+- 2026-07-14 — TRIAGE_DIGEST_KEY design REPLACED before ever going live (operator asked the
+  right question: why a second credential when every laptop already has an MCP bearer token?).
+  Digest moved to a Convex HTTP route GET /triage-digest (convex/triageDigestHttp.ts, wired in
+  http.ts) authenticated by the SAME per-user mcpTokens as /mcp; the hook derives URL + token
+  from .mcp.json — ZERO per-machine setup, colleague onboarding = clone repo, nothing else.
+  Deleted: /api/triage-digest Next route + middleware entry, tools/setup-triage-env.sh.
+  CLEANUP TODO: two orphaned TRIAGE_DIGEST_KEY env vars (Production/Preview) remain on Vercel —
+  inert, delete via dashboard (CLI env rm + raw API both fail on this machine: stale project
+  link / 403 with the CLI token — multi-account quirk, also why operator's env pull failed).
+  PRE-EXISTING WART noted: .mcp.json commits a literal fallback bearer token to the repo.
 
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags

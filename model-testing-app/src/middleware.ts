@@ -73,9 +73,6 @@ const isPublicRoute = createRouteMatcher([
   // here so Clerk doesn't 404-reject the cookie-less Convex fetch.
   '/api/reply-draft(.*)',
   '/api/intel-revalidate(.*)',
-  // Outreach triage digest — the RockCap-MCP stage-workspace SessionStart
-  // hook curls this (cookie-less) with its own bearer TRIAGE_DIGEST_KEY.
-  '/api/triage-digest(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.
