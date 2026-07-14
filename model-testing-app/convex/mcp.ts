@@ -3917,6 +3917,103 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "reply.resolveBatch",
+    description:
+      "Mark up to 100 replies HANDLED so they leave the triage queue (listUnrouted / outreach.triageQueue / the session digest) while keeping full history on the row. THE backlog-reset primitive for replies: use when the operator confirms items were already answered outside the system (e.g. manually via Gmail), acknowledged, or aren't actionable (spam, dead-end from an irrelevant sender). Pass a resolutionNote saying WHY (e.g. 'answered manually via Gmail pre-system', 'not actionable — newsletter'). RULE: itemise the batch to the operator and get an explicit yes first — resolving hides items from every queue. Per-item no-op-safe ({skipped[]} for missing/already-resolved). Does NOT send anything or touch cadences.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the replyEvents rows to mark handled (max 100).",
+        },
+        resolutionNote: { type: "string", description: "Why these are considered handled — lands on every row for the audit trail." },
+      },
+      required: ["replyEventIds", "resolutionNote"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.replyEvents.resolveBatchInternal, {
+        replyEventIds: args.replyEventIds,
+        resolutionNote: args.resolutionNote,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.denyPackageBatch",
+    description:
+      "Deny up to 25 cadence packages in one call: every touch in every listed package is marked denied + inactive so none EVER fire. THE backlog-reset primitive for stale drafted outreach — e.g. packages drafted for prospects the operator has since emailed manually outside the system (sending them now would double-email). Pass a reason for the audit trail (defaults to operator_denied_package). RULE: itemise the packages (company, touches, drafted-when) and get an explicit operator yes first — this discards drafted work. A prospect denied here can get FRESH outreach later via the outreach-draft skill. Per-item safe: unknown packageIds land in results[] with ok:false.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to deny (max 25).",
+        },
+        reason: { type: "string", description: "Audit reason, e.g. 'stale_draft_manual_outreach_took_over'." },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.denyPackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+        reason: args.reason,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.rejectBatch",
+    description:
+      "Reject up to 50 pending approvals in one call — every draft is discarded, NOTHING sends. The backlog-reset counterpart of approval.approveBatch: use when clearing stale staged drafts (superseded by manual sends, outdated content). Pass a reason for the audit trail. RULE: itemise to the operator and get an explicit yes first. Per-item no-op-safe ({skipped[]} for missing/non-pending rows).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the pending approvals rows to reject (max 50).",
+        },
+        reason: { type: "string", description: "Audit reason recorded on every row." },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.rejectBatchInternal, {
+        approvalIds: args.approvalIds,
+        reason: args.reason,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.dismissNeedsActionFlag",
+    description:
+      "Dismiss a needs-action flag on a prospect (the flaggedClients section of outreach.triageQueue / the 'Waiting on you' chip). Use after the operator has made the decision the flag was asking for — e.g. reviewed a reply_not_interested and decided keep-or-lost, acknowledged an out-of-office. Pass the flag's kind exactly as returned by the triage queue (reply_received / reply_flag_only / reply_not_interested / reply_out_of_office / ...) and, when the flag row carries one, its sourceReplyEventId — kind+source identify WHICH flag to clear when a prospect has several.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex clients id of the prospect." },
+        kind: { type: "string", description: "The flag kind to clear, exactly as listed on the triage queue row." },
+        sourceReplyEventId: { type: "string", description: "The flag's sourceReplyEventId when present — disambiguates same-kind flags." },
+      },
+      required: ["clientId", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.clearNeedsActionFlagInternal, {
+        clientId: args.clientId,
+        kind: args.kind,
+        sourceReplyEventId: args.sourceReplyEventId,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "client.create",
     description:
       "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",

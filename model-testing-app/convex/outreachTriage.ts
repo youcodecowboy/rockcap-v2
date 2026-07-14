@@ -219,13 +219,18 @@ export const triageQueue = query({
     }
 
     // 5. Replies awaiting a human decision (classifier → operator_review).
-    const unroutedRows = await ctx.db
+    const unroutedRaw = await ctx.db
       .query("replyEvents")
       .withIndex("by_dispatched_to", (q: any) =>
         q.eq("dispatchedTo", "operator_review"),
       )
       .order("desc")
-      .take(REPLY_CAP);
+      .take(REPLY_CAP * 3);
+    // Resolved rows (reply.resolveBatch / UI dismiss) have been handled —
+    // they leave the queue but keep their history on the row.
+    const unroutedRows = unroutedRaw
+      .filter((r: any) => !r.resolvedAt)
+      .slice(0, REPLY_CAP);
     const unroutedReplies = [];
     for (const r of unroutedRows) {
       unroutedReplies.push({
@@ -244,11 +249,15 @@ export const triageQueue = query({
     // (or no linked prospect) matched. Previously surfaced NOWHERE.
     const deadEndReplies = [];
     for (const bucket of ["no_contact_match", "unlinked_no_review"] as const) {
-      const rows = await ctx.db
-        .query("replyEvents")
-        .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", bucket))
-        .order("desc")
-        .take(DEAD_END_CAP);
+      const rows = (
+        await ctx.db
+          .query("replyEvents")
+          .withIndex("by_dispatched_to", (q: any) => q.eq("dispatchedTo", bucket))
+          .order("desc")
+          .take(DEAD_END_CAP * 3)
+      )
+        .filter((r: any) => !r.resolvedAt)
+        .slice(0, DEAD_END_CAP);
       for (const r of rows) {
         deadEndReplies.push({
           replyEventId: String(r._id),

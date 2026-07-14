@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -272,7 +272,9 @@ export const listByContact = query({
 
 // List replies for a client (via the denormalised linkedClientId). Used by
 // the prospect-detail Replies tab as the primary query — covers all contacts
-// linked to this client in one read.
+// linked to this client in one read. Rows carry resolvedByName (joined from
+// users) so the tab can show "Handled by <who>" — multiple people work the
+// same prospects, so attribution matters.
 export const listByClient = query({
   args: { clientId: v.id("clients"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -281,22 +283,119 @@ export const listByClient = query({
       .withIndex("by_linked_client", (q) => q.eq("linkedClientId", args.clientId))
       .order("desc")
       .take(args.limit ?? 50);
-    return rows;
+    const nameCache = new Map<string, string | null>();
+    const out = [];
+    for (const r of rows) {
+      let resolvedByName: string | null = null;
+      if (r.resolvedBy) {
+        const key = String(r.resolvedBy);
+        if (!nameCache.has(key)) {
+          const u: any = await ctx.db.get(r.resolvedBy);
+          nameCache.set(key, u?.name ?? u?.email ?? null);
+        }
+        resolvedByName = nameCache.get(key) ?? null;
+      }
+      out.push({ ...r, resolvedByName });
+    }
+    return out;
+  },
+});
+
+// Mark ONE reply handled from the web UI (Clerk session). The MCP batch
+// variant is resolveBatchInternal; both stamp the same fields so "handled by
+// <user> at <time>: <note>" renders identically wherever it came from.
+export const resolve = mutation({
+  args: {
+    replyEventId: v.id("replyEvents"),
+    resolutionNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+    const row = await ctx.db.get(args.replyEventId);
+    if (!row) throw new Error("reply_event_not_found");
+    if (row.resolvedAt) {
+      return { ok: false as const, reason: "already_resolved", resolvedAt: row.resolvedAt };
+    }
+    await ctx.db.patch(args.replyEventId, {
+      resolvedAt: new Date().toISOString(),
+      resolvedBy: user._id,
+      resolutionNote: args.resolutionNote ?? "handled",
+    });
+    return { ok: true as const };
   },
 });
 
 // List unrouted replies (dispatchedTo === "operator_review"). Powers the
 // "Replies awaiting triage" section on the /prospects home page — the
 // operator's morning queue of replies the classifier didn't auto-route.
+// Resolved rows (operator marked handled via reply.resolveBatch / the UI)
+// are excluded — they stay queryable per-client for history.
 export const listUnrouted = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
     const rows = await ctx.db
       .query("replyEvents")
       .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
       .order("desc")
-      .take(args.limit ?? 50);
-    return rows;
+      .take(limit * 3);
+    return rows.filter((r) => !r.resolvedAt).slice(0, limit);
+  },
+});
+
+// Mark replies HANDLED so they leave the triage queue (2026-07-14). The
+// backlog-reset primitive: the operator confirms a batch was already answered
+// (often manually via Gmail), acknowledged, or isn't actionable, and the
+// whole batch drops out of listUnrouted / triageQueue / the session digest in
+// one call. Per-item no-op-safe; resolutionNote lands on every row.
+const RESOLVE_BATCH_CAP = 100;
+
+export const resolveBatchInternal = internalMutation({
+  args: {
+    replyEventIds: v.array(v.id("replyEvents")),
+    resolutionNote: v.string(),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    resolved: number;
+    skipped: Array<{ replyEventId: string; reason: string }>;
+  }> => {
+    if (args.replyEventIds.length > RESOLVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.replyEventIds.length} > ${RESOLVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ replyEventId: string; reason: string }> = [];
+    let resolved = 0;
+    for (const id of args.replyEventIds) {
+      const row = await ctx.db.get(id);
+      if (!row) {
+        skipped.push({ replyEventId: String(id), reason: "not_found" });
+        continue;
+      }
+      if (row.resolvedAt) {
+        skipped.push({ replyEventId: String(id), reason: "already_resolved" });
+        continue;
+      }
+      await ctx.db.patch(id, {
+        resolvedAt: now,
+        resolvedBy: args.actorUserId,
+        resolutionNote: args.resolutionNote,
+      });
+      resolved++;
+    }
+    return { total: args.replyEventIds.length, resolved, skipped };
   },
 });
 
@@ -313,8 +412,9 @@ export const countUnrouted = query({
       .query("replyEvents")
       .withIndex("by_dispatched_to", (q) => q.eq("dispatchedTo", "operator_review"))
       .take(UNROUTED_COUNT_CAP + 1);
+    const open = rows.filter((r) => !r.resolvedAt);
     return {
-      count: Math.min(rows.length, UNROUTED_COUNT_CAP),
+      count: Math.min(open.length, UNROUTED_COUNT_CAP),
       capped: rows.length > UNROUTED_COUNT_CAP,
     };
   },

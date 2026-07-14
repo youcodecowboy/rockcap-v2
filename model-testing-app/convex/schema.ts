@@ -4655,6 +4655,15 @@ export default defineSchema({
     // (knowledge/sourceAtomizer.atomizeReply); absent = not yet processed.
     atomizedAt: v.optional(v.string()),
 
+    // Triage resolution (2026-07-14) — the operator (via /outreach or the UI)
+    // marked this reply handled: answered manually, acknowledged, or not
+    // actionable. Resolved rows drop out of listUnrouted / the triage queue /
+    // the session digest but keep their dispatchedTo for history. Without
+    // this the operator_review queue could never reach zero.
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    resolutionNote: v.optional(v.string()),
+
     // v1.3 — direct link to the clients row when the contact resolves to
     // one. Speeds up reply.listByClient + the operator-review queue's
     // grouping. Denormalised from contact.clientId at ingest time so

@@ -65,6 +65,19 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   dead-end replies, 3 failed sends, 63 touches due in 7 days — ALL 63 blocked (the reported
   "cadences not firing" symptom, now measurable). PR #96 opened (knowledge-cutover → main).
   Next session: run /outreach and work that backlog down.
+- 2026-07-14 — Backlog-reset build (operator reported colleague has been sending manually via a
+  generic Gmail MCP → system state stale; bulk-approving the 56 packages would DOUBLE-EMAIL).
+  4 zero-out primitives: reply.resolveBatch (resolvedAt/By/note on replyEvents, filtered out of
+  listUnrouted/countUnrouted/triageQueue/digest), cadence.denyPackageBatch, approval.rejectBatch,
+  client.dismissNeedsActionFlag (MCP over existing internal). App side: "Mark handled" button +
+  "handled by <user> · date" pill on RepliesTab (multi-operator attribution; resolvedByName joined
+  in replyEvents.listByClient; public replyEvents.resolve mutation). Skill: "Operator hand-holding"
+  contract (non-technical colleague — plain English, no jargon/JSON, one decision at a time, yes
+  means X before asking, skip always offered) + "Backlog reset" mode (/outreach reset): golden rule
+  NOTHING SENDS during reset; reconcile packages against Gmail sent-mail where a Gmail MCP is
+  available; deny/resolve/park to zero; going-forward rules to prevent rebuild. Deployed + pushed.
+  177 tools. Colleague onboarding suggestion recorded: connect his Gmail at /settings/gmail +
+  mint his own MCP token at /settings/mcp-token (ROCKCAP_MCP_TOKEN env) for attribution.
 
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags

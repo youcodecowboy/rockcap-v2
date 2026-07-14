@@ -498,6 +498,60 @@ export const approvePackageInternal = internalMutation({
     applyPackageApproval(ctx, { packageId: args.packageId, userId: args.userId }),
 });
 
+// Batch package DENY — the backlog-reset primitive (2026-07-14). Marks every
+// touch in every listed package denied + inactive so none ever fire. Use when
+// clearing stale drafted outreach (e.g. prospects already contacted manually
+// outside the system). Per-item safe; a missing package is reported, not
+// thrown. cancelledReason records WHY for the audit trail.
+export const denyPackageBatchInternal = internalMutation({
+  args: {
+    packageIds: v.array(v.string()),
+    userId: v.id("users"),
+    reason: v.optional(v.string()), // defaults to operator_denied_package
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    denied: number;
+    results: Array<{ packageId: string; ok: boolean; patched?: number; error?: string }>;
+  }> => {
+    if (args.packageIds.length > PACKAGE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.packageIds.length} > ${PACKAGE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const reason = args.reason ?? "operator_denied_package";
+    const results: Array<{ packageId: string; ok: boolean; patched?: number; error?: string }> = [];
+    let denied = 0;
+    for (const packageId of args.packageIds) {
+      const rows = await ctx.db
+        .query("cadences")
+        .withIndex("by_package", (q) => q.eq("packageId", packageId))
+        .collect();
+      if (rows.length === 0) {
+        results.push({ packageId, ok: false, error: "package_not_found" });
+        continue;
+      }
+      let patched = 0;
+      for (const row of rows) {
+        await ctx.db.patch(row._id, {
+          packageApprovalStatus: "denied",
+          isActive: false,
+          cancelledReason: reason,
+          updatedAt: now,
+        });
+        patched++;
+      }
+      results.push({ packageId, ok: true, patched });
+      denied++;
+    }
+    return { total: args.packageIds.length, denied, results };
+  },
+});
+
 // ── Hold / release a cadence for an in-flight intel run ──
 // holdForIntelInternal pauses a cadence while intel is (re)gathered: deactivate
 // it but PRESERVE nextDueAt so clearIntelHoldInternal can reactivate it in

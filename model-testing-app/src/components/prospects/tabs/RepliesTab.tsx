@@ -120,6 +120,7 @@ function ReplyCard({ reply, colors, prospectName }: { reply: any; colors: any; p
   const approve = useMutation(api.approvals.approve as any);
   const reject = useMutation(api.approvals.reject as any);
   const clearFlag = useMutation(api.clients.clearNeedsActionFlag as any);
+  const resolveReply = useMutation(api.replyEvents.resolve as any);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   // Received email collapsed by default — verdict + drafted reply lead; the raw
@@ -213,6 +214,21 @@ function ReplyCard({ reply, colors, prospectName }: { reply: any; colors: any; p
               manual paste
             </Pill>
           )}
+          {reply.resolvedAt && (
+            // Multi-operator attribution: who marked this handled (via the app
+            // button below or Claude Code's reply.resolveBatch) and why.
+            <span
+              title={reply.resolutionNote ?? undefined}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+            >
+              <Pill bg={`${colors.accent.green}15`} fg={colors.accent.green} border={`${colors.accent.green}40`}>
+                handled
+              </Pill>
+              <span style={{ fontSize: 10, color: colors.text.muted }}>
+                by {reply.resolvedByName ?? "unknown"} · {reply.resolvedAt.slice(0, 10)}
+              </span>
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted }}>
           <Clock size={10} />
@@ -267,6 +283,38 @@ function ReplyCard({ reply, colors, prospectName }: { reply: any; colors: any; p
             <span>Routed:</span>
             <strong style={{ color: colors.text.primary }}>{dispatchLabel}</strong>
           </div>
+          {!reply.resolvedAt && (
+            <button
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                try {
+                  await resolveReply({
+                    replyEventId: reply._id,
+                    resolutionNote: "handled in app",
+                  });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+              title="Mark this reply as handled — it leaves every triage queue but stays here for history"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "none",
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 3,
+                padding: "2px 8px",
+                fontSize: 10,
+                color: colors.text.muted,
+                cursor: busy ? "default" : "pointer",
+              }}
+            >
+              Mark handled
+            </button>
+          )}
           {cancelledCount > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <MessageSquare size={11} />

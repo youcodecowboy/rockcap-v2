@@ -540,6 +540,56 @@ export const retry = mutation({
   },
 });
 
+// Batch reject — the backlog-reset counterpart of approveBatchInternal.
+// Discards up to 50 pending drafts in one call (nothing fires). Per-item
+// no-op-safe: missing / non-pending rows land in `skipped`.
+export const rejectBatchInternal = internalMutation({
+  args: {
+    approvalIds: v.array(v.id("approvals")),
+    reason: v.optional(v.string()),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    rejected: number;
+    skipped: Array<{ approvalId: string; reason: string }>;
+  }> => {
+    if (args.approvalIds.length > APPROVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.approvalIds.length} > ${APPROVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ approvalId: string; reason: string }> = [];
+    let rejected = 0;
+    for (const approvalId of args.approvalIds) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval) {
+        skipped.push({ approvalId: String(approvalId), reason: "not_found" });
+        continue;
+      }
+      if (approval.status !== "pending") {
+        skipped.push({
+          approvalId: String(approvalId),
+          reason: `not_pending_${approval.status}`,
+        });
+        continue;
+      }
+      await ctx.db.patch(approvalId, {
+        status: "rejected",
+        approvedBy: args.actorUserId,
+        approvedAt: now,
+        rejectedReason: args.reason ?? "operator_batch_reject",
+      });
+      rejected++;
+    }
+    return { total: args.approvalIds.length, rejected, skipped };
+  },
+});
+
 // Internal retry — MCP path (mirrors `retry` above with an explicit actor).
 // Re-queues an execution_failed approval: the operator already approved this
 // exact content, so clear the failure record, flip back to approved, and
