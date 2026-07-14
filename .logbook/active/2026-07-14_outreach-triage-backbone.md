@@ -88,6 +88,14 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   = batch backfill (≤50) for manual sends with no package to continue. Reset step 2 rewritten
   evidence-driven: Gmail Sent search per contact → adopt / deny+log / park. 179 tools. Deployed.
 
+## Alex's slash-command pack (docs/00-04 in RockCap-MCP) — responded
+- 2026-07-14 — Alex delivered draft specs for numbered action commands (/cold-reachout N etc.)
+  + triage renames. Our response + phased plan written back as docs/05-response-and-build-plan.md
+  (RockCap-MCP main). Phase 0 decisions pending with Alex: D1 ladder home (proposal: HubSpot keeps
+  fine ladders, mirror-read now, approval-gated write-back Phase 3), D2 template canon, D3 cadence
+  numbers, D4 backcheck build, D5 Rayn hand-off contract. Corrections sent: HubSpot state push is
+  a stub; backcheck skill doesn't exist; dedupe must be explicit. Build waits on Phase 0.
+
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags
 - Web inbox + outbox panes over the same read-model
