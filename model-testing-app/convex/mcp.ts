@@ -3797,6 +3797,125 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── Outreach triage backbone (2026-07-14) ────────────────────
+  // The cross-prospect "what needs me + what fires next" read-model plus the
+  // batch approval writes. Powers the /outreach skill and the stage-workspace
+  // session digest. See convex/outreachTriage.ts.
+  {
+    name: "outreach.triageQueue",
+    description:
+      "THE cross-prospect triage read: every open outreach action in one call, grouped by kind — pendingPackages (cadence packages awaiting approve/deny), needsContact (held drafts with no sendable contact), replyDrafts (staged reply approvals awaiting accept), otherApprovals, failedSends (approved sends that errored — retry or reject), unroutedReplies (classifier sent to operator_review), deadEndReplies (ingested but matched no contact/prospect — otherwise invisible), stalledCadences (intel_hold / auto_deactivated_failures / paused — cadences that silently stopped), flaggedClients (needs-action flags from the reply lifecycle), staleIntel. Rows are trimmed (no bodies) — follow up with approval.get / reply.get / cadence.get for full content. ALWAYS call this first in an /outreach triage session; it replaces stitching together approval.listPendingByClient + reply.listUnrouted + per-prospect cadence reads.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.triageQueue, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.listUpcoming",
+    description:
+      "The OUTBOX: every active cadence touch due inside the horizon (default 7 days, max 90), sorted by fire date, each with an honest fireStatus — 'scheduled' / 'due_now' (will fire on the next 5-min dispatcher tick) vs 'paused' / 'blocked_package_pending' / 'blocked_no_contact_email' (will NOT send, and why). Overdue-but-blocked rows are the answer to 'why didn't this send?'. This is the operator's 'whether and when will cadences fire' view — no other surface shows approved future touches across prospects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        daysAhead: { type: "number", description: "Horizon in days (default 7, max 90)." },
+        limit: { type: "number", description: "Max touches returned (default 100, max 200)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.listUpcoming, {
+        daysAhead: args.daysAhead,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.approveBatch",
+    description:
+      "Approve up to 50 pending approvals in one call and FIRE each action (same executor path as approval.approve — a gmail_send really sends). RULE: itemise the batch to the operator first (one line each: recipient, subject, what fires) and get an explicit yes; batch approval is a convenience over per-item clicking, never a blind bulk flip. Per-item no-op-safe: missing/non-pending rows land in `skipped` with a reason instead of aborting the batch. Returns {total, approved, skipped[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the approvals rows to approve (max 50).",
+        },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.approveBatchInternal, {
+        approvalIds: args.approvalIds,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.approvePackageBatch",
+    description:
+      "Approve up to 25 cadence packages in one call — each gets the full cadence.approvePackage treatment (no-contact guard, pipelineStage → cold_outreach forward-only, outreachReadyAt backfill) with ONE dispatcher kick at the end, so due touch-1s fire within seconds. RULE: itemise the packages to the operator first (company, touch count, first send date) and get an explicit yes. Per-item safe: a package failing its no-contact guard is reported in results[] with ok:false instead of aborting the batch. Returns {total, approved, results[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to approve (max 25).",
+        },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.approvePackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.retry",
+    description:
+      "Re-queue an execution_failed approval for a REAL retry (kill switch was off, Gmail token needed reconnect, transient error). The operator already approved this exact content — retry re-runs the same executor without a re-draft. Use on the failedSends section of outreach.triageQueue after checking the executionError. No-op-safe: {ok:false, reason:'not_failed_*'} on non-failed rows.",
+    inputSchema: {
+      type: "object",
+      properties: { approvalId: { type: "string", description: "Convex id of the execution_failed approvals row." } },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.retryInternal, {
+        approvalId: args.approvalId,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.reactivate",
+    description:
+      "Reactivate a STALLED cadence — the recovery action for the stalledCadences section of outreach.triageQueue. Clears ALL three silent stall states in one call (intel hold, 3-strike failure auto-deactivation, pause), sets isActive back to true, and optionally reschedules via newNextDueAt. Refuses deliberate stops: cancelled rows (reply cancellation / operator cancel), denied packages, and needs_contact holds return {ok:false} with the right redirect (fresh cadence / re-approve / cadence.setPackageContact). For an intel_hold stall, consider intel.revalidate or a fresh prospect-intel run BEFORE reactivating — the hold exists because the intel looked stale.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        newNextDueAt: { type: "string", description: "Optional ISO timestamp — reschedule the touch on reactivation." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.reactivateInternal, {
+        cadenceId: args.cadenceId,
+        userId,
+        newNextDueAt: args.newNextDueAt,
+      });
+      return asText(result);
+    },
+  },
   {
     name: "client.create",
     description:

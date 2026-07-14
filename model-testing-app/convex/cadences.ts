@@ -365,6 +365,10 @@ export const updateInternal = internalMutation({
 export async function applyPackageApproval(
   ctx: any,
   args: { packageId: string; userId: Id<"users"> },
+  // Batch callers (approvePackageBatchInternal) kick the dispatcher ONCE after
+  // the last package instead of once per package — concurrent ticks can race
+  // the lastFireKey idempotency check and double-stage a due touch.
+  opts?: { skipDispatcherKick?: boolean },
 ): Promise<{ ok: boolean; patched: number }> {
   const rows = await ctx.db
     .query("cadences")
@@ -421,10 +425,69 @@ export async function applyPackageApproval(
   // any touch already due (touch 1 usually is) fires within seconds instead of
   // waiting up to 5 minutes for the next cron tick. Future touches are
   // untouched — they fire on their own nextDueAt.
-  await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+  if (!opts?.skipDispatcherKick) {
+    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+  }
 
   return { ok: true, patched };
 }
+
+// Batch package approval — the /outreach triage path. Each package still gets
+// the full applyPackageApproval treatment (no-contact guard, stage write,
+// outreachReadyAt backfill); a package that fails its guard is reported in the
+// per-item results instead of aborting the batch. One dispatcher kick at the
+// end covers every newly-approved due touch.
+const PACKAGE_BATCH_CAP = 25;
+
+export const approvePackageBatchInternal = internalMutation({
+  args: {
+    packageIds: v.array(v.string()),
+    userId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    approved: number;
+    results: Array<
+      | { packageId: string; ok: true; patched: number }
+      | { packageId: string; ok: false; error: string }
+    >;
+  }> => {
+    if (args.packageIds.length > PACKAGE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.packageIds.length} > ${PACKAGE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const results: Array<
+      | { packageId: string; ok: true; patched: number }
+      | { packageId: string; ok: false; error: string }
+    > = [];
+    let approved = 0;
+    for (const packageId of args.packageIds) {
+      try {
+        const r = await applyPackageApproval(
+          ctx,
+          { packageId, userId: args.userId },
+          { skipDispatcherKick: true },
+        );
+        results.push({ packageId, ok: true, patched: r.patched });
+        approved++;
+      } catch (err: any) {
+        results.push({
+          packageId,
+          ok: false,
+          error: err?.message ?? String(err),
+        });
+      }
+    }
+    if (approved > 0) {
+      await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+    }
+    return { total: args.packageIds.length, approved, results };
+  },
+});
 
 export const approvePackageInternal = internalMutation({
   args: {
@@ -454,6 +517,64 @@ export const holdForIntelInternal = internalMutation({
       updatedAt: now,
     });
     return { ok: true };
+  },
+});
+
+// Reactivate a STALLED cadence — the operator-facing recovery for the three
+// silent stall states the triage queue surfaces (intel hold, 3-strike
+// auto-deactivation, pause). Deliberate stops are refused: a cancelled row
+// (reply cancellation / operator cancel) or a denied package member is a
+// decision, not a stall — those go back through their own flows.
+export const reactivateInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    userId: v.id("users"),
+    newNextDueAt: v.optional(v.string()), // ISO; reschedule on reactivation
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.cadenceId);
+    if (!row) return { ok: false as const, error: "cadence_not_found" };
+    if (row.cancelledReason) {
+      return {
+        ok: false as const,
+        error: "cadence_cancelled",
+        message: `Cancelled (${row.cancelledReason}) — a deliberate stop, not a stall. Create a fresh cadence if outreach should restart.`,
+      };
+    }
+    if (row.packageApprovalStatus === "denied") {
+      return {
+        ok: false as const,
+        error: "package_denied",
+        message: "This package was denied by the operator; reactivation would bypass that decision.",
+      };
+    }
+    if (row.packageApprovalStatus === "needs_contact") {
+      return {
+        ok: false as const,
+        error: "needs_contact",
+        message: "Held for a missing contact — attach one via cadence.setPackageContact instead.",
+      };
+    }
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.cadenceId, {
+      isActive: true,
+      pauseUntil: undefined,
+      intelHoldAt: undefined,
+      intelHoldReason: undefined,
+      consecutiveFailures: 0,
+      ...(args.newNextDueAt ? { nextDueAt: args.newNextDueAt } : {}),
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: args.userId,
+      updatedAt: now,
+    });
+    return {
+      ok: true as const,
+      cadenceId: args.cadenceId,
+      nextDueAt: args.newNextDueAt ?? row.nextDueAt,
+      clearedIntelHold: !!row.intelHoldAt,
+      clearedFailures: (row.consecutiveFailures ?? 0) > 0,
+    };
   },
 });
 
