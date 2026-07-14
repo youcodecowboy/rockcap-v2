@@ -47,7 +47,8 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   on prod until then) + export ROCKCAP_APP_URL / ROCKCAP_TRIAGE_KEY on operator laptops
   (hook is a silent no-op until then).
 - 2026-07-14 — TRIAGE_DIGEST_KEY generated + set on Vercel (Production + Preview, encrypted,
-  never printed to transcript). Prod URL = https://app.rockcap.uk. Laptop retrieval path:
+  never printed to transcript). App URL = https://rockcap-v2.vercel.app (operator confirmed the
+  custom domain is not in use). Laptop retrieval path:
   `vercel env pull` from the linked model-testing-app dir (needs Vercel team access) or share
   from the Vercel dashboard via password manager. Per-stage slash commands shipped
   (/reach-out-cold /follow-up-cold /warm-pre-meeting /warm-post-meeting /pre-qual /qualified,
