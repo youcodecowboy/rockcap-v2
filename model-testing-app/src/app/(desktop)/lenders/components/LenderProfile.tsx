@@ -31,9 +31,11 @@ import {
   NotesPanelContent,
   ActivityPanelContent,
   ProvenanceDot,
+  EditableTermCell,
   relTime,
   type LenderContact,
 } from './LenderEditors';
+import FileDetailPanel from '../../docs/components/FileDetailPanel';
 import {
   Network,
   ArrowUpRight,
@@ -106,6 +108,9 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
   const colors = useColors();
   const lenderTone = colors.entityTypes.lender;
   const [activeTab, setActiveTab] = useState('overview');
+  // Source-document preview (opened from provenance hover cards).
+  const [previewId, setPreviewId] = useState<Id<'documents'> | null>(null);
+  const previewDoc = useQuery(api.documents.get, previewId ? { id: previewId } : 'skip');
 
   const deep = useQuery(api.appetiteSignals.lenderGetDeepContext, {
     lenderClientId: lenderId,
@@ -182,14 +187,18 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
       align: 'center',
       render: (f) => {
         const manual = f.createdFrom === 'operator';
-        const lines = [
-          manual ? 'added manually by operator' : `origin: ${f.createdFrom}`,
-          `updated ${relTime(f.lastRebuiltAt)}`,
-          ...(f.sources.length > 0
-            ? ['sources:', ...f.sources.map((s) => `  ${s.fileName}`)]
-            : manual ? [] : ['no source documents recorded']),
-        ];
-        return <ProvenanceDot tip={lines.join('\n')} manual={manual} />;
+        return (
+          <ProvenanceDot
+            manual={manual}
+            lines={[
+              manual ? 'added manually by operator' : `origin: ${f.createdFrom}`,
+              `updated ${relTime(f.lastRebuiltAt)}`,
+              ...(f.sources.length === 0 && !manual ? ['no source documents recorded'] : []),
+            ]}
+            sources={f.sources.map((src) => ({ label: src.fileName, documentId: src.documentId }))}
+            onOpenDocument={(id) => setPreviewId(id as Id<'documents'>)}
+          />
+        );
       },
     },
     {
@@ -226,7 +235,9 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
       width: 90,
       align: 'right',
       mono: true,
-      render: (f) => fmtGBP(f.amountGBP),
+      render: (f) => (
+        <EditableTermCell facilityId={f._id} field="amountGBP" value={f.amountGBP} display={fmtGBP(f.amountGBP)} />
+      ),
     },
     {
       key: 'rate',
@@ -234,14 +245,18 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
       width: 70,
       align: 'right',
       mono: true,
-      render: (f) => (f.interestRate != null ? `${f.interestRate}%` : '—'),
+      render: (f) => (
+        <EditableTermCell facilityId={f._id} field="interestRate" value={f.interestRate} display={f.interestRate != null ? `${f.interestRate}%` : '—'} />
+      ),
     },
     {
       key: 'maturity',
       header: 'Maturity',
       width: 100,
       mono: true,
-      render: (f) => f.maturityDate ?? '—',
+      render: (f) => (
+        <EditableTermCell facilityId={f._id} field="maturityDate" value={f.maturityDate} display={f.maturityDate ?? '—'} />
+      ),
     },
     {
       key: 'status',
@@ -412,6 +427,7 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
                 groups={appetiteGroups}
                 formatValue={fmtAppetiteValue}
                 formatLeaf={fieldPathLeaf}
+                onOpenDocument={(id) => setPreviewId(id as Id<'documents'>)}
               />
             </Panel>
           </div>
@@ -528,6 +544,13 @@ export default function LenderProfile({ lenderId, onOpenGraph }: LenderProfilePr
         </div>
         )}
       </div>
+
+      {/* Source-document preview — the docs section's drawer. */}
+      <FileDetailPanel
+        document={(previewDoc ?? null) as never}
+        isOpen={previewId !== null && previewDoc != null}
+        onClose={() => setPreviewId(null)}
+      />
     </div>
   );
 }
