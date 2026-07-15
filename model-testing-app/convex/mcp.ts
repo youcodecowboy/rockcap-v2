@@ -4101,6 +4101,28 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "deal.listByStage",
+    description:
+      "SELECTION read for the /cold-reachout action flow (and any stage-scoped session): list mirrored HubSpot deals sitting in one pipeline stage, each joined to its app-side prospect where one exists, with explicit dedupe/readiness flags — appClient (the linked clients row with pipelineStage / prospectState / lastOutreachSendAt), alreadyWorked (true when the linked prospect has send evidence — SKIP these in a cold-reachout selection, they belong to follow-up), linkedContactCount + contactWithEmail (whether outreach can actually send). Both pipelineId AND stageId are required — HubSpot dealstage ids are only unique within a pipeline. Freshness = the HubSpot mirror sync (recurring sync + webhooks), not a live HubSpot call. Known ids live in the RockCap-MCP docs (e.g. Cold Reachout pipeline 1755919552, Weekly Targets stage 2380814543).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipelineId: { type: "string", description: "HubSpot pipeline id (required — pairs with stageId)." },
+        stageId: { type: "string", description: "HubSpot dealstage id within that pipeline." },
+        limit: { type: "number", description: "Max deals returned (default 25, max 100)." },
+      },
+      required: ["pipelineId", "stageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.deals.listByStageForSelectionInternal, {
+        pipelineId: args.pipelineId,
+        stageId: args.stageId,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "client.create",
     description:
       "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",

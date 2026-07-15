@@ -96,6 +96,17 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   numbers, D4 backcheck build, D5 Rayn hand-off contract. Corrections sent: HubSpot state push is
   a stub; backcheck skill doesn't exist; dedupe must be explicit. Build waits on Phase 0.
 
+- 2026-07-15 — PHASE 1 LAUNCHED (operator go). deal.listByStage (mirror selection read with
+  alreadyWorked/contactWithEmail dedupe flags — deals by_stage index existed) + cold-reachout
+  skill + /cold-reachout N command + seven triage commands renamed to -triage convention.
+  KEY FIND: template canon already existed (outreach-draft/references/template-mapped-reachout.md
+  — 5 proven templates verbatim from ~140 of Alex's sent emails + lender-DNA matrix) so D2
+  closed itself; the action skill is a thin orchestrator over prospect-intel + outreach-draft.
+  Scheduling nuance encoded: future-dated touch 1 does NOT fire on approvePackage (dispatcher
+  fires on nextDueAt), so Friday-window queuing works with zero backend. templateKey/hookRung
+  stamping instruction in place (Phase 2 substrate). 180 tools / 31 domains. Deployed. docs/05
+  status note added for Alex. Remaining to first live batch: pick a Friday, /cold-reachout 5.
+
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags
 - Web inbox + outbox panes over the same read-model
