@@ -334,7 +334,15 @@ export const updateInternal = internalMutation({
       editedBy: args.userId,
       updatedAt: now,
     };
-    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.preDraftedTouch !== undefined) {
+      patch.preDraftedTouch = args.preDraftedTouch;
+      // Phase 2 metrics/learning: preserve the as-drafted touch on the FIRST
+      // content edit so triage can diff operator changes vs. the template.
+      const row = await ctx.db.get(args.cadenceId);
+      if (row?.preDraftedTouch && row.originalPreDraftedTouch === undefined) {
+        patch.originalPreDraftedTouch = row.preDraftedTouch;
+      }
+    }
     if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
     if (args.cadenceType !== undefined) patch.cadenceType = args.cadenceType;
     if (args.scheduleConfig !== undefined) patch.scheduleConfig = args.scheduleConfig;
@@ -986,7 +994,13 @@ export const update = mutation({
       editedBy: userId,
       updatedAt: now,
     };
-    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.preDraftedTouch !== undefined) {
+      patch.preDraftedTouch = args.preDraftedTouch;
+      // Phase 2 metrics/learning: first-content-edit snapshot (see updateInternal).
+      if (cadence.preDraftedTouch && cadence.originalPreDraftedTouch === undefined) {
+        patch.originalPreDraftedTouch = cadence.preDraftedTouch;
+      }
+    }
     if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
 
     await ctx.db.patch(args.cadenceId, patch);

@@ -107,6 +107,20 @@ MCP tools first, then /outreach skill + stage-folder session digest hook.
   stamping instruction in place (Phase 2 substrate). 180 tools / 31 domains. Deployed. docs/05
   status note added for Alex. Remaining to first live batch: pick a Friday, /cold-reachout 5.
 
+- 2026-07-15 — PHASE 2 LAUNCHED (metrics + learning substrate). First-edit snapshots:
+  approvals.originalDraftPayload (applyDraftEdit) + cadences.originalPreDraftedTouch
+  (update/updateInternal) — draft-vs-sent is now an exact diff; absent original = sent as
+  drafted. templateKey/hookRung flow dispatcher → gmail_send payload. outreach.metrics query
+  (convex/outreachMetrics.ts): sends / cohort replies / contact+send-level response rate /
+  touchesPerEarnedReply / byTemplate (reply attributed to latest fired touch before receivedAt;
+  legacy = untagged). TWO LIVE-TEST LESSONS baked in: (1) COHORT DISCIPLINE — first run counted
+  all inbound (newsletters, unmatched) → 2700% response rate; rates now count only replies from
+  contacts emailed in-window; (2) PER-CONTACT READS — global windowed replyEvents scan blew the
+  16MB limit (rows carry full bodies); replies now read via by_contact for emailed contacts only.
+  Triage side: outreach-triage step 5b (metrics + change-detection as style observations) runs in
+  both cold -triage commands. 181 tools. Deployed + live-verified (2 sends / 1 cohort reply / 50%).
+  docs/05 Phase 2 status note added.
+
 ## Later phases (agreed, not started)
 - Web quick wins: EmailViewer in RepliesTab, dead-end replies into triage UI, operator flags
 - Web inbox + outbox panes over the same read-model

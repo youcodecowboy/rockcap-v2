@@ -4123,6 +4123,24 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "outreach.metrics",
+    description:
+      "OUTCOME metrics for outreach (Phase 2) — triage checks state, this reports results over a window (default 90 days): sends (outbound email touchpoints, incl. reconciliation-backfilled manual sends), substantive replies (out-of-office excluded from rate math but reported), response rate at contact level (share of emailed contacts who replied — the honest headline) and send level, touchesPerEarnedReply (the operator's priority number: average sends it took to earn a contact's first reply), and a byTemplate table (sends / replies / responseRate per templateKey, replies attributed to the latest fired touch before the reply; legacy sends land in 'untagged'). Capped + windowed — `capped` flags mean a number is a floor. Baselines are only honest AFTER the backlog reset has backfilled manual sends. Use in the *-triage commands' metrics section.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sinceDays: { type: "number", description: "Window in days (default 90, max 365)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachMetrics.summary, {
+        sinceDays: args.sinceDays,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "client.create",
     description:
       "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",

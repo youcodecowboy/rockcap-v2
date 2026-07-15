@@ -762,6 +762,12 @@ async function applyDraftEdit(
     draftPayload: next,
     draftEditedAt: new Date().toISOString(),
     draftEditedBy: args.editedBy,
+    // Phase 2 metrics/learning: preserve the as-drafted payload on the FIRST
+    // edit so triage can diff exactly what the operator changed vs. the
+    // template. Subsequent edits keep the original original.
+    ...(approval.originalDraftPayload === undefined
+      ? { originalDraftPayload: approval.draftPayload }
+      : {}),
   });
   return { ok: true, approvalId: args.approvalId };
 }

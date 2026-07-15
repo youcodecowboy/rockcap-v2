@@ -179,6 +179,11 @@ export const tick = internalAction({
               subject: row.preDraftedTouch.subject,
               bodyText: row.preDraftedTouch.bodyText,
               bodyHtml: row.preDraftedTouch.bodyHtml,
+              // Phase 2 metrics: carry the drafting skill's template tag
+              // through to the send so outreach.metrics can attribute
+              // response rates by template. Absent on untagged legacy rows.
+              templateKey: row.preDraftedTouch.dynamicVars?.templateKey,
+              hookRung: row.preDraftedTouch.dynamicVars?.hookRung,
             },
             requestedBy: row.createdBy,
             requestSource: "cadence",

@@ -4090,6 +4090,17 @@ export default defineSchema({
       subject: v.string(),
       bodyText: v.string(),
       bodyHtml: v.string(),
+      // Free-form; the drafting skills stamp {templateKey, hookRung} here
+      // (Phase 2 metrics substrate) alongside any composer variables.
+      dynamicVars: v.optional(v.any()),
+    })),
+    // Snapshot of preDraftedTouch taken on the FIRST operator content edit
+    // (Phase 2, 2026-07-15) — the drafted-as-templated side of the
+    // draft-vs-sent diff. Absent = never edited.
+    originalPreDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
       dynamicVars: v.optional(v.any()),
     })),
 
@@ -4258,6 +4269,11 @@ export default defineSchema({
     // (cadence touch or reply draft) in place before approving.
     draftEditedAt: v.optional(v.string()),
     draftEditedBy: v.optional(v.id("users")),
+    // ── Metrics/learning substrate (Phase 2, 2026-07-15) ──
+    // Snapshot of draftPayload taken on the FIRST operator edit — the
+    // "what did the template say before I changed it" side of the
+    // draft-vs-sent diff. Absent = never edited (sent as drafted).
+    originalDraftPayload: v.optional(v.any()),
   })
     .index("by_status", ["status"])
     .index("by_requested_by", ["requestedBy"])
