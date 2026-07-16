@@ -2163,7 +2163,7 @@ const TOOLS: McpTool[] = [
   {
     name: "reply.get",
     description:
-      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply.",
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply. Gmail-ingested rows also carry attachments:[{filename, mimeType, sizeBytes, partId, inline}] when the email had any (rows ingested before 2026-07-16 lack the field — use reply.listAttachments to list them live); to file one into Drive, use drive.saveEmailAttachment.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2176,6 +2176,35 @@ const TOOLS: McpTool[] = [
         replyEventId: args.replyEventId,
       });
       if (!result) return asText({ error: "reply_event_not_found", replyEventId: args.replyEventId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "reply.listAttachments",
+    description:
+      "List the file attachments on an inbound email, LIVE from Gmail — works for reply rows ingested before attachment capture existed (no stored metadata needed) and for raw Gmail references that never became reply rows. Pass replyEventId (preferred — any row from reply.listByClient / the inbox feed) OR gmailMessageId (a Gmail REST message id or an RFC822 Message-ID header, resolved via Gmail search). Returns {gmailApiId, subject, fromEmail, attachments:[{filename, mimeType, sizeBytes, partId, inline}]}. inline:true marks embedded images (signature logos etc.) — usually not worth filing. Reads the mailbox of the reply's OWNING user (Gmail tokens are per-user; a raw gmailMessageId reads the CALLING user's mailbox) — errors with gmail_not_connected if that mailbox has no live connection. To file an attachment into Google Drive, follow with drive.saveEmailAttachment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id (preferred). The email's Gmail reference + owning mailbox resolve from the row.",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed. Read from the calling user's mailbox.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.gmailAttachments.listForReply, {
+        userId,
+        replyEventId: args.replyEventId,
+        gmailMessageId: args.gmailMessageId,
+      });
       return asText(result);
     },
   },
@@ -5072,7 +5101,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.createFolder",
     description:
-      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only three writes the app EVER makes to Drive (create folder / move file / rename — organizational only, never file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only four writes the app EVER makes to Drive (create folder / move file / rename / save email attachment — the app never edits existing file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5154,6 +5183,68 @@ const TOOLS: McpTool[] = [
         status: "PENDING OPERATOR APPROVAL",
         message:
           "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.saveEmailAttachment",
+    description:
+      "Stage copying an attachment from an inbound Gmail email into a Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written by this call. The approval appears at /approvals; only after the operator approves does the executor fetch the attachment bytes from the mailbox owner's Gmail (the bytes are never stored in the app), upload them into the target folder, and echo the new file into the mirror immediately. Identify the email by replyEventId (preferred — any Gmail-ingested row from the reply feed) OR gmailMessageId (Gmail message id / RFC822 Message-ID, for mail not in the feed — read from the calling user's mailbox). filename must match an attachment on the message — check with reply.listAttachments first, and pass its partId to disambiguate duplicate filenames. The destination folder must be in the mirror (drive.listFolders) and not trashed. Pass importToLibrary:true to ALSO import the uploaded file as a metadata-first document (extraction follows via the v4 pipeline — a few cents; requires the folder to have an effective client mapping, else the import is skipped with a reason in the executionResult). NOTE: the upload does NOT trigger folder auto-import even when armed (the executor mirrors the file before the poller sees it) — importToLibrary is the only import lane. Optional newName renames the file on upload. Requires the Drive write-back kill switch ON at /settings/drive — throws (nothing staged) if off; the executor re-checks it at fire time. Also requires the mailbox owner's Gmail connection to be live. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id of the Gmail-ingested email carrying the attachment (preferred).",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed (read from the calling user's mailbox).",
+        },
+        filename: {
+          type: "string",
+          description: "Filename of the attachment to save (as listed by reply.listAttachments).",
+        },
+        partId: {
+          type: "string",
+          description: "MIME part id from reply.listAttachments — pass to disambiguate duplicate filenames.",
+        },
+        targetFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed).",
+        },
+        newName: {
+          type: "string",
+          description: "Optional new filename for the uploaded file (defaults to the attachment's own name).",
+        },
+        importToLibrary: {
+          type: "boolean",
+          description:
+            "Also import the uploaded file into the app library after upload (extraction cost applies; folder must have a client mapping).",
+        },
+      },
+      required: ["filename", "targetFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "upload_email_attachment",
+        args: {
+          replyEventId: args.replyEventId,
+          gmailMessageId: args.gmailMessageId,
+          filename: args.filename,
+          partId: args.partId,
+          targetFolderId: args.targetFolderId,
+          newName: args.newName,
+          importToLibrary: args.importToLibrary,
+        },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Upload staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before the attachment is fetched from Gmail and uploaded. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },

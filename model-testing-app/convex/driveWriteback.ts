@@ -9,14 +9,26 @@ import {
 import { internal } from "./_generated/api";
 import { ensureAccessToken, resolveFolderScope, MirrorFolder } from "./driveSync";
 import { Id } from "./_generated/dataModel";
+import {
+  gmailAccessTokenForUser,
+  gmailGet,
+  resolveGmailApiId,
+  findAttachmentPart,
+  collectAttachments,
+  decodeBase64UrlToBytes,
+} from "./gmailAttachments";
 
 // Google Drive write-back (ingestion phase 6 — final).
 //
 // Drive is the single source of truth for file CONTENTS; the app never
-// edits contents. The ONLY writes back to Drive are ORGANIZATIONAL:
-//   create_folder — new folder under an existing mirrored parent
-//   move_file     — re-parent a file within the corpus
-//   rename        — rename a file or folder
+// EDITS the contents of an existing Drive file. The writes back to Drive:
+//   create_folder            — new folder under an existing mirrored parent
+//   move_file                — re-parent a file within the corpus
+//   rename                   — rename a file or folder
+//   upload_email_attachment  — copy an inbound Gmail attachment into a
+//                              mirrored folder (adds a NEW file; the bytes
+//                              come from the mailbox owner's Gmail at
+//                              execute time and are never stored in the app)
 //
 // Two-layer gate, mirroring gmailSend's send kill-switch pattern:
 //   1. driveWriteConfig.isEnabled (singleton; no row = disabled) is checked
@@ -37,6 +49,7 @@ import { Id } from "./_generated/dataModel";
 // change content, so they must never queue re-extraction).
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const FILE_FIELDS =
   "id,name,mimeType,parents,size,modifiedTime,md5Checksum,headRevisionId,webViewLink,trashed";
@@ -149,16 +162,24 @@ const OP = v.union(
   v.literal("create_folder"),
   v.literal("move_file"),
   v.literal("rename"),
+  v.literal("upload_email_attachment"),
 );
+
+// Gmail caps a whole message at ~25MB, so this bound is only hit by
+// pathological base64 inflation — but keep the executor honest.
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export const requestWrite = internalMutation({
   args: {
     userId: v.id("users"),
     op: OP,
     // Op-specific shape, validated by hand below for precise error messages:
-    //   create_folder: { name, parentFolderId }
-    //   move_file:     { driveFileId, newParentFolderId }
-    //   rename:        { driveId, newName, kind: "file" | "folder" }
+    //   create_folder:           { name, parentFolderId }
+    //   move_file:               { driveFileId, newParentFolderId }
+    //   rename:                  { driveId, newName, kind: "file" | "folder" }
+    //   upload_email_attachment: { replyEventId? | gmailMessageId?, filename,
+    //                              partId?, targetFolderId, newName?,
+    //                              importToLibrary? }
     args: v.any(),
   },
   handler: async (
@@ -250,6 +271,95 @@ export const requestWrite = internalMutation({
       description = `Move "${file.name}" from ${oldParent?.path ?? "(unknown)"} to ${newParent.path}`;
       normalizedArgs = { driveFileId, newParentFolderId };
       scopeFolderId = newParentFolderId;
+    } else if (op === "upload_email_attachment") {
+      const replyEventId: string | undefined = args?.replyEventId;
+      const gmailMessageId: string | undefined = args?.gmailMessageId;
+      const filename = typeof args?.filename === "string" ? args.filename.trim() : "";
+      const partId: string | undefined = args?.partId;
+      const newName = typeof args?.newName === "string" ? args.newName.trim() : "";
+      const importToLibrary = args?.importToLibrary === true;
+      const targetFolderId: string | undefined = args?.targetFolderId;
+      if (!filename) {
+        throw new Error("upload_email_attachment requires the attachment's filename");
+      }
+      if (!targetFolderId) {
+        throw new Error("upload_email_attachment requires targetFolderId");
+      }
+      if (!replyEventId && !gmailMessageId) {
+        throw new Error(
+          "upload_email_attachment requires replyEventId or gmailMessageId",
+        );
+      }
+      const folder = await getFolder(targetFolderId);
+      if (!folder) {
+        throw new Error(
+          `Destination folder ${targetFolderId} is not in the Drive mirror — pick a folder from drive.listFolders`,
+        );
+      }
+      if (folder.trashed === true) {
+        throw new Error(`Destination folder "${folder.name}" is trashed in Drive`);
+      }
+
+      // The bytes come from the mailbox that RECEIVED the email — the reply
+      // row's owning user when staged from a replyEventId, else the caller.
+      let mailboxUserId: Id<"users"> = userId;
+      let sourceLabel = "";
+      if (replyEventId) {
+        const row = await ctx.db.get(replyEventId as Id<"replyEvents">);
+        if (!row) throw new Error(`Reply event ${replyEventId} not found`);
+        if (row.source !== "gmail_push") {
+          throw new Error(
+            "Reply event was not ingested from Gmail — there is no Gmail message to fetch the attachment from",
+          );
+        }
+        if (row.attachments && row.attachments.length > 0) {
+          const names = row.attachments.map((a) => a.filename);
+          const matches = partId
+            ? row.attachments.some((a) => a.partId === partId)
+            : names.some(
+                (n) => n === filename || n.toLowerCase() === filename.toLowerCase(),
+              );
+          if (!matches) {
+            throw new Error(
+              `"${filename}" is not among this email's attachments: ${names.join(", ")}`,
+            );
+          }
+        }
+        mailboxUserId = row.userId;
+        sourceLabel = row.replySubject
+          ? `"${row.replySubject}"`
+          : (row.fromEmail ?? "");
+      }
+
+      // Queue-time Gmail connection sanity (mirrors the Drive check above) —
+      // don't stage an approval whose executor cannot read the mailbox.
+      const gmailToken = await ctx.db
+        .query("googleGmailTokens")
+        .withIndex("by_user", (q) => q.eq("userId", mailboxUserId))
+        .first();
+      if (!gmailToken) {
+        throw new Error(
+          "The mailbox owner's Gmail is not connected (see /settings/gmail)",
+        );
+      }
+      if (gmailToken.needsReconnect === true) {
+        throw new Error(
+          "The mailbox owner's Gmail token needs reconnect (see /settings/gmail)",
+        );
+      }
+
+      description = `Upload email attachment "${filename}"${sourceLabel ? ` from ${sourceLabel}` : ""} to ${folder.path}${newName ? ` as "${newName}"` : ""}${importToLibrary ? " and import to library" : ""}`;
+      normalizedArgs = {
+        replyEventId,
+        gmailMessageId,
+        mailboxUserId,
+        filename,
+        partId,
+        targetFolderId,
+        newName: newName || undefined,
+        importToLibrary,
+      };
+      scopeFolderId = targetFolderId;
     } else {
       // rename
       const driveId: string | undefined = args?.driveId;
@@ -614,6 +724,163 @@ export const execute = internalAction({
           }
         }
         return { op, kind, driveFolderId: driveId, name: updated.name, path: newPath };
+      }
+
+      case "upload_email_attachment": {
+        const {
+          replyEventId,
+          gmailMessageId,
+          mailboxUserId,
+          filename,
+          partId,
+          targetFolderId,
+          newName,
+          importToLibrary,
+        } = opArgs;
+        if (!filename || !targetFolderId || !mailboxUserId || (!replyEventId && !gmailMessageId)) {
+          throw new Error("Malformed upload_email_attachment payload");
+        }
+
+        // 1. Gmail side: resolve the message in the mailbox owner's account
+        //    and a FRESH attachment handle — attachmentIds are ephemeral, so
+        //    nothing byte-addressable is ever staged in the approval.
+        const gmailToken = await gmailAccessTokenForUser(ctx, mailboxUserId);
+        if (!gmailToken) {
+          throw new Error(
+            "The mailbox owner's Gmail is not connected (or needs reconnect at /settings/gmail)",
+          );
+        }
+        let row: any = null;
+        if (replyEventId) {
+          row = await ctx.runQuery(internal.replyEvents.getInternal, { replyEventId });
+          if (!row) throw new Error("Reply event not found");
+        }
+        const apiId = await resolveGmailApiId(
+          gmailToken,
+          row
+            ? { gmailApiId: row.gmailApiId, rfcOrApiId: row.externalId }
+            : { rfcOrApiId: gmailMessageId },
+        );
+        if (!apiId) {
+          throw new Error(
+            "Could not resolve the Gmail message (deleted, or not in this mailbox)",
+          );
+        }
+        const full = await gmailGet(gmailToken, `/messages/${apiId}?format=full`);
+        if (!full.ok) throw new Error(`Gmail message fetch failed: ${full.status}`);
+        const part = findAttachmentPart(full.data?.payload, filename, partId);
+        if (!part) {
+          const available = collectAttachments(full.data?.payload).map((a) => a.filename);
+          throw new Error(
+            `Attachment "${filename}" not found on the message${
+              available.length > 0
+                ? ` — it carries: ${available.join(", ")}`
+                : " — it has no attachments"
+            }`,
+          );
+        }
+
+        // 2. Bytes. Tiny parts arrive inline on the message; real attachments
+        //    come from the attachments endpoint. Gmail caps a message at
+        //    ~25MB, so this fits comfortably in action memory.
+        let b64: string | undefined = part.inlineData;
+        if (!b64 && part.attachmentId) {
+          const att = await gmailGet(
+            gmailToken,
+            `/messages/${apiId}/attachments/${encodeURIComponent(part.attachmentId)}`,
+          );
+          if (!att.ok) throw new Error(`Gmail attachment fetch failed: ${att.status}`);
+          b64 = att.data?.data;
+        }
+        if (!b64) throw new Error("Gmail returned no attachment data");
+        const bytes = decodeBase64UrlToBytes(b64);
+        if (bytes.length > MAX_UPLOAD_BYTES) {
+          throw new Error(
+            `Attachment is ${(bytes.length / (1024 * 1024)).toFixed(1)}MB — over the 25MB upload cap`,
+          );
+        }
+
+        // 3. Drive side: resumable upload (the single-request multipart path
+        //    caps at 5MB; appraisal/plans PDFs routinely exceed it).
+        const uploadName = (typeof newName === "string" && newName) || part.filename;
+        const initRes = await fetch(
+          `${DRIVE_UPLOAD_API}/files?uploadType=resumable&supportsAllDrives=true`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json; charset=UTF-8",
+              "X-Upload-Content-Type": part.mimeType,
+              "X-Upload-Content-Length": String(bytes.length),
+            },
+            body: JSON.stringify({
+              name: uploadName,
+              parents: [targetFolderId],
+              mimeType: part.mimeType,
+            }),
+          },
+        );
+        if (!initRes.ok) {
+          const text = await initRes.text().catch(() => "");
+          throw new Error(`Drive upload init failed: ${initRes.status} ${text}`.trim());
+        }
+        const sessionUrl = initRes.headers.get("Location");
+        if (!sessionUrl) throw new Error("Drive upload init returned no session URL");
+        // decodeBase64UrlToBytes allocates the array exactly, so .buffer is
+        // the payload with no slack bytes (Convex's fetch typing wants an
+        // ArrayBuffer, not a Uint8Array).
+        const putRes = await fetch(sessionUrl, {
+          method: "PUT",
+          headers: { "Content-Type": part.mimeType },
+          body: bytes.buffer as ArrayBuffer,
+        });
+        let created: any = null;
+        try {
+          created = await putRes.json();
+        } catch {
+          /* empty body */
+        }
+        if (!putRes.ok || !created?.id) {
+          throw new Error(`Drive upload failed: ${putRes.status}`);
+        }
+
+        // 4. Echo-guard: mirror the new file NOW (metadata only — it is not
+        //    an imported document, so nothing queues re-extraction) so the
+        //    next poll tick is an idempotent no-op and an immediate import
+        //    can see the row. Side effect of the echo-guard: the poller
+        //    never sees this file as NEW, so auto-import-armed folders do
+        //    NOT auto-import it — importToLibrary is the explicit lane.
+        const fresh = await driveRequest(
+          accessToken,
+          "GET",
+          `/files/${encodeURIComponent(created.id)}?fields=${FILE_FIELDS}&supportsAllDrives=true`,
+        );
+        await ctx.runMutation(internal.driveSync.upsertFilesInternal, {
+          files: [toMirrorFile(fresh, syncedAt)],
+          queueSettling: false,
+          syncedAt,
+        });
+
+        // 5. Optional library import — the same internal drive.importFiles
+        //    uses, so scope rules apply (skipped with a reason when the
+        //    folder has no client mapping).
+        let importResult: unknown;
+        if (importToLibrary === true) {
+          importResult = await ctx.runMutation(
+            internal.driveSync.importDriveFilesInternal,
+            { driveFileIds: [created.id] },
+          );
+        }
+
+        return {
+          op,
+          driveFileId: created.id,
+          name: fresh.name,
+          targetFolderId,
+          sizeBytes: bytes.length,
+          webViewLink: fresh.webViewLink,
+          ...(importResult !== undefined ? { import: importResult } : {}),
+        };
       }
 
       default:

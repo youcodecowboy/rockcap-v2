@@ -47,6 +47,18 @@ export const createInternal = internalMutation({
     // Gmail inbound capture (see schema.ts replyEvents notes).
     gmailThreadId: v.optional(v.string()),
     gmailMessageId: v.optional(v.string()),
+    gmailApiId: v.optional(v.string()),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          mimeType: v.string(),
+          sizeBytes: v.optional(v.number()),
+          partId: v.optional(v.string()),
+          inline: v.optional(v.boolean()),
+        }),
+      ),
+    ),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
     replyBodyHtml: v.optional(v.string()),

@@ -899,8 +899,9 @@ export const executeApproval = internalAction({
           });
           break;
         case "drive_write":
-          // Organizational Drive write-back (create folder / move file /
-          // rename) — the ONLY class of writes the app makes to Drive.
+          // Drive write-back (create folder / move file / rename / upload
+          // email attachment) — the ONLY class of writes the app makes to
+          // Drive; existing file contents are never edited.
           // The executor re-checks the driveWriteConfig kill switch at
           // fire time (defense-in-depth, mirrors the gmail_send pattern)
           // and echoes the result into the mirror on success.

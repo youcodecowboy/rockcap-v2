@@ -4698,6 +4698,26 @@ export default defineSchema({
     // gmailMessageId (the RFC822 Message-ID header) → In-Reply-To/References.
     gmailThreadId: v.optional(v.string()),
     gmailMessageId: v.optional(v.string()),
+    // Gmail REST message id (NOT the RFC822 Message-ID above) — the handle
+    // for re-fetching the message later (attachment listing/filing). Rows
+    // ingested before attachment capture lack it; gmailAttachments falls
+    // back to an rfc822msgid: search.
+    gmailApiId: v.optional(v.string()),
+    // Attachment METADATA captured at ingest — bytes stay in Gmail until an
+    // operator-approved drive.saveEmailAttachment copies one into Drive.
+    // partId (not attachmentId) is stored because Gmail attachmentIds are
+    // ephemeral; inline=true flags signature images / embedded logos.
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          mimeType: v.string(),
+          sizeBytes: v.optional(v.number()),
+          partId: v.optional(v.string()),
+          inline: v.optional(v.boolean()),
+        }),
+      ),
+    ),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
     // Raw HTML body (when the message had a text/html part). Rendered
