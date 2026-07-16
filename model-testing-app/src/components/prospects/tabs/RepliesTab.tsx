@@ -8,7 +8,8 @@ import { InlineDraftEditor } from "../InlineDraftEditor";
 import { PromptLauncherModal } from "../PromptLauncherModal";
 import { buildActionPrompt, type ActionPrompt } from "@/lib/prospects/actionPrompts";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink, Send, Pencil, X, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
+import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink, Send, Pencil, X, ChevronRight, ChevronDown, Sparkles, Paperclip } from "lucide-react";
+import EmailAttachmentStrip, { realAttachments } from "@/components/EmailAttachmentStrip";
 
 interface RepliesTabProps {
   prospect: any;
@@ -356,7 +357,24 @@ function ReplyCard({ reply, colors, prospectName }: { reply: any; colors: any; p
           >
             {showReceived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             {showReceived ? "Hide received email" : "Show received email"}
+            {realAttachments(reply.attachments).length > 0 && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: colors.text.muted }}>
+                <Paperclip size={10} />
+                {realAttachments(reply.attachments).length}
+              </span>
+            )}
           </button>
+          {/* Attachments stay visible even with the email collapsed — they are
+              often the reason the reply matters (appraisals, packs, terms). */}
+          {realAttachments(reply.attachments).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <EmailAttachmentStrip
+                replyEventId={reply._id}
+                attachments={reply.attachments}
+                gmailFallbackUrl={reply.rawMessageRef}
+              />
+            </div>
+          )}
           {showReceived && (
             reply.replyBodyText ? (
               <div
