@@ -97,8 +97,9 @@ notes, meetings, emails never atomize. Chat is retired entirely (out of scope).
 - [x] Kept: operator contextMarkdown lane; intelMarkdown report artifact;
       legacy MCP read tools (skills' not-yet-atomized fallback); knowledge
       checklist feature (separate concern, not a knowledge store).
-- [ ] NOT deployed from worktree (Convex dev = prod; lender agent has
-      in-flight deploys) — deploy after merge to knowledge-cutover.
+- [x] Deployed 2026-07-11 after the lender work merged (f35e22e5 tip; held
+      back initially because Convex dev = prod and the lender agent had
+      in-flight deploys).
 - [ ] Deferred to Phase 3b: skill write-migration (addKnowledgeItem /
       updateClientIntelligence / saveIntelligence → atoms), knowledgeItems
       data migration/archive, knowledgeBank.ts + knowledgeLibrary.ts module
@@ -112,3 +113,6 @@ notes, meetings, emails never atomize. Chat is retired entirely (out of scope).
   retired — bubble removal folded into Phase 1.
 - 2026-07-11: Phase 1 + 2 shipped and deployed (see above). Phase 3 executed
   in worktree `knowledge-phase3` (lender agent active in main tree).
+- 2026-07-11: Phase 3 merged with lender work (f35e22e5) and DEPLOYED to the
+  Convex deployment — old knowledge-bank writers now retired in prod. PR #94
+  (knowledge-cutover → main) open; PR #93 subsumed by it.

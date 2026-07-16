@@ -1228,46 +1228,66 @@ export const promoteStage = mutation({
 // Sets the prospect's current ladder step and logs the transition so rolling
 // "entered-this-month" KPIs stay exact.
 
+const QUAL_SUBSTAGE_LITERALS = v.union(
+  v.literal("modelling_required"),
+  v.literal("modelling_review_required"),
+  v.literal("qualitative_feedback_required"),
+  v.literal("feedback_given"),
+  v.literal("feedback_discussed"),
+  v.literal("terms_requested"),
+  v.literal("terms_presented"),
+  v.literal("progression_to_credit"),
+  v.literal("formal_dd"),
+  v.literal("credit_approved"),
+);
+
+async function applyQualSubStage(
+  ctx: any,
+  args: { clientId: Id<"clients">; subStage: string; userId?: Id<"users"> },
+): Promise<{ ok: boolean; subStage: string; changedAt: string }> {
+  const client = (await ctx.db.get(args.clientId)) as any;
+  if (!client) throw new Error("Prospect not found");
+
+  const now = new Date().toISOString();
+  const fromValue = client.qualSubStage as string | undefined;
+  await ctx.db.patch(args.clientId, {
+    qualSubStage: args.subStage,
+    qualSubStageChangedAt: now,
+    qualSubStageChangedBy: args.userId,
+  });
+  if (fromValue !== args.subStage) {
+    await ctx.db.insert("prospectStageEvents", {
+      clientId: args.clientId,
+      kind: "qual_substage",
+      fromValue,
+      toValue: args.subStage,
+      at: now,
+      byUserId: args.userId,
+    });
+  }
+  return { ok: true, subStage: args.subStage, changedAt: now };
+}
+
 export const setQualSubStage = mutation({
   args: {
     clientId: v.id("clients"),
-    subStage: v.union(
-      v.literal("modelling_required"),
-      v.literal("modelling_review_required"),
-      v.literal("qualitative_feedback_required"),
-      v.literal("feedback_given"),
-      v.literal("feedback_discussed"),
-      v.literal("terms_requested"),
-      v.literal("terms_presented"),
-      v.literal("progression_to_credit"),
-      v.literal("formal_dd"),
-      v.literal("credit_approved"),
-    ),
+    subStage: QUAL_SUBSTAGE_LITERALS,
   },
   handler: async (ctx, args) => {
     const userId = await resolveUserId(ctx);
-    const client = (await ctx.db.get(args.clientId)) as any;
-    if (!client) throw new Error("Prospect not found");
-
-    const now = new Date().toISOString();
-    const fromValue = client.qualSubStage as string | undefined;
-    await ctx.db.patch(args.clientId, {
-      qualSubStage: args.subStage,
-      qualSubStageChangedAt: now,
-      qualSubStageChangedBy: userId,
-    });
-    if (fromValue !== args.subStage) {
-      await ctx.db.insert("prospectStageEvents", {
-        clientId: args.clientId,
-        kind: "qual_substage",
-        fromValue,
-        toValue: args.subStage,
-        at: now,
-        byUserId: userId,
-      });
-    }
-    return { ok: true, subStage: args.subStage, changedAt: now };
+    return applyQualSubStage(ctx, { ...args, userId });
   },
+});
+
+// Internal wrapper for the MCP server (no Clerk auth on those requests —
+// userId arrives resolved from the bearer token).
+export const setQualSubStageInternal = internalMutation({
+  args: {
+    clientId: v.id("clients"),
+    subStage: QUAL_SUBSTAGE_LITERALS,
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => applyQualSubStage(ctx, args),
 });
 
 // ── Operator-entered deal value ──────────────────────────────────────────────

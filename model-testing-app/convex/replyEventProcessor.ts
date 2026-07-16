@@ -187,6 +187,18 @@ export const ingestGmailMessage = internalAction({
     externalId: v.string(),
     gmailThreadId: v.optional(v.string()),
     gmailMessageId: v.optional(v.string()),
+    gmailApiId: v.optional(v.string()),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          mimeType: v.string(),
+          sizeBytes: v.optional(v.number()),
+          partId: v.optional(v.string()),
+          inline: v.optional(v.boolean()),
+        }),
+      ),
+    ),
     rawMessageRef: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<any> => {
@@ -204,6 +216,8 @@ export const ingestGmailMessage = internalAction({
       fromName: args.fromName,
       gmailThreadId: args.gmailThreadId,
       gmailMessageId: args.gmailMessageId,
+      gmailApiId: args.gmailApiId,
+      attachments: args.attachments,
     });
   },
 });
@@ -314,6 +328,14 @@ async function processReplyEvent(
     fromName?: string;
     gmailThreadId?: string;
     gmailMessageId?: string;
+    gmailApiId?: string;
+    attachments?: Array<{
+      filename: string;
+      mimeType: string;
+      sizeBytes?: number;
+      partId?: string;
+      inline?: boolean;
+    }>;
   },
 ) {
   // Step 1: Idempotency
@@ -383,6 +405,8 @@ async function processReplyEvent(
       fromName: args.fromName,
       gmailThreadId: args.gmailThreadId,
       gmailMessageId: args.gmailMessageId,
+      gmailApiId: args.gmailApiId,
+      attachments: args.attachments,
     },
   ) as Id<"replyEvents">;
 

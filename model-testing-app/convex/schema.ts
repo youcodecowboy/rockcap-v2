@@ -4090,6 +4090,17 @@ export default defineSchema({
       subject: v.string(),
       bodyText: v.string(),
       bodyHtml: v.string(),
+      // Free-form; the drafting skills stamp {templateKey, hookRung} here
+      // (Phase 2 metrics substrate) alongside any composer variables.
+      dynamicVars: v.optional(v.any()),
+    })),
+    // Snapshot of preDraftedTouch taken on the FIRST operator content edit
+    // (Phase 2, 2026-07-15) — the drafted-as-templated side of the
+    // draft-vs-sent diff. Absent = never edited.
+    originalPreDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
       dynamicVars: v.optional(v.any()),
     })),
 
@@ -4258,6 +4269,11 @@ export default defineSchema({
     // (cadence touch or reply draft) in place before approving.
     draftEditedAt: v.optional(v.string()),
     draftEditedBy: v.optional(v.id("users")),
+    // ── Metrics/learning substrate (Phase 2, 2026-07-15) ──
+    // Snapshot of draftPayload taken on the FIRST operator edit — the
+    // "what did the template say before I changed it" side of the
+    // draft-vs-sent diff. Absent = never edited (sent as drafted).
+    originalDraftPayload: v.optional(v.any()),
   })
     .index("by_status", ["status"])
     .index("by_requested_by", ["requestedBy"])
@@ -4655,6 +4671,15 @@ export default defineSchema({
     // (knowledge/sourceAtomizer.atomizeReply); absent = not yet processed.
     atomizedAt: v.optional(v.string()),
 
+    // Triage resolution (2026-07-14) — the operator (via /outreach or the UI)
+    // marked this reply handled: answered manually, acknowledged, or not
+    // actionable. Resolved rows drop out of listUnrouted / the triage queue /
+    // the session digest but keep their dispatchedTo for history. Without
+    // this the operator_review queue could never reach zero.
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    resolutionNote: v.optional(v.string()),
+
     // v1.3 — direct link to the clients row when the contact resolves to
     // one. Speeds up reply.listByClient + the operator-review queue's
     // grouping. Denormalised from contact.clientId at ingest time so
@@ -4673,6 +4698,26 @@ export default defineSchema({
     // gmailMessageId (the RFC822 Message-ID header) → In-Reply-To/References.
     gmailThreadId: v.optional(v.string()),
     gmailMessageId: v.optional(v.string()),
+    // Gmail REST message id (NOT the RFC822 Message-ID above) — the handle
+    // for re-fetching the message later (attachment listing/filing). Rows
+    // ingested before attachment capture lack it; gmailAttachments falls
+    // back to an rfc822msgid: search.
+    gmailApiId: v.optional(v.string()),
+    // Attachment METADATA captured at ingest — bytes stay in Gmail until an
+    // operator-approved drive.saveEmailAttachment copies one into Drive.
+    // partId (not attachmentId) is stored because Gmail attachmentIds are
+    // ephemeral; inline=true flags signature images / embedded logos.
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          mimeType: v.string(),
+          sizeBytes: v.optional(v.number()),
+          partId: v.optional(v.string()),
+          inline: v.optional(v.boolean()),
+        }),
+      ),
+    ),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
     // Raw HTML body (when the message had a text/html part). Rendered

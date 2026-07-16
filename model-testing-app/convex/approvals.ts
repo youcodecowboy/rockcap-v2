@@ -412,6 +412,60 @@ export const approveInternal = internalMutation({
   },
 });
 
+// Batch approve — the /outreach triage path. One operator "yes" covers a
+// reviewed batch (each item was itemised to the operator first — recipient,
+// subject, touch — batch approval is a convenience, not a blind bulk flip).
+// Per-item no-op-safe: a row that is missing or no longer pending is reported
+// in `skipped`, never thrown, so one stale id doesn't abort the batch. Each
+// approved row schedules its own executor, same as approveInternal.
+const APPROVE_BATCH_CAP = 50;
+
+export const approveBatchInternal = internalMutation({
+  args: {
+    approvalIds: v.array(v.id("approvals")),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    approved: number;
+    skipped: Array<{ approvalId: string; reason: string }>;
+  }> => {
+    if (args.approvalIds.length > APPROVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.approvalIds.length} > ${APPROVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ approvalId: string; reason: string }> = [];
+    let approved = 0;
+    for (const approvalId of args.approvalIds) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval) {
+        skipped.push({ approvalId: String(approvalId), reason: "not_found" });
+        continue;
+      }
+      if (approval.status !== "pending") {
+        skipped.push({
+          approvalId: String(approvalId),
+          reason: `not_pending_${approval.status}`,
+        });
+        continue;
+      }
+      await ctx.db.patch(approvalId, {
+        status: "approved",
+        approvedBy: args.actorUserId,
+        approvedAt: now,
+      });
+      await ctx.scheduler.runAfter(0, executeApprovalRef, { approvalId });
+      approved++;
+    }
+    return { total: args.approvalIds.length, approved, skipped };
+  },
+});
+
 // Internal reject — for system flows (a denied/parked cadence package clearing
 // its staged gmail_send approvals, or operator-driven cleanup) that have no
 // auth session. Idempotent: only acts on pending rows.
@@ -476,6 +530,85 @@ export const retry = mutation({
       approvedAt: new Date().toISOString(),
       // Clear the stale failure record so the row reads cleanly if it fails
       // again. Setting an optional field to undefined removes it in Convex.
+      executionError: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
+// Batch reject — the backlog-reset counterpart of approveBatchInternal.
+// Discards up to 50 pending drafts in one call (nothing fires). Per-item
+// no-op-safe: missing / non-pending rows land in `skipped`.
+export const rejectBatchInternal = internalMutation({
+  args: {
+    approvalIds: v.array(v.id("approvals")),
+    reason: v.optional(v.string()),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    rejected: number;
+    skipped: Array<{ approvalId: string; reason: string }>;
+  }> => {
+    if (args.approvalIds.length > APPROVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.approvalIds.length} > ${APPROVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ approvalId: string; reason: string }> = [];
+    let rejected = 0;
+    for (const approvalId of args.approvalIds) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval) {
+        skipped.push({ approvalId: String(approvalId), reason: "not_found" });
+        continue;
+      }
+      if (approval.status !== "pending") {
+        skipped.push({
+          approvalId: String(approvalId),
+          reason: `not_pending_${approval.status}`,
+        });
+        continue;
+      }
+      await ctx.db.patch(approvalId, {
+        status: "rejected",
+        approvedBy: args.actorUserId,
+        approvedAt: now,
+        rejectedReason: args.reason ?? "operator_batch_reject",
+      });
+      rejected++;
+    }
+    return { total: args.approvalIds.length, rejected, skipped };
+  },
+});
+
+// Internal retry — MCP path (mirrors `retry` above with an explicit actor).
+// Re-queues an execution_failed approval: the operator already approved this
+// exact content, so clear the failure record, flip back to approved, and
+// re-schedule the same executor. No-op-safe on non-failed rows.
+export const retryInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; reason?: string }> => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) return { ok: false, reason: "not_found" };
+    if (approval.status !== "execution_failed") {
+      return { ok: false, reason: `not_failed_${approval.status}` };
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      approvedBy: args.actorUserId,
+      approvedAt: new Date().toISOString(),
       executionError: undefined,
       executedAt: undefined,
     });
@@ -629,6 +762,12 @@ async function applyDraftEdit(
     draftPayload: next,
     draftEditedAt: new Date().toISOString(),
     draftEditedBy: args.editedBy,
+    // Phase 2 metrics/learning: preserve the as-drafted payload on the FIRST
+    // edit so triage can diff exactly what the operator changed vs. the
+    // template. Subsequent edits keep the original original.
+    ...(approval.originalDraftPayload === undefined
+      ? { originalDraftPayload: approval.draftPayload }
+      : {}),
   });
   return { ok: true, approvalId: args.approvalId };
 }
@@ -760,8 +899,9 @@ export const executeApproval = internalAction({
           });
           break;
         case "drive_write":
-          // Organizational Drive write-back (create folder / move file /
-          // rename) — the ONLY class of writes the app makes to Drive.
+          // Drive write-back (create folder / move file / rename / upload
+          // email attachment) — the ONLY class of writes the app makes to
+          // Drive; existing file contents are never edited.
           // The executor re-checks the driveWriteConfig kill switch at
           // fire time (defense-in-depth, mirrors the gmail_send pattern)
           // and echoes the result into the mirror on success.

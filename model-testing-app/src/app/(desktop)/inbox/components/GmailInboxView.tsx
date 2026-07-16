@@ -1,11 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { usePaginatedQuery, useMutation } from 'convex/react';
+import { usePaginatedQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { useColors } from '@/lib/useColors';
 import { Button, EmptyState, SkeletonText, StatusPill } from '@/components/layouts';
-import { Mail, Send, ExternalLink, Inbox } from 'lucide-react';
+import { Mail, Send, ExternalLink, Inbox, Paperclip, FileText, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import EmailViewer from './EmailViewer';
 
@@ -35,6 +35,26 @@ function intentTone(intent: string | undefined): { label: string; key: AccentKey
     case 'out_of_office': return { label: 'Out of office', key: 'muted' };
     default: return null;
   }
+}
+
+// Real (non-inline) attachments on a reply row. inline=true parts are
+// signature images / embedded logos — noise, never surfaced.
+type InboxAttachment = {
+  filename: string;
+  mimeType: string;
+  sizeBytes?: number;
+  partId?: string;
+  inline?: boolean;
+};
+function realAttachments(email: { attachments?: InboxAttachment[] }): InboxAttachment[] {
+  return (email.attachments ?? []).filter((a) => !a.inline);
+}
+
+function formatBytes(n?: number): string {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface GmailInboxViewProps {
@@ -93,7 +113,8 @@ export default function GmailInboxView({ selectedId, onSelect }: GmailInboxViewP
                     <span className="truncate text-sm font-medium" style={{ color: colors.text.primary }}>
                       {sender}
                     </span>
-                    <span className="flex-shrink-0 text-xs" style={{ color: colors.text.muted }}>
+                    <span className="flex-shrink-0 flex items-center gap-1.5 text-xs" style={{ color: colors.text.muted }}>
+                      {realAttachments(email).length > 0 && <Paperclip size={12} />}
                       {timeAgo(email.receivedAt)}
                     </span>
                   </div>
@@ -135,6 +156,105 @@ export default function GmailInboxView({ selectedId, onSelect }: GmailInboxViewP
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Attachment strip: chips under the header, download on click ────────
+// Bytes come live from Gmail via gmailAttachments.download (nothing is
+// stored in the app). Files over the download cap fall back to the Gmail
+// thread link; filing into Drive is the agent lane (drive.saveEmailAttachment).
+function AttachmentStrip({ email }: { email: any }) {
+  const colors = useColors();
+  const download = useAction(api.gmailAttachments.download);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const files = realAttachments(email);
+  if (files.length === 0) return null;
+
+  const handleDownload = async (a: InboxAttachment) => {
+    const key = a.partId ?? a.filename;
+    setBusyKey(key);
+    setError(null);
+    try {
+      const res = await download({
+        replyEventId: email._id,
+        filename: a.filename,
+        partId: a.partId,
+      });
+      if (res.tooLarge) {
+        setError(
+          `"${res.filename}" is too large to download here (${formatBytes(res.sizeBytes)}) — open it in Gmail instead.`,
+        );
+        return;
+      }
+      const bin = atob(res.dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = res.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message ?? 'Download failed');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  return (
+    <div className="px-6 py-3" style={{ borderBottom: `1px solid ${colors.border.light}` }}>
+      <div className="flex flex-wrap items-center gap-2">
+        {files.map((a) => {
+          const key = a.partId ?? a.filename;
+          const busy = busyKey === key;
+          return (
+            <button
+              key={key}
+              onClick={() => handleDownload(a)}
+              disabled={busy}
+              title={`Download ${a.filename}`}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs"
+              style={{
+                background: colors.bg.light,
+                border: `1px solid ${colors.border.default}`,
+                color: colors.text.primary,
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              <FileText size={13} style={{ color: colors.text.muted, flexShrink: 0 }} />
+              <span className="max-w-[260px] truncate">{a.filename}</span>
+              {a.sizeBytes !== undefined && (
+                <span style={{ color: colors.text.muted }}>{formatBytes(a.sizeBytes)}</span>
+              )}
+              <Download size={12} style={{ color: colors.text.muted, flexShrink: 0 }} />
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <div className="mt-2 text-xs" style={{ color: colors.accent.red }}>
+          {error}
+          {email.rawMessageRef && (
+            <>
+              {' '}
+              <a
+                href={email.rawMessageRef}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: colors.accent.blue, textDecoration: 'underline' }}
+              >
+                Open in Gmail
+              </a>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -238,6 +358,9 @@ function EmailDetail({
           </button>
         )}
       </div>
+
+      {/* Attachments */}
+      <AttachmentStrip email={email} />
 
       {/* Body */}
       <div className="flex-1 px-6 py-4 overflow-y-auto">

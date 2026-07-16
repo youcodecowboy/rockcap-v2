@@ -2163,7 +2163,7 @@ const TOOLS: McpTool[] = [
   {
     name: "reply.get",
     description:
-      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply.",
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply. Gmail-ingested rows also carry attachments:[{filename, mimeType, sizeBytes, partId, inline}] when the email had any (captured at ingest since 2026-07-16 + backfilled onto historical rows; a row with the field ABSENT was unreachable at backfill time — reply.listAttachments lists any row live); to file one into Drive, use drive.saveEmailAttachment.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2176,6 +2176,35 @@ const TOOLS: McpTool[] = [
         replyEventId: args.replyEventId,
       });
       if (!result) return asText({ error: "reply_event_not_found", replyEventId: args.replyEventId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "reply.listAttachments",
+    description:
+      "List the file attachments on an inbound email, LIVE from Gmail — works for reply rows ingested before attachment capture existed (no stored metadata needed) and for raw Gmail references that never became reply rows. Pass replyEventId (preferred — any row from reply.listByClient / the inbox feed) OR gmailMessageId (a Gmail REST message id or an RFC822 Message-ID header, resolved via Gmail search). Returns {gmailApiId, subject, fromEmail, attachments:[{filename, mimeType, sizeBytes, partId, inline}]}. inline:true marks embedded images (signature logos etc.) — usually not worth filing. Reads the mailbox of the reply's OWNING user (Gmail tokens are per-user; a raw gmailMessageId reads the CALLING user's mailbox) — errors with gmail_not_connected if that mailbox has no live connection. To file an attachment into Google Drive, follow with drive.saveEmailAttachment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id (preferred). The email's Gmail reference + owning mailbox resolve from the row.",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed. Read from the calling user's mailbox.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.gmailAttachments.listForReply, {
+        userId,
+        replyEventId: args.replyEventId,
+        gmailMessageId: args.gmailMessageId,
+      });
       return asText(result);
     },
   },
@@ -2228,6 +2257,61 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.prospects.transitionStateInternal, {
         clientId: args.clientId,
         newState: args.newState,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
+  // Prospecting v3 — manual pipeline-stage promotion (the operator axis)
+  {
+    name: "prospect.promoteStage",
+    description:
+      "Move a prospect between the operator's 5 MANUAL pipeline stages (cold_outreach / warm_pre_meeting / warm_post_meeting / pre_qualification / qualified) — the axis behind the stage-by-stage /prospects dashboards. Any direction (force move), exact parity with the UI's promote control: patches pipelineStage and logs a prospectStageEvents row (kind 'pipeline_stage', reason 'manual') so rolling entered-this-month KPIs stay exact. This is a SEPARATE axis from prospectState (the 9-state position the outreach engine moves — use prospect.transitionState for that; promoting the stage does NOT touch prospectState or fire any outreach). Does NOT change clients.status either — graduating OUT of the pipeline to an active client is client.activate. Only meaningful for status='prospect' rows. Typical use: the operator says 'move Acme to pre-qual' / a stage-workspace chat graduates a company after a held meeting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        toStage: {
+          type: "string",
+          description: "cold_outreach | warm_pre_meeting | warm_post_meeting | pre_qualification | qualified",
+        },
+      },
+      required: ["clientId", "toStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setPipelineStageInternal, {
+        clientId: args.clientId,
+        toStage: args.toStage,
+        reason: "manual",
+        userId,
+        mode: "force",
+      });
+      return asText(result);
+    },
+  },
+
+  // Prospecting v3 — sub-stage ladder step (pre-qualification / qualified)
+  {
+    name: "prospect.setQualSubStage",
+    description:
+      "Set a prospect's current SUB-STAGE ladder step. Two ladders share this field, gated by pipelineStage: the pre_qualification ladder (modelling_required → modelling_review_required → qualitative_feedback_required → feedback_given → feedback_discussed) and the qualified ladder (terms_requested → terms_presented → progression_to_credit → formal_dd → credit_approved). Set the stage first (prospect.promoteStage) if the prospect isn't in the matching stage — this tool does not validate the pairing (parity with the UI mutation). Logs a prospectStageEvents row (kind 'qual_substage') for exact rolling KPIs. Typical use: 'Acme's model is built, mark it for review' → modelling_review_required; 'terms came back from two lenders' → terms_presented.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        subStage: {
+          type: "string",
+          description:
+            "Pre-qual ladder: modelling_required | modelling_review_required | qualitative_feedback_required | feedback_given | feedback_discussed. Qualified ladder: terms_requested | terms_presented | progression_to_credit | formal_dd | credit_approved.",
+        },
+      },
+      required: ["clientId", "subStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setQualSubStageInternal, {
+        clientId: args.clientId,
+        subStage: args.subStage,
         userId,
       });
       return asText(result);
@@ -3767,6 +3851,324 @@ const TOOLS: McpTool[] = [
       return asText(result);
     },
   },
+
+  // ── Outreach triage backbone (2026-07-14) ────────────────────
+  // The cross-prospect "what needs me + what fires next" read-model plus the
+  // batch approval writes. Powers the /outreach skill and the stage-workspace
+  // session digest. See convex/outreachTriage.ts.
+  {
+    name: "outreach.triageQueue",
+    description:
+      "THE cross-prospect triage read: every open outreach action in one call, grouped by kind — pendingPackages (cadence packages awaiting approve/deny), needsContact (held drafts with no sendable contact), replyDrafts (staged reply approvals awaiting accept), otherApprovals, failedSends (approved sends that errored — retry or reject), unroutedReplies (classifier sent to operator_review), deadEndReplies (ingested but matched no contact/prospect — otherwise invisible), stalledCadences (intel_hold / auto_deactivated_failures / paused — cadences that silently stopped), flaggedClients (needs-action flags from the reply lifecycle), staleIntel. Rows are trimmed (no bodies) — follow up with approval.get / reply.get / cadence.get for full content. ALWAYS call this first in an /outreach triage session; it replaces stitching together approval.listPendingByClient + reply.listUnrouted + per-prospect cadence reads.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.triageQueue, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.listUpcoming",
+    description:
+      "The OUTBOX: every active cadence touch due inside the horizon (default 7 days, max 90), sorted by fire date, each with an honest fireStatus — 'scheduled' / 'due_now' (will fire on the next 5-min dispatcher tick) vs 'paused' / 'blocked_package_pending' / 'blocked_no_contact_email' (will NOT send, and why). Overdue-but-blocked rows are the answer to 'why didn't this send?'. This is the operator's 'whether and when will cadences fire' view — no other surface shows approved future touches across prospects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        daysAhead: { type: "number", description: "Horizon in days (default 7, max 90)." },
+        limit: { type: "number", description: "Max touches returned (default 100, max 200)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.listUpcoming, {
+        daysAhead: args.daysAhead,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.approveBatch",
+    description:
+      "Approve up to 50 pending approvals in one call and FIRE each action (same executor path as approval.approve — a gmail_send really sends). RULE: itemise the batch to the operator first (one line each: recipient, subject, what fires) and get an explicit yes; batch approval is a convenience over per-item clicking, never a blind bulk flip. Per-item no-op-safe: missing/non-pending rows land in `skipped` with a reason instead of aborting the batch. Returns {total, approved, skipped[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the approvals rows to approve (max 50).",
+        },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.approveBatchInternal, {
+        approvalIds: args.approvalIds,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.approvePackageBatch",
+    description:
+      "Approve up to 25 cadence packages in one call — each gets the full cadence.approvePackage treatment (no-contact guard, pipelineStage → cold_outreach forward-only, outreachReadyAt backfill) with ONE dispatcher kick at the end, so due touch-1s fire within seconds. RULE: itemise the packages to the operator first (company, touch count, first send date) and get an explicit yes. Per-item safe: a package failing its no-contact guard is reported in results[] with ok:false instead of aborting the batch. Returns {total, approved, results[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to approve (max 25).",
+        },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.approvePackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.retry",
+    description:
+      "Re-queue an execution_failed approval for a REAL retry (kill switch was off, Gmail token needed reconnect, transient error). The operator already approved this exact content — retry re-runs the same executor without a re-draft. Use on the failedSends section of outreach.triageQueue after checking the executionError. No-op-safe: {ok:false, reason:'not_failed_*'} on non-failed rows.",
+    inputSchema: {
+      type: "object",
+      properties: { approvalId: { type: "string", description: "Convex id of the execution_failed approvals row." } },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.retryInternal, {
+        approvalId: args.approvalId,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.reactivate",
+    description:
+      "Reactivate a STALLED cadence — the recovery action for the stalledCadences section of outreach.triageQueue. Clears ALL three silent stall states in one call (intel hold, 3-strike failure auto-deactivation, pause), sets isActive back to true, and optionally reschedules via newNextDueAt. Refuses deliberate stops: cancelled rows (reply cancellation / operator cancel), denied packages, and needs_contact holds return {ok:false} with the right redirect (fresh cadence / re-approve / cadence.setPackageContact). For an intel_hold stall, consider intel.revalidate or a fresh prospect-intel run BEFORE reactivating — the hold exists because the intel looked stale.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        newNextDueAt: { type: "string", description: "Optional ISO timestamp — reschedule the touch on reactivation." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.reactivateInternal, {
+        cadenceId: args.cadenceId,
+        userId,
+        newNextDueAt: args.newNextDueAt,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "reply.resolveBatch",
+    description:
+      "Mark up to 100 replies HANDLED so they leave the triage queue (listUnrouted / outreach.triageQueue / the session digest) while keeping full history on the row. THE backlog-reset primitive for replies: use when the operator confirms items were already answered outside the system (e.g. manually via Gmail), acknowledged, or aren't actionable (spam, dead-end from an irrelevant sender). Pass a resolutionNote saying WHY (e.g. 'answered manually via Gmail pre-system', 'not actionable — newsletter'). RULE: itemise the batch to the operator and get an explicit yes first — resolving hides items from every queue. Per-item no-op-safe ({skipped[]} for missing/already-resolved). Does NOT send anything or touch cadences.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the replyEvents rows to mark handled (max 100).",
+        },
+        resolutionNote: { type: "string", description: "Why these are considered handled — lands on every row for the audit trail." },
+      },
+      required: ["replyEventIds", "resolutionNote"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.replyEvents.resolveBatchInternal, {
+        replyEventIds: args.replyEventIds,
+        resolutionNote: args.resolutionNote,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.denyPackageBatch",
+    description:
+      "Deny up to 25 cadence packages in one call: every touch in every listed package is marked denied + inactive so none EVER fire. THE backlog-reset primitive for stale drafted outreach — e.g. packages drafted for prospects the operator has since emailed manually outside the system (sending them now would double-email). Pass a reason for the audit trail (defaults to operator_denied_package). RULE: itemise the packages (company, touches, drafted-when) and get an explicit operator yes first — this discards drafted work. A prospect denied here can get FRESH outreach later via the outreach-draft skill. Per-item safe: unknown packageIds land in results[] with ok:false.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to deny (max 25).",
+        },
+        reason: { type: "string", description: "Audit reason, e.g. 'stale_draft_manual_outreach_took_over'." },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.denyPackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+        reason: args.reason,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.rejectBatch",
+    description:
+      "Reject up to 50 pending approvals in one call — every draft is discarded, NOTHING sends. The backlog-reset counterpart of approval.approveBatch: use when clearing stale staged drafts (superseded by manual sends, outdated content). Pass a reason for the audit trail. RULE: itemise to the operator and get an explicit yes first. Per-item no-op-safe ({skipped[]} for missing/non-pending rows).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the pending approvals rows to reject (max 50).",
+        },
+        reason: { type: "string", description: "Audit reason recorded on every row." },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.rejectBatchInternal, {
+        approvalIds: args.approvalIds,
+        reason: args.reason,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.dismissNeedsActionFlag",
+    description:
+      "Dismiss a needs-action flag on a prospect (the flaggedClients section of outreach.triageQueue / the 'Waiting on you' chip). Use after the operator has made the decision the flag was asking for — e.g. reviewed a reply_not_interested and decided keep-or-lost, acknowledged an out-of-office. Pass the flag's kind exactly as returned by the triage queue (reply_received / reply_flag_only / reply_not_interested / reply_out_of_office / ...) and, when the flag row carries one, its sourceReplyEventId — kind+source identify WHICH flag to clear when a prospect has several.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex clients id of the prospect." },
+        kind: { type: "string", description: "The flag kind to clear, exactly as listed on the triage queue row." },
+        sourceReplyEventId: { type: "string", description: "The flag's sourceReplyEventId when present — disambiguates same-kind flags." },
+      },
+      required: ["clientId", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.clearNeedsActionFlagInternal, {
+        clientId: args.clientId,
+        kind: args.kind,
+        sourceReplyEventId: args.sourceReplyEventId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "touchpoint.logManualSend",
+    description:
+      "Backfill outbound emails that were sent OUTSIDE the system (operator used a generic Gmail tool) as real outbound touchpoints — up to 50 per call. For each entry: logs the touchpoint, stamps the prospect's lastOutreachSendAt forward, and advances the prospect state machine exactly as a real send would (no-op-safe). THE reconciliation write for sends with NO drafted package — when a manual send matches a drafted package's touch 1, use cadence.adoptManualSend instead (it also refits the follow-ups). Idempotent when gmailMessageId is supplied (re-running a reset never double-logs). Resolve each send from the operator's Gmail Sent search: recipient email, sent date, subject, message id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entries: {
+          type: "array",
+          description: "Manual sends to log (max 50).",
+          items: {
+            type: "object",
+            properties: {
+              contactEmail: { type: "string", description: "Recipient email — resolved to a contact + prospect. Preferred key." },
+              contactId: { type: "string", description: "Convex contacts id, if already known (alternative to contactEmail)." },
+              clientId: { type: "string", description: "Convex clients id override when the contact can't be resolved." },
+              occurredAt: { type: "string", description: "ISO timestamp of the actual manual send (from Gmail)." },
+              subject: { type: "string", description: "Email subject, for the history row." },
+              gmailMessageId: { type: "string", description: "Gmail message id — supplies idempotency; pass it whenever the Gmail search returned one." },
+              note: { type: "string", description: "Optional context, e.g. 'found during 2026-07 backlog reset'." },
+            },
+            required: ["occurredAt"],
+          },
+        },
+      },
+      required: ["entries"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.touchpoints.logManualOutboundBatchInternal, {
+        entries: args.entries,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.adoptManualSend",
+    description:
+      "AUTOFIT a drafted cadence package onto a manual send (backlog reconciliation). When the operator sent touch 1 THEMSELVES outside the system: marks touch 1 fired-externally at the real send date (the dispatcher can never re-send it — no double-email), REFITS the unfired follow-up touches onto the preset schedule anchored at that date (past-due dates pushed forward: min 2 days out, 2 days apart, order kept), logs the send as an outbound touchpoint (idempotent on gmailMessageId), stamps lastOutreachSendAt, and advances the prospect state. The package keeps its approval status: a pending package still needs the operator's normal 'Approve & begin outreach' before follow-ups fire — an already-approved one auto-sends on the new dates (say so explicitly when itemising). Use instead of denying when the operator wants the drafted follow-up sequence to CONTINUE from their manual send. Errors: package_not_found, touch_1_already_fired (nothing to adopt), invalid_sentAt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageId: { type: "string", description: "The drafted package whose touch 1 the operator sent manually." },
+        sentAt: { type: "string", description: "ISO timestamp of the real manual send (from Gmail Sent)." },
+        preset: { type: "string", description: "Follow-up spacing: light / moderate (default) / aggressive." },
+        gmailMessageId: { type: "string", description: "Gmail message id of the manual send — idempotency for the touchpoint." },
+        subject: { type: "string", description: "Subject of the manual send (defaults to the drafted touch-1 subject)." },
+      },
+      required: ["packageId", "sentAt"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.adoptManualSendInternal, {
+        packageId: args.packageId,
+        sentAt: args.sentAt,
+        preset: args.preset,
+        gmailMessageId: args.gmailMessageId,
+        subject: args.subject,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "deal.listByStage",
+    description:
+      "SELECTION read for the /cold-reachout action flow (and any stage-scoped session): list mirrored HubSpot deals sitting in one pipeline stage, each joined to its app-side prospect where one exists, with explicit dedupe/readiness flags — appClient (the linked clients row with pipelineStage / prospectState / lastOutreachSendAt), alreadyWorked (true when the linked prospect has send evidence — SKIP these in a cold-reachout selection, they belong to follow-up), linkedContactCount + contactWithEmail (whether outreach can actually send). Both pipelineId AND stageId are required — HubSpot dealstage ids are only unique within a pipeline. Freshness = the HubSpot mirror sync (recurring sync + webhooks), not a live HubSpot call. Known ids live in the RockCap-MCP docs (e.g. Cold Reachout pipeline 1755919552, Weekly Targets stage 2380814543).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipelineId: { type: "string", description: "HubSpot pipeline id (required — pairs with stageId)." },
+        stageId: { type: "string", description: "HubSpot dealstage id within that pipeline." },
+        limit: { type: "number", description: "Max deals returned (default 25, max 100)." },
+      },
+      required: ["pipelineId", "stageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.deals.listByStageForSelectionInternal, {
+        pipelineId: args.pipelineId,
+        stageId: args.stageId,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "outreach.metrics",
+    description:
+      "OUTCOME metrics for outreach (Phase 2) — triage checks state, this reports results over a window (default 90 days): sends (outbound email touchpoints, incl. reconciliation-backfilled manual sends), substantive replies (out-of-office excluded from rate math but reported), response rate at contact level (share of emailed contacts who replied — the honest headline) and send level, touchesPerEarnedReply (the operator's priority number: average sends it took to earn a contact's first reply), and a byTemplate table (sends / replies / responseRate per templateKey, replies attributed to the latest fired touch before the reply; legacy sends land in 'untagged'). Capped + windowed — `capped` flags mean a number is a floor. Baselines are only honest AFTER the backlog reset has backfilled manual sends. Use in the *-triage commands' metrics section.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sinceDays: { type: "number", description: "Window in days (default 90, max 365)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachMetrics.summary, {
+        sinceDays: args.sinceDays,
+      });
+      return asText(result);
+    },
+  },
   {
     name: "client.create",
     description:
@@ -4699,7 +5101,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.createFolder",
     description:
-      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only three writes the app EVER makes to Drive (create folder / move file / rename — organizational only, never file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only four writes the app EVER makes to Drive (create folder / move file / rename / save email attachment — the app never edits existing file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -4781,6 +5183,68 @@ const TOOLS: McpTool[] = [
         status: "PENDING OPERATOR APPROVAL",
         message:
           "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.saveEmailAttachment",
+    description:
+      "Stage copying an attachment from an inbound Gmail email into a Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written by this call. The approval appears at /approvals; only after the operator approves does the executor fetch the attachment bytes from the mailbox owner's Gmail (the bytes are never stored in the app), upload them into the target folder, and echo the new file into the mirror immediately. Identify the email by replyEventId (preferred — any Gmail-ingested row from the reply feed) OR gmailMessageId (Gmail message id / RFC822 Message-ID, for mail not in the feed — read from the calling user's mailbox). filename must match an attachment on the message — check with reply.listAttachments first, and pass its partId to disambiguate duplicate filenames. The destination folder must be in the mirror (drive.listFolders) and not trashed. Pass importToLibrary:true to ALSO import the uploaded file as a metadata-first document (extraction follows via the v4 pipeline — a few cents; requires the folder to have an effective client mapping, else the import is skipped with a reason in the executionResult). NOTE: the upload does NOT trigger folder auto-import even when armed (the executor mirrors the file before the poller sees it) — importToLibrary is the only import lane. Optional newName renames the file on upload. Requires the Drive write-back kill switch ON at /settings/drive — throws (nothing staged) if off; the executor re-checks it at fire time. Also requires the mailbox owner's Gmail connection to be live. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id of the Gmail-ingested email carrying the attachment (preferred).",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed (read from the calling user's mailbox).",
+        },
+        filename: {
+          type: "string",
+          description: "Filename of the attachment to save (as listed by reply.listAttachments).",
+        },
+        partId: {
+          type: "string",
+          description: "MIME part id from reply.listAttachments — pass to disambiguate duplicate filenames.",
+        },
+        targetFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed).",
+        },
+        newName: {
+          type: "string",
+          description: "Optional new filename for the uploaded file (defaults to the attachment's own name).",
+        },
+        importToLibrary: {
+          type: "boolean",
+          description:
+            "Also import the uploaded file into the app library after upload (extraction cost applies; folder must have a client mapping).",
+        },
+      },
+      required: ["filename", "targetFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "upload_email_attachment",
+        args: {
+          replyEventId: args.replyEventId,
+          gmailMessageId: args.gmailMessageId,
+          filename: args.filename,
+          partId: args.partId,
+          targetFolderId: args.targetFolderId,
+          newName: args.newName,
+          importToLibrary: args.importToLibrary,
+        },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Upload staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before the attachment is fetched from Gmail and uploaded. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },
