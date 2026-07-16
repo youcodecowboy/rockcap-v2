@@ -2163,7 +2163,7 @@ const TOOLS: McpTool[] = [
   {
     name: "reply.get",
     description:
-      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply. Gmail-ingested rows also carry attachments:[{filename, mimeType, sizeBytes, partId, inline}] when the email had any (rows ingested before 2026-07-16 lack the field — use reply.listAttachments to list them live); to file one into Drive, use drive.saveEmailAttachment.",
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply. Gmail-ingested rows also carry attachments:[{filename, mimeType, sizeBytes, partId, inline}] when the email had any (captured at ingest since 2026-07-16 + backfilled onto historical rows; a row with the field ABSENT was unreachable at backfill time — reply.listAttachments lists any row live); to file one into Drive, use drive.saveEmailAttachment.",
     inputSchema: {
       type: "object",
       properties: {

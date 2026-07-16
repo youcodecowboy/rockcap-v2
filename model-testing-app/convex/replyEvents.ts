@@ -210,6 +210,63 @@ export const listMissingHtmlInternal = internalQuery({
   },
 });
 
+// ── Attachment-metadata backfill (one-time): rows ingested before capture ──
+// One cursor batch of gmail_push rows that have never had their attachments
+// field stamped (undefined = unchecked; [] = checked, none found). Newest
+// first; the caller pages with beforeReceivedAt. Batches stay small because
+// rows carry full HTML bodies — a big take() here trips the 16MiB read limit.
+export const listMissingAttachmentsInternal = internalQuery({
+  args: {
+    beforeReceivedAt: v.optional(v.string()),
+    scanLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.scanLimit ?? 50, 100);
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_source_received_at", (q) =>
+        args.beforeReceivedAt
+          ? q.eq("source", "gmail_push").lt("receivedAt", args.beforeReceivedAt)
+          : q.eq("source", "gmail_push"),
+      )
+      .order("desc")
+      .take(limit);
+    return {
+      candidates: rows
+        .filter((r) => r.attachments === undefined)
+        .map((r) => ({
+          _id: r._id,
+          userId: r.userId,
+          externalId: r.externalId,
+          gmailApiId: r.gmailApiId,
+        })),
+      nextCursor: rows.length === limit ? rows[rows.length - 1].receivedAt : null,
+    };
+  },
+});
+
+export const patchAttachmentsInternal = internalMutation({
+  args: {
+    replyEventId: v.id("replyEvents"),
+    attachments: v.array(
+      v.object({
+        filename: v.string(),
+        mimeType: v.string(),
+        sizeBytes: v.optional(v.number()),
+        partId: v.optional(v.string()),
+        inline: v.optional(v.boolean()),
+      }),
+    ),
+    gmailApiId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const patch: Record<string, unknown> = { attachments: args.attachments };
+    if (args.gmailApiId) patch.gmailApiId = args.gmailApiId;
+    await ctx.db.patch(args.replyEventId, patch);
+    return { ok: true };
+  },
+});
+
 export const patchBodyHtmlInternal = internalMutation({
   args: {
     replyEventId: v.id("replyEvents"),

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalAction } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // Gmail attachment access.
@@ -285,5 +285,168 @@ export const listForReply = internalAction({
       receivedAt: row?.receivedAt,
       attachments: collectAttachments(full.data?.payload),
     };
+  },
+});
+
+// ── Inbox download: fetch one attachment's bytes for the web UI ─────────
+//
+// Auth mirrors listInboundPaginated's privacy model: the inbox is scoped to
+// the operator's OWN Gmail account, so only the row's owning user may pull
+// bytes (another operator files it to Drive via the approval lane instead).
+// Base64 inflates the payload ~33% and Convex caps function results, so
+// downloads are capped at DOWNLOAD_MAX_BYTES — larger files return
+// {tooLarge:true} and the UI falls back to the Gmail thread link.
+const DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+export const download = action({
+  args: {
+    replyEventId: v.id("replyEvents"),
+    filename: v.string(),
+    partId: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | { tooLarge: true; filename: string; mimeType: string; sizeBytes?: number }
+    | { tooLarge: false; filename: string; mimeType: string; dataBase64: string }
+  > => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const user: any = await ctx.runQuery(api.users.getByClerkId, {
+      clerkId: identity.subject,
+    });
+    if (!user) throw new Error("User not found");
+
+    const row: any = await ctx.runQuery(internal.replyEvents.getInternal, {
+      replyEventId: args.replyEventId,
+    });
+    if (!row) throw new Error("Email not found");
+    if (String(row.userId) !== String(user._id)) {
+      throw new Error("This email belongs to another operator's mailbox");
+    }
+
+    const accessToken = await gmailAccessTokenForUser(ctx, row.userId);
+    if (!accessToken) {
+      throw new Error("Gmail is not connected (or needs reconnect at /settings/gmail)");
+    }
+    const apiId = await resolveGmailApiId(accessToken, {
+      gmailApiId: row.gmailApiId,
+      rfcOrApiId: row.externalId,
+    });
+    if (!apiId) throw new Error("Could not resolve the Gmail message");
+    const full = await gmailGet(accessToken, `/messages/${apiId}?format=full`);
+    if (!full.ok) throw new Error(`Gmail fetch failed: ${full.status}`);
+    const part = findAttachmentPart(full.data?.payload, args.filename, args.partId);
+    if (!part) throw new Error(`Attachment "${args.filename}" not found on the message`);
+
+    if ((part.sizeBytes ?? 0) > DOWNLOAD_MAX_BYTES) {
+      return {
+        tooLarge: true as const,
+        filename: part.filename,
+        mimeType: part.mimeType,
+        sizeBytes: part.sizeBytes,
+      };
+    }
+
+    let b64 = part.inlineData;
+    if (!b64 && part.attachmentId) {
+      const att = await gmailGet(
+        accessToken,
+        `/messages/${apiId}/attachments/${encodeURIComponent(part.attachmentId)}`,
+      );
+      if (!att.ok) throw new Error(`Gmail attachment fetch failed: ${att.status}`);
+      b64 = att.data?.data;
+    }
+    if (!b64) throw new Error("Gmail returned no attachment data");
+
+    // Gmail returns base64url; hand the browser standard base64 (atob-ready).
+    let std = b64.replace(/-/g, "+").replace(/_/g, "/");
+    while (std.length % 4 !== 0) std += "=";
+    return {
+      tooLarge: false as const,
+      filename: part.filename,
+      mimeType: part.mimeType,
+      dataBase64: std,
+    };
+  },
+});
+
+// ── One-time backfill: stamp attachment metadata on rows ingested before
+// capture existed, so the inbox shows paperclips on historical mail too.
+// Mirrors gmailInbound.backfillHtml. undefined = unchecked; [] = checked,
+// none (also stamped when the message is gone, so dead rows stop rescanning).
+// Run via: npx convex run gmailAttachments:backfillAttachments '{"limit":100}'
+export const backfillAttachments = internalAction({
+  args: { limit: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ scanned: number; stamped: number; withAttachments: number; failed: number }> => {
+    // Page the feed with a receivedAt cursor (small batches — rows carry
+    // full HTML bodies), collecting up to `limit` unstamped candidates.
+    const max = args.limit ?? 100;
+    const rows: any[] = [];
+    let cursor: string | null = null;
+    while (rows.length < max) {
+      const batch: { candidates: any[]; nextCursor: string | null } =
+        await ctx.runQuery(internal.replyEvents.listMissingAttachmentsInternal, {
+          beforeReceivedAt: cursor ?? undefined,
+        });
+      rows.push(...batch.candidates.slice(0, max - rows.length));
+      if (!batch.nextCursor) break;
+      cursor = batch.nextCursor;
+    }
+
+    const tokenCache = new Map<string, string | null>();
+    const tokenFor = async (userId: string): Promise<string | null> => {
+      if (!tokenCache.has(userId)) {
+        tokenCache.set(userId, await gmailAccessTokenForUser(ctx, userId as any));
+      }
+      return tokenCache.get(userId) ?? null;
+    };
+
+    let stamped = 0;
+    let withAttachments = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const accessToken = await tokenFor(String(row.userId));
+        if (!accessToken) {
+          failed++;
+          continue;
+        }
+        const apiId = await resolveGmailApiId(accessToken, {
+          gmailApiId: row.gmailApiId,
+          rfcOrApiId: row.externalId,
+        });
+        if (!apiId) {
+          // Message gone from the mailbox — stamp empty so it stops rescanning.
+          await ctx.runMutation(internal.replyEvents.patchAttachmentsInternal, {
+            replyEventId: row._id,
+            attachments: [],
+          });
+          stamped++;
+          continue;
+        }
+        const full = await gmailGet(accessToken, `/messages/${apiId}?format=full`);
+        if (!full.ok) {
+          failed++;
+          continue;
+        }
+        const attachments = collectAttachments(full.data?.payload);
+        await ctx.runMutation(internal.replyEvents.patchAttachmentsInternal, {
+          replyEventId: row._id,
+          attachments,
+          gmailApiId: apiId,
+        });
+        stamped++;
+        if (attachments.length > 0) withAttachments++;
+      } catch (err) {
+        console.error(`[gmailAttachments] backfill failed for ${row._id}:`, err);
+        failed++;
+      }
+    }
+    return { scanned: rows.length, stamped, withAttachments, failed };
   },
 });
