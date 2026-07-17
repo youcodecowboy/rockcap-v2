@@ -290,9 +290,12 @@ export const listForReply = internalAction({
 
 // ── Inbox download: fetch one attachment's bytes for the web UI ─────────
 //
-// Auth mirrors listInboundPaginated's privacy model: the inbox is scoped to
-// the operator's OWN Gmail account, so only the row's owning user may pull
-// bytes (another operator files it to Drive via the approval lane instead).
+// Auth follows the rows' existing exposure model. A CLIENT-LINKED reply is
+// business correspondence the whole team already reads (the prospect
+// Replies tab serves its full body org-wide via replyEvents.listByClient),
+// so any authenticated operator may download its attachments. An UNLINKED
+// row is personal inbox mail — visible only to its owner (the per-user
+// /inbox feed) — so only the owning user may pull bytes.
 // Base64 inflates the payload ~33% and Convex caps function results, so
 // downloads are capped at DOWNLOAD_MAX_BYTES — larger files return
 // {tooLarge:true} and the UI falls back to the Gmail thread link.
@@ -322,8 +325,8 @@ export const download = action({
       replyEventId: args.replyEventId,
     });
     if (!row) throw new Error("Email not found");
-    if (String(row.userId) !== String(user._id)) {
-      throw new Error("This email belongs to another operator's mailbox");
+    if (!row.linkedClientId && String(row.userId) !== String(user._id)) {
+      throw new Error("This email belongs to another operator's private inbox");
     }
 
     const accessToken = await gmailAccessTokenForUser(ctx, row.userId);
