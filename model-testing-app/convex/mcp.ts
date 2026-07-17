@@ -2080,6 +2080,29 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "approval.listPending",
+    description:
+      "EVERYTHING pending operator approval, org-wide, any entity type, newest first — THE session-opening read for the chat-first approval flow. Each row: approvalId, entityType (gmail_send / client_communication / lender_outreach / drive_write / …), summary, requestedAt, requestSourceName, client/project links + clientName, expiresAt. Trimmed — pull the full draft with approval.get before presenting anything for a yes. The intended loop: list → present each item to the operator IN CHAT → on their explicit yes call approval.approve (approval.approveBatch ≤50 for a reviewed set; approval.reject/rejectBatch to decline) — the executor fires immediately on approve; the app's /approvals page is an alternative surface, never a requirement. Optional entityType filter (e.g. 'drive_write' for pending Drive writes only).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: {
+          type: "string",
+          description: "Filter to one entity type (e.g. drive_write, gmail_send, client_communication, lender_outreach).",
+        },
+        limit: { type: "number", description: "Max rows (default 50, max 200)" },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const rows = await ctx.runQuery(internal.approvals.listPendingInternal, {
+        entityType: args.entityType,
+        limit: args.limit,
+      });
+      return asText(rows);
+    },
+  },
+  {
     name: "approval.listPendingByClient",
     description:
       "List pending approvals for a specific client. Use to check whether qualify-and-draft or any other skill has staged drafts awaiting operator review. Returns the same approval rows as the Overview tab's 'Pending approvals' card. Includes all entity types (client_communication, gmail_send, lender_outreach, etc).",
