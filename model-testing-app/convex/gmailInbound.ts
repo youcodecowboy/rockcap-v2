@@ -200,10 +200,9 @@ async function captureSentMessage(
       { provider: "gmail", payloadRef: id },
     );
     if (existing) return false;
-    const r = await gmailGet(
-      accessToken,
-      `/messages/${id}?format=metadata&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
-    );
+    // format=full: we keep the full body in the emailBodies sidecar (the
+    // ledger row itself stays slim — subject + excerpt).
+    const r = await gmailGet(accessToken, `/messages/${id}?format=full`);
     if (!r.ok) return false;
     const msg = r.data;
     const headers = msg?.payload?.headers ?? [];
@@ -230,7 +229,8 @@ async function captureSentMessage(
     }
     if (!primary) return false; // no contact match → personal mail, not tracked
 
-    await ctx.runMutation(internal.touchpoints.internalCreate, {
+    const body = extractBody(msg?.payload);
+    const touchpointId = await ctx.runMutation(internal.touchpoints.internalCreate, {
       provider: "gmail",
       direction: "outbound",
       kind: "email",
@@ -244,16 +244,114 @@ async function captureSentMessage(
       payloadType: "gmail.message",
       subject: getHeader(headers, "Subject"),
       summary: "Sent from Gmail (captured by outbound poller)",
-      bodyExcerpt: (msg?.snippet ?? "").slice(0, 500),
+      bodyExcerpt: (body.text || msg?.snippet || "").slice(0, 500),
       threadId: msg?.threadId,
       capturedBy: userId,
     });
+    if (body.text || body.html) {
+      await ctx.runMutation(internal.touchpoints.saveBodyInternal, {
+        touchpointId,
+        bodyText: body.text || undefined,
+        bodyHtml: body.html,
+      });
+    }
     return true;
   } catch (err) {
     console.error(`[gmailInbound] sent-capture failed for ${id}:`, err);
     return false;
   }
 }
+
+// One-shot: fetch + store full bodies for outbound touchpoints captured
+// before the body sidecar existed. Idempotent (skips rows with a body).
+//   npx convex run gmailInbound:backfillOutboundBodies '{"days":45}'
+export const backfillOutboundBodies = internalAction({
+  args: { days: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ scanned: number; saved: number; failed: number }> => {
+    const cutoff = new Date(
+      Date.now() - Math.min(args.days ?? 45, 120) * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const tokenCache = new Map<string, string | null>();
+    const tokenFor = async (userId: string): Promise<string | null> => {
+      if (!tokenCache.has(userId)) {
+        const token: any = await ctx.runQuery(internal.gmailTokens.getForSyncInternal, {
+          userId: userId as any,
+        });
+        if (!token || token.needsReconnect) {
+          tokenCache.set(userId, null);
+        } else {
+          let accessToken: string = token.accessToken;
+          const expiresMs = new Date(token.expiresAt).getTime();
+          if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
+            try {
+              const refreshed = await refreshAccessToken(token.refreshToken);
+              accessToken = refreshed.access_token;
+              await ctx.runMutation(internal.gmailSend.writeRefreshedToken, {
+                userId: userId as any,
+                accessToken,
+                expiresAt: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+              });
+            } catch {
+              accessToken = "";
+            }
+          }
+          tokenCache.set(userId, accessToken || null);
+        }
+      }
+      return tokenCache.get(userId) ?? null;
+    };
+
+    let scanned = 0;
+    let saved = 0;
+    let failed = 0;
+    let cursor: string | null = null;
+    while (true) {
+      const batch: { candidates: any[]; nextCursor: string | null } = await ctx.runQuery(
+        internal.touchpoints.listOutboundGmailInternal,
+        { beforeOccurredAt: cursor ?? undefined },
+      );
+      for (const t of batch.candidates) {
+        if (t.occurredAt < cutoff) continue;
+        scanned++;
+        try {
+          const existing = await ctx.runQuery(internal.touchpoints.getBodyInternal, {
+            touchpointId: t._id,
+          });
+          if (existing) continue;
+          if (!t.capturedBy) {
+            failed++;
+            continue;
+          }
+          const accessToken = await tokenFor(String(t.capturedBy));
+          if (!accessToken) {
+            failed++;
+            continue;
+          }
+          const r = await gmailGet(accessToken, `/messages/${t.payloadRef}?format=full`);
+          if (!r.ok) {
+            failed++;
+            continue;
+          }
+          const body = extractBody(r.data?.payload);
+          if (body.text || body.html) {
+            await ctx.runMutation(internal.touchpoints.saveBodyInternal, {
+              touchpointId: t._id,
+              bodyText: body.text || undefined,
+              bodyHtml: body.html,
+            });
+            saved++;
+          }
+        } catch (err) {
+          console.error(`[gmailInbound] body backfill failed for ${t._id}:`, err);
+          failed++;
+        }
+      }
+      if (!batch.nextCursor || batch.nextCursor < cutoff) break;
+      cursor = batch.nextCursor;
+    }
+    return { scanned, saved, failed };
+  },
+});
 
 // One-shot historical backfill: capture SENT mail from the last `days`
 // (default 45) for every connected user, through the same dedupe +

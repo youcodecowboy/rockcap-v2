@@ -350,7 +350,11 @@ function ReadingPane({
   const colors = useColors();
   const detail = useQuery(
     api.prospectingInbox.detail,
-    row.replyEventId ? { replyEventId: row.replyEventId } : 'skip',
+    row.replyEventId
+      ? { replyEventId: row.replyEventId }
+      : row.touchpointId
+        ? { touchpointId: row.touchpointId }
+        : 'skip',
   );
   const intent = row.classifiedIntent ? INTENT_LABELS[row.classifiedIntent] : null;
 
@@ -433,18 +437,21 @@ function ReadingPane({
         </>
       ) : (
         <div className="flex-1 px-6 py-4 overflow-y-auto">
-          {row.snippet ? (
+          {detail === undefined ? (
+            <SkeletonText lines={6} />
+          ) : detail && (detail.bodyHtml || detail.bodyText) ? (
+            <EmailViewer html={detail.bodyHtml} text={detail.bodyText} />
+          ) : row.snippet ? (
             <p className="text-sm whitespace-pre-wrap" style={{ color: colors.text.primary, lineHeight: 1.65 }}>
               {row.snippet}
               {row.snippet.length >= 160 ? '…' : ''}
             </p>
           ) : (
             <p className="text-sm" style={{ color: colors.text.muted }}>
-              No excerpt captured for this send.
+              No body captured for this send.
             </p>
           )}
           <p className="text-xs mt-4" style={{ color: colors.text.muted }}>
-            Outbound bodies aren&apos;t stored in the app — the ledger keeps subject + excerpt only.{' '}
             <a
               href={
                 row.threadId
@@ -455,9 +462,8 @@ function ReadingPane({
               rel="noreferrer"
               style={{ color: colors.accent.blue, textDecoration: 'underline' }}
             >
-              Open in Gmail
-            </a>{' '}
-            for the full email.
+              Open the thread in Gmail
+            </a>
           </p>
         </div>
       )}

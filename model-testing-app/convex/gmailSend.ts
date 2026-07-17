@@ -1,6 +1,16 @@
 import { v } from "convex/values";
 import { mutation, internalAction, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { makeFunctionReference } from "convex/server";
+import { Id } from "./_generated/dataModel";
+
+// String ref (TS2589/TS7022 self-reference workaround — same pattern as
+// approvals.ts): calling internal.touchpoints.saveBodyInternal directly
+// creates a circular type inference through the generated api types.
+const saveBodyRef = makeFunctionReference<
+  "mutation",
+  { touchpointId: Id<"touchpoints">; bodyText?: string; bodyHtml?: string }
+>("touchpoints:saveBodyInternal");
 
 // Gmail send wrapper (BL-4.2).
 // Skill-facing surface: requestSend creates an approval row, returns
@@ -573,6 +583,12 @@ async function performApprovedSend(
       capturedBy: approval.requestedBy,
     });
     touchpointId = id;
+    // Full body → sidecar (drawer reading pane); ledger row stays slim.
+    await ctx.runMutation(saveBodyRef, {
+      touchpointId: id,
+      bodyText: payload.bodyText,
+      bodyHtml: payload.bodyHtml,
+    });
   } catch (err) {
     // Swallow; the send succeeded. Future hardening: surface this in
     // the approval's executionResult.

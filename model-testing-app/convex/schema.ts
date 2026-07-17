@@ -4521,6 +4521,18 @@ export default defineSchema({
   // HubSpot activities, and manual entries all write here. Skills query
   // this for "recent history with this person/deal" without caring which
   // integration delivered the event.
+  // Full email bodies for outbound touchpoints (2026-07-17). Kept OUT of
+  // touchpoints so the ledger stays slim — KPI/inbox scans collect() whole
+  // touchpoint docs, and full HTML bodies there would resurrect the 16MiB
+  // read-limit problem the slim ledger exists to solve. Detail reads join
+  // one row by touchpointId.
+  emailBodies: defineTable({
+    touchpointId: v.id("touchpoints"),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    createdAt: v.string(),
+  }).index("by_touchpoint", ["touchpointId"]),
+
   touchpoints: defineTable({
     provider: v.union(
       v.literal("gmail"),
