@@ -42,31 +42,35 @@ export function MeetingsTab({ prospect }: MeetingsTabProps) {
 
   if (meetings.length === 0) {
     return (
-      <div
-        style={{
-          background: colors.bg.card,
-          border: `1px solid ${colors.border.default}`,
-          borderRadius: 4,
-          padding: 24,
-          color: colors.text.muted,
-          fontSize: 12,
-          lineHeight: 1.6,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <Calendar size={14} />
-          <strong style={{ color: colors.text.primary }}>No meetings yet</strong>
+      <div>
+        <CalendarSection prospect={prospect} colors={colors} />
+        <div
+          style={{
+            background: colors.bg.card,
+            border: `1px solid ${colors.border.default}`,
+            borderRadius: 4,
+            padding: 24,
+            color: colors.text.muted,
+            fontSize: 12,
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <Calendar size={14} />
+            <strong style={{ color: colors.text.primary }}>No logged meetings yet</strong>
+          </div>
+          Meetings get created via the meeting-prep skill's responder mode (when a reply intent is{" "}
+          <code style={codeStyle(colors)}>book_meeting</code>) OR via Claude Code with{" "}
+          <code style={codeStyle(colors)}>meeting.create({"{"} clientId, title, meetingDate, attendees {"}"})</code>.
+          Post-meeting, the meeting-capture skill ingests transcripts/notes to populate decisions + action items.
         </div>
-        Meetings get created via the meeting-prep skill's responder mode (when a reply intent is{" "}
-        <code style={codeStyle(colors)}>book_meeting</code>) OR via Claude Code with{" "}
-        <code style={codeStyle(colors)}>meeting.create({"{"} clientId, title, meetingDate, attendees {"}"})</code>.
-        Post-meeting, the meeting-capture skill ingests transcripts/notes to populate decisions + action items.
       </div>
     );
   }
 
   return (
     <div>
+      <CalendarSection prospect={prospect} colors={colors} />
       <div style={{ marginBottom: 14, fontSize: 11, color: colors.text.muted }}>
         {upcoming.length} upcoming · {past.length} past · {meetings.length} total
       </div>
@@ -457,6 +461,81 @@ function typePillColor(color: string, colors: any): { bg: string; fg: string; bo
     default:
       return { bg: colors.bg.cardAlt, fg: colors.text.muted, border: colors.border.default };
   }
+}
+
+// Calendar section (2026-07-17) — live Google Calendar events linked to
+// this prospect by the attendee matcher (an attendee email resolved to one
+// of its contacts). These are the "meetings that actually count" for the
+// prospecting KPIs; the meetings list below is the curated record
+// (decisions, action items) written by skills/operators.
+function CalendarSection({ prospect, colors }: { prospect: any; colors: any }) {
+  const events =
+    useQuery(
+      api.googleCalendar.listByClient,
+      prospect ? { clientId: prospect._id, limit: 30 } : "skip",
+    ) ?? [];
+  if (events.length === 0) return null;
+
+  const nowIso = new Date().toISOString();
+  const upcoming = events
+    .filter((e: any) => e.startTime >= nowIso && e.status !== "cancelled")
+    .sort((a: any, b: any) => a.startTime.localeCompare(b.startTime));
+  const past = events
+    .filter((e: any) => e.startTime < nowIso && e.status !== "cancelled")
+    .slice(0, 8);
+
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const row = (e: any, isUpcoming: boolean) => (
+    <div
+      key={e._id}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 12px",
+        background: colors.bg.card,
+        border: `1px solid ${colors.border.light}`,
+        borderRadius: 4,
+        marginBottom: 6,
+      }}
+    >
+      <Calendar size={13} style={{ color: isUpcoming ? colors.accent.green : colors.text.muted, flexShrink: 0 }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 12, color: colors.text.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {e.title}
+        </div>
+        <div style={{ fontSize: 10, color: colors.text.muted }}>
+          {fmt(e.startTime)}
+          {e.location ? ` · ${e.location}` : ""}
+          {(e.attendees ?? []).length > 0
+            ? ` · ${(e.attendees ?? [])
+                .map((a: any) => a.name || a.email)
+                .filter(Boolean)
+                .slice(0, 4)
+                .join(", ")}`
+            : ""}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <SectionLabel colors={colors}>
+        Calendar — matched to this prospect ({upcoming.length} upcoming{past.length > 0 ? `, ${past.length} recent` : ""})
+      </SectionLabel>
+      {upcoming.map((e: any) => row(e, true))}
+      {past.map((e: any) => row(e, false))}
+    </div>
+  );
 }
 
 function Pill({ children, bg, fg, border }: { children: React.ReactNode; bg: string; fg: string; border: string }) {

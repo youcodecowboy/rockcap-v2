@@ -171,6 +171,7 @@ import type * as projects from "../projects.js";
 import type * as property from "../property.js";
 import type * as prospectStages from "../prospectStages.js";
 import type * as prospecting from "../prospecting.js";
+import type * as prospectingInbox from "../prospectingInbox.js";
 import type * as prospects from "../prospects.js";
 import type * as pushTokens from "../pushTokens.js";
 import type * as reminders from "../reminders.js";
@@ -361,6 +362,7 @@ declare const fullApi: ApiFromModules<{
   property: typeof property;
   prospectStages: typeof prospectStages;
   prospecting: typeof prospecting;
+  prospectingInbox: typeof prospectingInbox;
   prospects: typeof prospects;
   pushTokens: typeof pushTokens;
   reminders: typeof reminders;

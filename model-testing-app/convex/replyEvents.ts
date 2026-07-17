@@ -68,6 +68,28 @@ export const createInternal = internalMutation({
       ...args,
       processed: false,
     });
+    // Slim touchpoint mirror (2026-07-17) — client-linked inbound lands in
+    // the exchange ledger too, so the prospecting inbox/KPIs read ONE slim
+    // table for both directions instead of scanning fat reply rows (bodies
+    // blow the 16MiB query read limit). payloadRef = the replyEvents id;
+    // detail reads join back through it.
+    if (args.linkedClientId) {
+      await ctx.db.insert("touchpoints", {
+        provider: args.source === "gmail_push" ? ("gmail" as const) : ("hubspot" as const),
+        direction: "inbound" as const,
+        kind: "email" as const,
+        contactId: args.contactId,
+        participantEmails: args.fromEmail ? [args.fromEmail] : undefined,
+        relatedClientId: args.linkedClientId,
+        occurredAt: args.receivedAt,
+        payloadRef: String(replyEventId),
+        payloadType: "replyEvent",
+        subject: args.replySubject,
+        bodyExcerpt: (args.replyBodyText ?? "").slice(0, 300) || undefined,
+        threadId: args.gmailThreadId,
+        createdAt: new Date().toISOString(),
+      });
+    }
     // Knowledge feed — one-shot inbound-reply atomization (the action skips
     // rows without a linked client, body text, or a knowledge-enabled client).
     await ctx.scheduler.runAfter(
@@ -239,6 +261,42 @@ export const listMissingAttachmentsInternal = internalQuery({
           userId: r.userId,
           externalId: r.externalId,
           gmailApiId: r.gmailApiId,
+        })),
+      nextCursor: rows.length === limit ? rows[rows.length - 1].receivedAt : null,
+    };
+  },
+});
+
+// Slim projection of client-linked rows for the inbound-touchpoint backfill
+// (touchpoints.backfillInboundFromReplies). Cursor-paged small batches —
+// rows carry full bodies, so a big take() trips the 16MiB read limit.
+export const listLinkedSlimInternal = internalQuery({
+  args: {
+    beforeReceivedAt: v.optional(v.string()),
+    scanLimit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.scanLimit ?? 50, 100);
+    const rows = await ctx.db
+      .query("replyEvents")
+      .withIndex("by_received_at", (q) =>
+        args.beforeReceivedAt ? q.lt("receivedAt", args.beforeReceivedAt) : q,
+      )
+      .order("desc")
+      .take(limit);
+    return {
+      candidates: rows
+        .filter((r) => r.linkedClientId !== undefined)
+        .map((r) => ({
+          _id: r._id,
+          source: r.source,
+          receivedAt: r.receivedAt,
+          contactId: r.contactId,
+          linkedClientId: r.linkedClientId,
+          fromEmail: r.fromEmail,
+          replySubject: r.replySubject,
+          bodyExcerpt: (r.replyBodyText ?? "").slice(0, 300) || undefined,
+          gmailThreadId: r.gmailThreadId,
         })),
       nextCursor: rows.length === limit ? rows[rows.length - 1].receivedAt : null,
     };

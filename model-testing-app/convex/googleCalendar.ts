@@ -2,11 +2,68 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
+import { resolveEmailToContactClient } from "./contacts";
 
 // Google sends event status as a free string; the events schema declares a
 // literal union. Anything unrecognised collapses to "confirmed".
 function normalizeEventStatus(s?: string): "confirmed" | "tentative" | "cancelled" {
   return s === "tentative" || s === "cancelled" ? s : "confirmed";
+}
+
+// Attendee shape fix (2026-07-17). The sync callers pass {email, name,
+// status} but the events schema declares {email?, name?, responseStatus?}
+// with a literal union — writing `status` failed schema validation, so
+// EVERY event with attendees was silently dropped by the per-event
+// try/catch in syncForUser. Normalize into the schema shape here.
+type SchemaAttendee = {
+  email?: string;
+  name?: string;
+  responseStatus?: "needsAction" | "declined" | "tentative" | "accepted";
+};
+function normalizeAttendees(
+  attendees?: Array<{ email: string; name?: string; status?: string }>,
+): SchemaAttendee[] | undefined {
+  if (!attendees) return undefined;
+  return attendees.map((a) => ({
+    email: a.email || undefined,
+    name: a.name,
+    responseStatus:
+      a.status === "needsAction" ||
+      a.status === "declined" ||
+      a.status === "tentative" ||
+      a.status === "accepted"
+        ? a.status
+        : undefined,
+  }));
+}
+
+// Prospect attribution (2026-07-17): match external attendees against the
+// contacts book. Operators (any email on the users table) are excluded, so
+// internal-only meetings never link. Returns every matched contact plus the
+// primary client (first attendee that resolves to one) — the signal that
+// makes a calendar event COUNT for a prospect in KPIs and on the profile.
+async function matchAttendees(
+  ctx: any,
+  attendees: SchemaAttendee[] | undefined,
+): Promise<{ contactIds: any[]; clientId: any | undefined }> {
+  const contactIds: any[] = [];
+  let clientId: any | undefined;
+  if (!attendees || attendees.length === 0) return { contactIds, clientId };
+  const users = await ctx.db.query("users").collect();
+  const internalEmails = new Set(
+    users.map((u: any) => u.email?.toLowerCase()).filter(Boolean),
+  );
+  for (const a of attendees) {
+    const email = a.email?.trim().toLowerCase();
+    if (!email || internalEmails.has(email)) continue;
+    const resolved = await resolveEmailToContactClient(ctx, email);
+    if (!resolved) continue;
+    if (!contactIds.some((id) => String(id) === String(resolved.contactId))) {
+      contactIds.push(resolved.contactId);
+    }
+    if (!clientId && resolved.clientId) clientId = resolved.clientId;
+  }
+  return { contactIds, clientId };
 }
 
 // ── Auth helper ──────────────────────────────────────────────
@@ -230,11 +287,14 @@ export const syncGoogleEvent = mutation({
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
     const now = new Date().toISOString();
+    const attendees = normalizeAttendees(args.attendees);
+    const match = await matchAttendees(ctx, attendees);
     const existing = await ctx.db
       .query("events")
       .withIndex("by_google_event_id", (q: any) => q.eq("googleEventId", args.googleEventId))
       .first();
     if (existing) {
+      const matcherOwnsClient = !existing.clientId || existing.attendeeMatchedAt !== undefined;
       await ctx.db.patch(existing._id, {
         title: args.title,
         description: args.description,
@@ -243,7 +303,10 @@ export const syncGoogleEvent = mutation({
         endTime: args.endTime,
         allDay: args.allDay ?? false,
         status: normalizeEventStatus(args.status),
-        attendees: args.attendees,
+        attendees,
+        linkedContactIds: match.contactIds.length > 0 ? match.contactIds : undefined,
+        ...(matcherOwnsClient ? { clientId: match.clientId } : {}),
+        attendeeMatchedAt: now,
         syncStatus: "synced",
         lastGoogleSync: now,
         updatedAt: now,
@@ -258,7 +321,10 @@ export const syncGoogleEvent = mutation({
       endTime: args.endTime,
       allDay: args.allDay ?? false,
       status: normalizeEventStatus(args.status),
-      attendees: args.attendees,
+      attendees,
+      linkedContactIds: match.contactIds.length > 0 ? match.contactIds : undefined,
+      clientId: match.clientId,
+      attendeeMatchedAt: now,
       googleEventId: args.googleEventId,
       syncStatus: "synced",
       lastGoogleSync: now,
@@ -290,11 +356,16 @@ export const upsertGoogleEvent = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
+    const attendees = normalizeAttendees(args.attendees);
+    const match = await matchAttendees(ctx, attendees);
     const existing = await ctx.db
       .query("events")
       .withIndex("by_google_event_id", (q: any) => q.eq("googleEventId", args.googleEventId))
       .first();
     if (existing) {
+      // The matcher only owns clientId when it set it (attendeeMatchedAt
+      // present) or nothing was set — a manually-assigned client survives.
+      const matcherOwnsClient = !existing.clientId || existing.attendeeMatchedAt !== undefined;
       await ctx.db.patch(existing._id, {
         title: args.title,
         description: args.description,
@@ -303,7 +374,10 @@ export const upsertGoogleEvent = internalMutation({
         endTime: args.endTime,
         allDay: args.allDay ?? false,
         status: normalizeEventStatus(args.status),
-        attendees: args.attendees,
+        attendees,
+        linkedContactIds: match.contactIds.length > 0 ? match.contactIds : undefined,
+        ...(matcherOwnsClient ? { clientId: match.clientId } : {}),
+        attendeeMatchedAt: now,
         syncStatus: "synced",
         lastGoogleSync: now,
         updatedAt: now,
@@ -318,7 +392,10 @@ export const upsertGoogleEvent = internalMutation({
       endTime: args.endTime,
       allDay: args.allDay ?? false,
       status: normalizeEventStatus(args.status),
-      attendees: args.attendees,
+      attendees,
+      linkedContactIds: match.contactIds.length > 0 ? match.contactIds : undefined,
+      clientId: match.clientId,
+      attendeeMatchedAt: now,
       googleEventId: args.googleEventId,
       syncStatus: "synced",
       lastGoogleSync: now,
@@ -554,6 +631,56 @@ export const getChannelByUserIdInternal = internalQuery({
 // Internal update for the sync action — runs in cron/webhook contexts
 // where no Clerk session exists, so uses internalMutation rather than
 // mutation + identity check.
+// Force a full re-sync for every connected calendar: clearing syncTokens
+// makes the next syncForUser fall back to the 30-day full-window fetch,
+// which (post attendee-shape fix) re-upserts every event WITH attendees and
+// runs prospect matching. One-shot backfill lever:
+//   npx convex run googleCalendar:clearAllSyncTokensInternal
+export const clearAllSyncTokensInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // syncToken is a REQUIRED field on the channels schema, so clear to ""
+    // (syncForUser reads `channel?.syncToken || ""` — empty means full fetch).
+    const channels = await ctx.db.query("googleCalendarChannels").collect();
+    for (const ch of channels) {
+      await ctx.db.patch(ch._id, { syncToken: "" });
+    }
+    return { cleared: channels.length };
+  },
+});
+
+// Per-client calendar read — the prospect profile Calendar section + the
+// meetings side of prospecting KPIs. Events land here via the attendee
+// matcher (clientId stamped when an attendee resolves to the client's
+// contacts). Sorted by startTime descending; the UI splits upcoming/past.
+export const listByClient = query({
+  args: { clientId: v.id("clients"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    if (!(await getAuthenticatedUserOrNull(ctx))) return [];
+    const limit = Math.min(args.limit ?? 60, 200);
+    const rows = await ctx.db
+      .query("events")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    rows.sort((a: any, b: any) => (a.startTime < b.startTime ? 1 : -1));
+    return rows.slice(0, limit).map((e: any) => ({
+      _id: e._id,
+      title: e.title,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      allDay: e.allDay,
+      status: e.status,
+      location: e.location,
+      attendees: (e.attendees ?? []).map((a: any) => ({
+        email: a.email,
+        name: a.name,
+        responseStatus: a.responseStatus,
+      })),
+      linkedContactIds: e.linkedContactIds ?? [],
+    }));
+  },
+});
+
 export const updateChannelSyncToken = internalMutation({
   args: {
     channelId: v.string(),

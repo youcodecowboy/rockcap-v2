@@ -3,19 +3,28 @@ import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { collectAttachments } from "./gmailAttachments";
 
-// Gmail inbound ingest (polling).
+// Gmail inbound + outbound ingest (polling).
 //
 // The Pub/Sub push path (gmailWatch.ts) requires an operator-provisioned
-// Google Cloud topic. This module gets inbound mail flowing WITHOUT that
-// setup by polling on a cron — the gmail.modify OAuth scope already grants
-// read, so no re-consent is needed.
+// Google Cloud topic. This module gets mail flowing WITHOUT that setup by
+// polling on a cron — the gmail.modify OAuth scope already grants read, so
+// no re-consent is needed.
 //
 // Per tick: for each connected user, call Gmail's history.list since the
 // stored historyId watermark (seed with a recent messages.list on first
-// run), fetch each new INBOX message, and hand it to the SAME pipeline the
-// push/HubSpot paths use (replyEventProcessor → contact-match → cadence
-// cancel → classify → dispatch → approval). The replyEvents table is the
-// unified inbound feed the inbox UI reads.
+// run) and partition new messages by label:
+//   INBOX → the SAME pipeline the push/HubSpot paths use
+//     (replyEventProcessor → contact-match → cadence cancel → classify →
+//     dispatch → approval). The replyEvents table is the unified inbound
+//     feed the inbox UI reads.
+//   SENT  → outbound capture (2026-07-17): recipients are matched against
+//     contacts and a `touchpoints` row (provider gmail, direction outbound)
+//     is written — the same record an in-app approved send produces — so
+//     mail sent MANUALLY from Gmail is tracked without reconciliation.
+//     Dedupe rides touchpoints' (provider, payloadRef) index: in-app sends
+//     already stamp payloadRef with the Gmail message id, so the poller
+//     skips them. Sends matching NO contact are ignored (personal mail —
+//     touchpoints are org-visible, the private lane is /inbox only).
 //
 // Mirrors the cron-poll fallback pattern in googleCalendarSync.ts.
 
@@ -90,6 +99,21 @@ function getHeader(headers: any[], name: string): string | undefined {
   return h?.value;
 }
 
+// "a@x.com, Jane <b@y.com>" → ["a@x.com", "b@y.com"]. Display names with
+// commas are quoted per RFC, but a naive comma split only ever cuts through
+// a NAME, never an address — re-parsing each fragment for <addr> or a bare
+// email keeps every address intact.
+function parseRecipientList(value?: string): string[] {
+  if (!value) return [];
+  const out: string[] = [];
+  for (const part of value.split(",")) {
+    const m = part.match(/<([^>]+)>/);
+    const email = (m ? m[1] : part).trim().toLowerCase();
+    if (email.includes("@") && !out.includes(email)) out.push(email);
+  }
+  return out;
+}
+
 // "Jane Doe <jane@acme.com>" → { name: "Jane Doe", email: "jane@acme.com" }
 function parseFrom(value?: string): { name?: string; email?: string } {
   if (!value) return {};
@@ -156,10 +180,153 @@ function epochOrHeaderToIso(internalDate?: string, dateHeader?: string): string 
   return new Date().toISOString();
 }
 
+// ── Outbound (SENT) capture ──────────────────────────────────
+// Metadata-only fetch (headers, no body walk) — the touchpoint stores
+// subject + snippet, never full content. Dedupe by (provider=gmail,
+// payloadRef=gmail message id): in-app approved sends already wrote their
+// touchpoint with the same payloadRef, so only MANUAL Gmail sends create
+// rows here. Contact-unmatched sends are skipped (personal mail —
+// touchpoints are org-visible; the private lane is /inbox only).
+async function captureSentMessage(
+  ctx: { runQuery: (ref: any, args: any) => Promise<any>; runMutation: (ref: any, args: any) => Promise<any> },
+  accessToken: string,
+  connectedEmail: string | undefined,
+  userId: any,
+  id: string,
+): Promise<boolean> {
+  try {
+    const existing = await ctx.runQuery(
+      internal.touchpoints.findByProviderPayloadInternal,
+      { provider: "gmail", payloadRef: id },
+    );
+    if (existing) return false;
+    const r = await gmailGet(
+      accessToken,
+      `/messages/${id}?format=metadata&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
+    );
+    if (!r.ok) return false;
+    const msg = r.data;
+    const headers = msg?.payload?.headers ?? [];
+    const recipients = [
+      ...parseRecipientList(getHeader(headers, "To")),
+      ...parseRecipientList(getHeader(headers, "Cc")),
+    ].filter((e) => e !== connectedEmail?.toLowerCase());
+    if (recipients.length === 0) return false;
+
+    // First recipient that resolves to a contact wins as the primary;
+    // prefer one that also carries a client link.
+    let primary: { contactId: any; clientId?: any } | null = null;
+    for (const email of recipients) {
+      const resolved: any = await ctx.runQuery(
+        internal.contacts.resolveByEmailInternal,
+        { email },
+      );
+      if (!resolved) continue;
+      if (resolved.clientId) {
+        primary = resolved;
+        break;
+      }
+      if (!primary) primary = resolved;
+    }
+    if (!primary) return false; // no contact match → personal mail, not tracked
+
+    await ctx.runMutation(internal.touchpoints.internalCreate, {
+      provider: "gmail",
+      direction: "outbound",
+      kind: "email",
+      contactId: primary.contactId,
+      participantEmails: [connectedEmail, ...recipients].filter(
+        (e): e is string => Boolean(e),
+      ),
+      relatedClientId: primary.clientId,
+      occurredAt: epochOrHeaderToIso(msg?.internalDate, getHeader(headers, "Date")),
+      payloadRef: id,
+      payloadType: "gmail.message",
+      subject: getHeader(headers, "Subject"),
+      summary: "Sent from Gmail (captured by outbound poller)",
+      bodyExcerpt: (msg?.snippet ?? "").slice(0, 500),
+      threadId: msg?.threadId,
+      capturedBy: userId,
+    });
+    return true;
+  } catch (err) {
+    console.error(`[gmailInbound] sent-capture failed for ${id}:`, err);
+    return false;
+  }
+}
+
+// One-shot historical backfill: capture SENT mail from the last `days`
+// (default 45) for every connected user, through the same dedupe +
+// contact-match as the live poller — so the prospecting KPIs' outbound
+// counts don't start from zero. Idempotent (payloadRef dedupe). Run via:
+//   npx convex run gmailInbound:backfillSentMail '{"days":45}'
+export const backfillSentMail = internalAction({
+  args: { days: v.optional(v.number()), maxPerUser: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ users: number; scanned: number; captured: number }> => {
+    const days = Math.min(args.days ?? 45, 120);
+    const maxPerUser = Math.min(args.maxPerUser ?? 500, 1000);
+    const users: Array<{ userId: any }> = await ctx.runQuery(
+      internal.gmailTokens.listConnectedInternal,
+      {},
+    );
+    let scanned = 0;
+    let captured = 0;
+    for (const u of users) {
+      const token: any = await ctx.runQuery(internal.gmailTokens.getForSyncInternal, {
+        userId: u.userId,
+      });
+      if (!token || token.needsReconnect) continue;
+      let accessToken: string = token.accessToken;
+      const expiresMs = new Date(token.expiresAt).getTime();
+      if (Number.isNaN(expiresMs) || Date.now() > expiresMs - 60_000) {
+        try {
+          const refreshed = await refreshAccessToken(token.refreshToken);
+          accessToken = refreshed.access_token;
+          await ctx.runMutation(internal.gmailSend.writeRefreshedToken, {
+            userId: u.userId,
+            accessToken,
+            expiresAt: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+          });
+        } catch {
+          continue;
+        }
+      }
+      let pageToken: string | undefined;
+      let fetched = 0;
+      do {
+        const qs = new URLSearchParams({
+          q: `in:sent newer_than:${days}d`,
+          maxResults: "100",
+        });
+        if (pageToken) qs.set("pageToken", pageToken);
+        const r = await gmailGet(accessToken, `/messages?${qs.toString()}`);
+        if (!r.ok) break;
+        for (const m of r.data?.messages ?? []) {
+          if (!m?.id) continue;
+          scanned++;
+          fetched++;
+          if (await captureSentMessage(ctx, accessToken, token.connectedEmail, u.userId, m.id)) {
+            captured++;
+          }
+          if (fetched >= maxPerUser) break;
+        }
+        pageToken = r.data?.nextPageToken;
+      } while (pageToken && fetched < maxPerUser);
+    }
+    return { users: users.length, scanned, captured };
+  },
+});
+
 // ── Per-user poll ────────────────────────────────────────────
 export const pollUserInbound = internalAction({
   args: { userId: v.id("users") },
-  handler: async (ctx, args): Promise<{ status: string; processed: number }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ status: string; processed: number; sentCaptured?: number }> => {
     const token: any = await ctx.runQuery(
       internal.gmailTokens.getForSyncInternal,
       { userId: args.userId },
@@ -188,18 +355,20 @@ export const pollUserInbound = internalAction({
       }
     }
 
-    // Resolve the set of new message ids.
+    // Resolve the sets of new message ids, partitioned by direction.
     const messageIds: string[] = [];
+    const sentIds: string[] = [];
     let reseed = !token.historyId;
 
     if (token.historyId) {
       let pageToken: string | undefined;
       let pages = 0;
       do {
+        // No labelId filter — one history walk serves both directions;
+        // messages partition by their labels below.
         const qs = new URLSearchParams({
           startHistoryId: token.historyId,
           historyTypes: "messageAdded",
-          labelId: "INBOX",
         });
         if (pageToken) qs.set("pageToken", pageToken);
         const r = await gmailGet(accessToken, `/history?${qs.toString()}`);
@@ -216,13 +385,23 @@ export const pollUserInbound = internalAction({
             const msg = added?.message;
             const labels: string[] = msg?.labelIds ?? [];
             if (!msg?.id) continue;
-            if (labels.includes("SENT") || labels.includes("DRAFT")) continue;
+            if (labels.includes("DRAFT")) continue;
+            if (labels.includes("SENT")) {
+              if (!sentIds.includes(msg.id)) sentIds.push(msg.id);
+              continue;
+            }
+            if (!labels.includes("INBOX")) continue;
             if (!messageIds.includes(msg.id)) messageIds.push(msg.id);
           }
         }
         pageToken = r.data?.nextPageToken;
         pages++;
-      } while (pageToken && pages < 10 && messageIds.length < MAX_MESSAGES_PER_TICK);
+      } while (
+        pageToken &&
+        pages < 10 &&
+        messageIds.length < MAX_MESSAGES_PER_TICK &&
+        sentIds.length < MAX_MESSAGES_PER_TICK
+      );
     }
 
     if (reseed) {
@@ -234,6 +413,16 @@ export const pollUserInbound = internalAction({
       if (!r.ok) return { status: `seed_error_${r.status}`, processed: 0 };
       for (const m of r.data?.messages ?? []) {
         if (m?.id && !messageIds.includes(m.id)) messageIds.push(m.id);
+      }
+      const sentQs = new URLSearchParams({
+        q: "in:sent newer_than:2d",
+        maxResults: String(MAX_MESSAGES_PER_TICK),
+      });
+      const rs = await gmailGet(accessToken, `/messages?${sentQs.toString()}`);
+      if (rs.ok) {
+        for (const m of rs.data?.messages ?? []) {
+          if (m?.id && !sentIds.includes(m.id)) sentIds.push(m.id);
+        }
       }
     }
 
@@ -290,6 +479,14 @@ export const pollUserInbound = internalAction({
       }
     }
 
+    // ── Outbound (SENT) capture ─────────────────────────────────
+    let sentCaptured = 0;
+    for (const id of sentIds.slice(0, MAX_MESSAGES_PER_TICK)) {
+      if (await captureSentMessage(ctx, accessToken, token.connectedEmail, args.userId, id)) {
+        sentCaptured++;
+      }
+    }
+
     // Advance the watermark to the current mailbox historyId.
     const profile = await gmailGet(accessToken, `/profile`);
     if (profile.ok && profile.data?.historyId) {
@@ -299,7 +496,7 @@ export const pollUserInbound = internalAction({
       });
     }
 
-    return { status: "ok", processed };
+    return { status: "ok", processed, sentCaptured };
   },
 });
 

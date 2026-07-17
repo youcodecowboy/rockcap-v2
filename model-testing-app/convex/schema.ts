@@ -2112,6 +2112,16 @@ export default defineSchema({
     organizerId: v.optional(v.id("users")), // Event organizer (can be different from creator)
     clientId: v.optional(v.id("clients")),
     projectId: v.optional(v.id("projects")),
+    // Prospect attribution (2026-07-17). Calendar sync matches attendee
+    // emails against contacts (operators excluded via the users table) and
+    // stamps the matched contacts + the primary client here — this is what
+    // makes an external meeting COUNT for a prospect (profile Calendar
+    // section, prospecting KPIs). clientId above is the primary matched
+    // client when set by the matcher; attendeeMatchedAt marks that matching
+    // ran (backfill idempotence) and lets a manual clientId survive (the
+    // matcher never overwrites a clientId it didn't set itself).
+    linkedContactIds: v.optional(v.array(v.id("contacts"))),
+    attendeeMatchedAt: v.optional(v.string()),
     
     // Metadata
     reminders: v.optional(v.array(v.object({

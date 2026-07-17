@@ -11,9 +11,10 @@ import InboxSidebar, { type InboxFilter } from './components/InboxSidebar';
 import InboxItemList, { type InboxItem } from './components/InboxItemList';
 import InboxDetailPanel from './components/InboxDetailPanel';
 import GmailInboxView from './components/GmailInboxView';
+import ProspectsInboxView from './components/ProspectsInboxView';
 
 const VALID_FILTERS: InboxFilter[] = ['all', 'flags', 'notifications', 'mentions', 'resolved'];
-type InboxBox = 'app' | 'gmail';
+type InboxBox = 'app' | 'gmail' | 'prospects';
 
 function InboxPageContent() {
   const searchParams = useSearchParams();
@@ -25,7 +26,9 @@ function InboxPageContent() {
   const activeFilter: InboxFilter =
     filterParam && VALID_FILTERS.includes(filterParam) ? filterParam : 'all';
   const selectedId = searchParams.get('selected') || searchParams.get('flag') || null;
-  const activeBox: InboxBox = searchParams.get('box') === 'gmail' ? 'gmail' : 'app';
+  const boxParam = searchParams.get('box');
+  const activeBox: InboxBox =
+    boxParam === 'gmail' ? 'gmail' : boxParam === 'prospects' ? 'prospects' : 'app';
 
   // Query all filter counts in parallel
   const allItems = useQuery(api.flags.getInboxItemsEnriched, { filter: 'all' });
@@ -115,7 +118,7 @@ function InboxPageContent() {
         className="flex items-center gap-2 px-4 py-2"
         style={{ borderBottom: `1px solid ${colors.border.default}` }}
       >
-        {(['app', 'gmail'] as const).map((box) => {
+        {(['app', 'gmail', 'prospects'] as const).map((box) => {
           const isActive = activeBox === box;
           return (
             <button
@@ -133,14 +136,16 @@ function InboxPageContent() {
                 border: `1px solid ${isActive ? colors.border.default : 'transparent'}`,
               }}
             >
-              {box === 'app' ? 'App Inbox' : 'Gmail'}
+              {box === 'app' ? 'App Inbox' : box === 'gmail' ? 'Gmail' : 'Prospects'}
             </button>
           );
         })}
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {activeBox === 'gmail' ? (
+        {activeBox === 'prospects' ? (
+          <ProspectsInboxView />
+        ) : activeBox === 'gmail' ? (
           <GmailInboxView selectedId={selectedId} onSelect={handleSelect} />
         ) : (
           <>
