@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
-import { api } from "./_generated/api";
+import type { PaginationOptions } from "convex/server";
+import { mutation, query, internalQuery, internalMutation, internalAction } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { recordUploadIngestion } from "./knowledge/ingestUpload";
 import {
   buildDocumentName,
@@ -1752,20 +1753,85 @@ export const getPersonalDocumentCounts = query({
   },
 });
 
-// Query: Get document counts per client
+// Query: Get document counts per client — served from clientDocCountCache.
+// Document rows carry multi-MB payloads (textContent, extractedIntelligence),
+// so a live scan exceeds Convex's 16MB read limit; recomputeClientDocCounts
+// refreshes the cache on a cron.
 export const getClientDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const counts: Record<string, number> = {};
+    const cache = await ctx.db.query("clientDocCountCache").first();
+    return cache?.counts ?? {};
+  },
+});
 
-    for (const doc of allDocs) {
-      if (doc.clientId) {
+// One byte-capped page of the documents table, reduced to per-client counts.
+// maximumBytesRead keeps each execution safely under the 16MB limit even
+// when individual rows are multi-MB.
+export const countClientDocsPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    // maximumBytesRead is honoured by the runtime (and present in
+    // paginationOptsValidator) but missing from the public PaginationOptions
+    // type in convex 1.29 — hence the cast.
+    const page = await ctx.db.query("documents").paginate({
+      cursor: args.cursor,
+      numItems: 500,
+      maximumBytesRead: 4 * 1024 * 1024,
+    } as PaginationOptions);
+
+    const counts: Record<string, number> = {};
+    for (const doc of page.page) {
+      if (doc.clientId && doc.isDeleted !== true) {
         counts[doc.clientId] = (counts[doc.clientId] || 0) + 1;
       }
     }
 
-    return counts;
+    return {
+      counts,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const writeClientDocCountCache = internalMutation({
+  args: { counts: v.record(v.string(), v.number()) },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("clientDocCountCache").first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { counts: args.counts, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("clientDocCountCache", { counts: args.counts, updatedAt: Date.now() });
+    }
+  },
+});
+
+// Action: walk the documents table in byte-capped pages and refresh the
+// per-client count cache. Triggered by cron (see crons.ts).
+export const recomputeClientDocCounts = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const totals: Record<string, number> = {};
+    let cursor: string | null = null;
+
+    // Hard stop far above any plausible page count, in case of cursor bugs
+    for (let i = 0; i < 10_000; i++) {
+      const page: {
+        counts: Record<string, number>;
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.documents.countClientDocsPage, { cursor });
+
+      for (const [clientId, count] of Object.entries(page.counts)) {
+        totals[clientId] = (totals[clientId] || 0) + count;
+      }
+
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+
+    await ctx.runMutation(internal.documents.writeClientDocCountCache, { counts: totals });
   },
 });
 

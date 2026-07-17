@@ -495,6 +495,15 @@ export default defineSchema({
     .index("by_scope_owner", ["scope", "ownerId"])
     .index("by_duplicate_of", ["duplicateOf"]),
 
+  // Cached per-client document counts. Document rows carry multi-MB payloads
+  // (textContent, extractedIntelligence), so counting by scanning the table
+  // blows Convex's 16MB per-execution read limit — a cron recomputes counts
+  // in byte-capped pages and the UI reads this singleton row instead.
+  clientDocCountCache: defineTable({
+    counts: v.record(v.string(), v.number()),
+    updatedAt: v.number(),
+  }),
+
   // Document Notes - User annotations on specific documents (for document reader)
   documentNotes: defineTable({
     documentId: v.id("documents"),

@@ -193,4 +193,14 @@ crons.daily(
   internal.knowledge.integritySweep.nightlyIntegritySweep,
 );
 
+// Per-client document count cache refresh. Document rows carry multi-MB
+// payloads (textContent, extractedIntelligence), so live count queries blow
+// the 16MB read limit — this walks the table in byte-capped pages instead
+// and the /docs sidebar reads the cached result.
+crons.interval(
+  "client-doc-count-cache",
+  { minutes: 10 },
+  internal.documents.recomputeClientDocCounts,
+);
+
 export default crons;
