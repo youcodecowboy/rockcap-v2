@@ -5772,6 +5772,122 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── CaseStudy domain (Deal Book / hook rung 9) ───────────────
+  {
+    name: "caseStudy.deriveDrafts",
+    description:
+      "Scan completed projects with no case study and create draft entries with inferred sector/region/size band. Idempotent — skips projects already covered. Returns {created, skipped, totalCompleted}. Drafts are NOT hook-eligible until confirmed.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, _userId, _args) => {
+      const result = await ctx.runMutation(api.caseStudies.deriveDrafts, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "caseStudy.confirm",
+    description:
+      "Confirm/edit a case study draft. Sets sector (canonical), optional dealType/region/sizeBand/headline/referenceable, and marks it confirmed. If headline omitted, an anonymised one is generated (sector + region). Only confirmed + referenceable entries are usable in hooks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "caseStudies id" },
+        sector: {
+          type: "string",
+          description:
+            "Canonical sector: residential | btr_rental | student_pbsa | co_living | mixed_use | commercial | industrial_logistics | hotel_leisure",
+        },
+        dealType: { type: "string" },
+        region: { type: "string" },
+        sizeBand: { type: "string" },
+        headline: { type: "string", description: "Anonymised one-liner; leave blank to auto-generate" },
+        referenceable: { type: "boolean", description: "Whether usable in a cold hook" },
+      },
+      required: ["id", "sector"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.caseStudies.confirm, {
+        id: args.id,
+        sector: args.sector,
+        dealType: args.dealType,
+        region: args.region,
+        sizeBand: args.sizeBand,
+        headline: args.headline,
+        referenceable: args.referenceable,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "caseStudy.matchForProspect",
+    description:
+      "Find anonymised RockCap track-record material for hook-ladder rung 9. Returns ONLY confirmed + referenceable case studies in the given sector (region-preferred if supplied), projected to {sector, region, sizeBand, dealType, headline} — never a borrower/project name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sector: { type: "string", description: "Canonical sector (see caseStudy.confirm)" },
+        region: { type: "string", description: "Optional; prefers same-region matches" },
+      },
+      required: ["sector"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.caseStudies.matchForProspect, {
+        sector: args.sector,
+        region: args.region,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "caseStudy.list",
+    description:
+      "List case studies (joined with their backing project) for review/ops. Optional filters: curationStatus (draft|confirmed), sector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        curationStatus: { type: "string", enum: ["draft", "confirmed"] },
+        sector: { type: "string" },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.caseStudies.list, {
+        curationStatus: args.curationStatus,
+        sector: args.sector,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "caseStudy.setReferenceable",
+    description: "Toggle whether a case study is eligible for use in cold hooks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        referenceable: { type: "boolean" },
+      },
+      required: ["id", "referenceable"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(api.caseStudies.setReferenceable, {
+        id: args.id,
+        referenceable: args.referenceable,
+      });
+      return asText(result);
+    },
+  },
+  // ── DealBook domain (portfolio stats) ────────────────────────
+  {
+    name: "dealBook.stats",
+    description:
+      "Portfolio aggregates over projects for the Deal Book: open {count,value}, all-time closed {count,value}, lost {count}, and closed-deal counts in the last 30/90/180/365 days.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, _userId, _args) => {
+      const result = await ctx.runQuery(api.dealBook.stats, {});
+      return asText(result);
+    },
+  },
+
   // ── Meta / introspection ─────────────────────────────────────
   // Self-describing catalogue. The skills repo lives separately from this app,
   // so skill-forge calls this at the start of each session to refresh its

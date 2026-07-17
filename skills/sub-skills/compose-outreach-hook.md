@@ -50,6 +50,10 @@ Surface-only. This sub-skill never sends. The hook lands in a drafted touch for 
 
 5. **Compose and expose.** Write the hook sentence. Set `evidence`, `confidence`, and `needsConfirmation`. Return the `HookChoice` for the caller to place in the draft and show to the operator.
 
+### Rung 9 — sub-sector match (Deal Book)
+
+After computing the prospect's sector (from scheme/charge evidence) and region, call `caseStudy.matchForProspect({ sector, region })`. If it returns one or more entries, surface the top entry's `headline` as a candidate hook for operator review — e.g. *"we've arranged funding on a couple of BTR/rental schemes in the North West"*. Never emit a borrower/prospect-side name. If it returns nothing, fall through to the next-best honest rung (7/8). This rung is anonymised by construction; the match payload carries no client names.
+
 ## Style rules
 
 - One short sentence. The hook is a single clause after "wanted to reach out, ".

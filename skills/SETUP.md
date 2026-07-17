@@ -15,10 +15,10 @@ How to run the RockCap skills tree locally with Claude Code, point it at the MCP
 The skills tree lives in the `skills/` directory of `rockcap-v2`. While the skills are still in the monorepo, clone the whole thing:
 
 ```bash
-git clone git@github.com:youcodecowboy/rockcap-v2.git ~/rockcap-v2
+git clone git@github.com:youcodecowboy/RockCap-MCP.git ~/RockCap-MCP
 ```
 
-When the skills tree splits into its own repository (per `docs/BACKLOG.md` BL-8.5), you will clone that separately. Until then, the path you care about is `~/rockcap-v2/skills/`.
+When the skills tree splits into its own repository (per `docs/BACKLOG.md` BL-8.5), you will clone that separately. Until then, the path you care about is `~/RockCap-MCP/`.
 
 ### 2. Get your MCP token
 
@@ -42,14 +42,17 @@ This repository already ships a project-scoped `.mcp.json` at the repo root, so 
       "type": "http",
       "url": "https://incredible-kudu-562.convex.site/mcp",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_TOKEN_HERE"
+        "Authorization": "Bearer ${ROCKCAP_MCP_TOKEN:-<shared team token>}"
       }
     }
   }
 }
 ```
 
-The committed file carries a shared team token, so the integration works out of the box. To use your own per-user token instead (recommended, so usage and revocation are scoped to you), replace the `Authorization` bearer with the token you minted in step 2: edit the repo's `.mcp.json` locally, or add the same server block to your user-level Claude Code config so your token is not committed.
+The committed file falls back to a shared team token, so the integration works out of the box with no configuration. To use your own per-user token instead (recommended, so usage and revocation are scoped to you), set the `ROCKCAP_MCP_TOKEN` environment variable to the token you minted in step 2 — Claude Code expands `${VAR:-default}` in `.mcp.json` at session start, so your token overrides the shared one whenever the variable is set.
+
+- **Laptop:** export it from your shell profile (`export ROCKCAP_MCP_TOKEN=rcp_...` in `~/.zshrc`).
+- **Claude Code cloud environment:** add `ROCKCAP_MCP_TOKEN` to the environment variables in the environment's settings. Nothing else is needed; the committed `.mcp.json` picks it up on boot.
 
 Note the endpoint is on the `.convex.site` domain, not `.convex.cloud`. Convex serves custom HTTP actions (like `/mcp`) from `.convex.site`; the reactive query/mutation API lives on `.convex.cloud`.
 
@@ -59,7 +62,7 @@ Claude Code reads skills from a configured path. Add the local skills location t
 
 ```json
 {
-  "skillsPath": "~/rockcap-v2/skills/skills"
+  "skillsPath": "~/RockCap-MCP/skills"
 }
 ```
 
@@ -104,7 +107,7 @@ When the skills repo splits (BL-8.5), the pull command changes to whatever the n
 - **Tool not found**: the MCP server may be deploying. Wait 60 seconds and retry. If persistent, check the deployment URL.
 - **Skill not loading**: confirm the path in `skillsPath` is absolute and the directory contains the skill subdirectory (`prospect-intel/SKILL.md` etc.).
 - **Approvals queue not updating**: the page is real-time via Convex live queries; if it sticks, refresh the page. If the underlying mutation is failing, check `/approvals` for an `execution_failed` row with the error.
-- **Outputs not respecting voice rules**: re-read `~/rockcap-v2/skills/CONVENTIONS.md` and confirm the skill's SKILL.md links to it. If you find a skill that drifts from the rules, raise it on the team channel.
+- **Outputs not respecting voice rules**: re-read `~/RockCap-MCP/CONVENTIONS.md` and confirm the skill's SKILL.md links to it. If you find a skill that drifts from the rules, raise it on the team channel.
 
 ## What is live, and what is still gated
 
@@ -112,7 +115,7 @@ This list is current as of 2026-06-01.
 
 **Live and working end to end:**
 
-- **MCP server** (BL-5.1): served from Convex HTTP actions at `https://incredible-kudu-562.convex.site/mcp`. 123 tools across 24 domains; see `skills/CATALOGUE.md` for the full list. Verify with the canary in step 5.
+- **MCP server** (BL-5.1): served from Convex HTTP actions at `https://incredible-kudu-562.convex.site/mcp`. 135 tools across 27 domains; see `skills/CATALOGUE.md` for the full list. Verify with the canary in step 5.
 - **Per-user MCP token issuance** (BL-5.9): the `/settings/mcp-token` page mints, rotates, and revokes tokens. Tokens are stored only as a hash; auth is validated per request against the per-user token table.
 - **Operational skills**: 9 of 22 skills are v2-hardened and executable against the live tool surface (`prospect-intel`, `outreach-draft`, `client-context-capture`, `qualify-and-draft`, `meeting-prep`, `meeting-capture`, `lender-intel`, `deal-intake`, `client-decision-capture`). `cadence-fire` is event-driven substrate, `document-author` is docgen substrate (v1), and `skill-forge` is the meta skill for editing skills (v1); the remaining 8 are skeletons. See `skills/skills/README.md` for the full maturity table.
 

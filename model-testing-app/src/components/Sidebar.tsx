@@ -7,6 +7,7 @@ import { useConvexAuth, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import {
   Archive,
+  BookOpen,
   Building,
   UserSearch,
   File,
@@ -66,6 +67,7 @@ export default function Sidebar() {
     { href: '/activity', label: 'Activity', icon: Activity },
     { href: '/filing', label: 'Upload & File', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },
+    { href: '/deal-book', label: 'Deal Book', icon: BookOpen },
     { href: '/prospects', label: 'Prospects', icon: UserSearch },
     { href: '/lenders', label: 'Lenders', icon: Landmark },
     { href: '/rolodex', label: 'Rolodex', icon: ContactRound },

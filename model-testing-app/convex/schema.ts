@@ -1420,6 +1420,33 @@ export default defineSchema({
     .index("by_entryType", ["entryType"])
     .index("by_sourceType", ["sourceType"]),
 
+  // Deal Book / case-study index — 1:1 with a completed project. Powers
+  // hook-ladder rung 9 (anonymised sub-sector match). See
+  // docs/superpowers/specs/2026-06-10-deal-book-case-study-index-design.md
+  caseStudies: defineTable({
+    projectId: v.id("projects"),
+    curationStatus: v.union(v.literal("draft"), v.literal("confirmed")),
+    sector: v.string(), // canonical value from convex/lib/dealBook DEAL_SECTORS ("" until confirmed)
+    dealType: v.string(), // e.g. "development finance", "bridge" ("" until set)
+    region: v.string(),
+    sizeBand: v.string(), // from sizeBandFromLoanAmount
+    headline: v.string(), // anonymised one-liner; "" until confirmed
+    referenceable: v.boolean(), // hard gate for hook eligibility
+    confirmedBy: v.optional(v.id("users")),
+    confirmedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    // Soft delete
+    isDeleted: v.optional(v.boolean()),
+    deletedAt: v.optional(v.string()),
+    deletedBy: v.optional(v.id("users")),
+    deletedReason: v.optional(v.string()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_curationStatus", ["curationStatus"])
+    .index("by_sector", ["sector"])
+    .index("by_referenceable", ["referenceable"]),
+
   // Notes - user-created notes
   notes: defineTable({
     title: v.string(),
