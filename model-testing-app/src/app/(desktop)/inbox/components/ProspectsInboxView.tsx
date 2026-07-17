@@ -82,6 +82,21 @@ export default function ProspectsInboxView() {
             </span>
           </div>
         ))}
+        {kpis?.byOperator && Object.keys(kpis.byOperator).length > 0 && (
+          <div className="w-full flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: colors.text.muted }}>
+            {Object.entries(kpis.byOperator as Record<string, any>).map(([name, b]) => (
+              <span key={name}>
+                <span style={{ color: colors.text.secondary, fontWeight: 600 }}>
+                  {name.split(' ')[0]}
+                </span>
+                : {b.outboundSent} sent · {b.inboundReceived} received
+                {b.meetingsHeld + b.meetingsUpcoming > 0
+                  ? ` · ${b.meetingsHeld + b.meetingsUpcoming} mtgs`
+                  : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Filters: stage chips + direction */}
@@ -180,6 +195,24 @@ export default function ProspectsInboxView() {
                 {row.contactName && (
                   <span className="text-xs truncate" style={{ color: colors.text.muted }}>
                     {row.kind === 'inbound' ? 'from' : 'to'} {row.contactName}
+                  </span>
+                )}
+                {row.operatorName && (
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[10px] flex-shrink-0"
+                    title={
+                      row.kind === 'inbound'
+                        ? `Received in ${row.operatorName}'s inbox`
+                        : `Sent by ${row.operatorName}`
+                    }
+                    style={{
+                      color: colors.accent.blue,
+                      background: `${colors.accent.blue}12`,
+                      border: `1px solid ${colors.accent.blue}30`,
+                    }}
+                  >
+                    {row.kind === 'inbound' ? '→ ' : 'by '}
+                    {row.operatorName.split(' ')[0]}
                   </span>
                 )}
                 <span className="ml-auto flex items-center gap-1.5 text-xs flex-shrink-0" style={{ color: colors.text.muted }}>

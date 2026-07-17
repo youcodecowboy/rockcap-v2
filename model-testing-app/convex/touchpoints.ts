@@ -128,6 +128,14 @@ export const backfillInboundFromReplies = internalAction({
           { provider, payloadRef: String(r._id) },
         );
         if (existing) {
+          // Idempotent pass may still need to stamp operator attribution on
+          // rows created before capturedBy existed on the mirror.
+          if (!existing.capturedBy && r.userId) {
+            await ctx.runMutation(internal.touchpoints.patchCapturedByInternal, {
+              touchpointId: existing._id,
+              capturedBy: r.userId,
+            });
+          }
           skipped++;
           continue;
         }
@@ -144,6 +152,7 @@ export const backfillInboundFromReplies = internalAction({
           subject: r.replySubject,
           bodyExcerpt: r.bodyExcerpt,
           threadId: r.gmailThreadId,
+          capturedBy: r.userId,
         });
         created++;
       }
@@ -151,6 +160,14 @@ export const backfillInboundFromReplies = internalAction({
       cursor = batch.nextCursor;
     }
     return { scanned, created, skipped };
+  },
+});
+
+export const patchCapturedByInternal = internalMutation({
+  args: { touchpointId: v.id("touchpoints"), capturedBy: v.id("users") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.touchpointId, { capturedBy: args.capturedBy });
+    return { ok: true };
   },
 });
 

@@ -35,6 +35,11 @@ export type ProspectingInboxRow = {
   contactId?: string;
   contactName?: string;
   counterpartyEmail?: string;
+  // Operator attribution: whose mailbox — outbound "sent by X", inbound
+  // "received in X's inbox". Multiple operators prospect in parallel, so
+  // the org-wide feed must say who each exchange belongs to.
+  operatorName?: string;
+  operatorEmail?: string;
   replyEventId?: string;
   touchpointId: string;
   classifiedIntent?: string;
@@ -107,8 +112,9 @@ export const list = query({
     const page = filtered.slice(0, limit);
 
     // Per-row enrichment for the PAGE only: reply detail via payloadRef,
-    // contact names. Bounded reads (≤limit fat rows).
+    // contact + operator names. Bounded reads (≤limit fat rows).
     const contactNames = new Map<string, string>();
+    const operators = new Map<string, { name?: string; email?: string }>();
     const rows: ProspectingInboxRow[] = [];
     for (const t of page) {
       const m = meta.get(String(t.relatedClientId))!;
@@ -143,6 +149,16 @@ export const list = query({
         contactNames.set(row.contactId, (c as any)?.name ?? "");
       }
       if (row.contactId) row.contactName = contactNames.get(row.contactId) || undefined;
+      if (t.capturedBy) {
+        const key = String(t.capturedBy);
+        if (!operators.has(key)) {
+          const u = await ctx.db.get(t.capturedBy);
+          operators.set(key, { name: (u as any)?.name, email: (u as any)?.email });
+        }
+        const op = operators.get(key);
+        row.operatorName = op?.name ?? op?.email;
+        row.operatorEmail = op?.email;
+      }
       rows.push(row);
     }
 
@@ -180,8 +196,8 @@ export const kpis = query({
       meetingsUpcoming: 0,
     });
 
-    // Collect raw (clientId, field) increments, then join clients once.
-    const incs: Array<{ clientId: string; field: keyof Bucket }> = [];
+    // Collect raw (clientId, operator, field) increments, then join once.
+    const incs: Array<{ clientId: string; field: keyof Bucket; operatorId?: string }> = [];
     const touchedProspects = new Set<string>();
     const repliedProspects = new Set<string>();
 
@@ -196,10 +212,11 @@ export const kpis = query({
       )
       .collect();
     for (const t of tps) {
+      const operatorId = t.capturedBy ? String(t.capturedBy) : undefined;
       if (t.direction === "outbound") {
-        incs.push({ clientId: String(t.relatedClientId), field: "outboundSent" });
+        incs.push({ clientId: String(t.relatedClientId), field: "outboundSent", operatorId });
       } else if (t.direction === "inbound") {
-        incs.push({ clientId: String(t.relatedClientId), field: "inboundReceived" });
+        incs.push({ clientId: String(t.relatedClientId), field: "inboundReceived", operatorId });
       }
     }
 
@@ -220,12 +237,21 @@ export const kpis = query({
       incs.push({
         clientId: String(e.clientId),
         field: e.startTime <= nowIso ? "meetingsHeld" : "meetingsUpcoming",
+        operatorId: e.createdBy ? String(e.createdBy) : undefined,
       });
+    }
+
+    // Operator display names (small team — direct gets).
+    const operatorNames = new Map<string, string>();
+    for (const id of new Set(incs.map((i) => i.operatorId).filter(Boolean) as string[])) {
+      const u = await ctx.db.get(id as Id<"users">);
+      operatorNames.set(id, (u as any)?.name ?? (u as any)?.email ?? "unknown");
     }
 
     const meta = await loadClientMeta(ctx, new Set(incs.map((i) => i.clientId)));
     const totals = emptyBucket();
     const byStage: Record<string, Bucket> = {};
+    const byOperator: Record<string, Bucket> = {};
     for (const inc of incs) {
       const m = meta.get(inc.clientId);
       if (!m) continue;
@@ -233,6 +259,11 @@ export const kpis = query({
       const stage = m.pipelineStage ?? "unstaged";
       byStage[stage] = byStage[stage] ?? emptyBucket();
       byStage[stage][inc.field]++;
+      const operator = inc.operatorId
+        ? operatorNames.get(inc.operatorId) ?? "unknown"
+        : "unattributed";
+      byOperator[operator] = byOperator[operator] ?? emptyBucket();
+      byOperator[operator][inc.field]++;
       totals[inc.field]++;
       if (inc.field === "outboundSent") touchedProspects.add(inc.clientId);
       if (inc.field === "inboundReceived") repliedProspects.add(inc.clientId);
@@ -246,6 +277,7 @@ export const kpis = query({
         uniqueProspectsReplied: repliedProspects.size,
       },
       byStage,
+      byOperator,
     };
   },
 });

@@ -87,6 +87,9 @@ export const createInternal = internalMutation({
         subject: args.replySubject,
         bodyExcerpt: (args.replyBodyText ?? "").slice(0, 300) || undefined,
         threadId: args.gmailThreadId,
+        // Mailbox owner — operator attribution in the prospecting inbox
+        // ("received in Rayn's inbox" vs Alex's).
+        capturedBy: args.userId,
         createdAt: new Date().toISOString(),
       });
     }
@@ -297,6 +300,7 @@ export const listLinkedSlimInternal = internalQuery({
           replySubject: r.replySubject,
           bodyExcerpt: (r.replyBodyText ?? "").slice(0, 300) || undefined,
           gmailThreadId: r.gmailThreadId,
+          userId: r.userId,
         })),
       nextCursor: rows.length === limit ? rows[rows.length - 1].receivedAt : null,
     };
