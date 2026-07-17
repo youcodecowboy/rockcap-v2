@@ -751,7 +751,16 @@ async function enrichInboxRow(
 }
 
 export const listInboundPaginated = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    paginationOpts: paginationOptsValidator,
+    // 2026-07-17 filters. linked: true = only client-linked mail, false =
+    // only unlinked; omit for all. intent: one classifier value.
+    // hasAttachments: rows whose attachment metadata is stamped non-empty
+    // (the client hides stamped-empty stragglers).
+    linked: v.optional(v.boolean()),
+    intent: v.optional(v.string()),
+    hasAttachments: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     // Resolve the viewer. The inbox is scoped to the operator's own Gmail
     // account — never return another user's mail. Unauthenticated or unknown
@@ -773,6 +782,15 @@ export const listInboundPaginated = query({
         q.eq("source", "gmail_push").eq("userId", user._id),
       )
       .order("desc")
+      .filter((q) => {
+        const conds = [];
+        if (args.linked === true) conds.push(q.neq(q.field("linkedClientId"), undefined));
+        if (args.linked === false) conds.push(q.eq(q.field("linkedClientId"), undefined));
+        if (args.intent) conds.push(q.eq(q.field("classifiedIntent"), args.intent));
+        if (args.hasAttachments) conds.push(q.neq(q.field("attachments"), undefined));
+        if (conds.length === 0) return q.eq(q.field("source"), "gmail_push");
+        return conds.length === 1 ? conds[0] : q.and(...conds);
+      })
       .paginate(args.paginationOpts);
     const page = await Promise.all(
       result.page.map((row) => enrichInboxRow(ctx, row)),

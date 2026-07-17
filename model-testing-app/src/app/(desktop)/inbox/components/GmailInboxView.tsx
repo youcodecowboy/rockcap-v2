@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { usePaginatedQuery, useMutation } from 'convex/react';
+import { usePaginatedQuery, useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 import { useColors } from '@/lib/useColors';
 import { Button, EmptyState, SkeletonText, StatusPill } from '@/components/layouts';
@@ -43,22 +43,89 @@ interface GmailInboxViewProps {
   onSelect: (id: string) => void;
 }
 
+const INTENT_FILTERS: Array<{ key: string; label: string }> = [
+  { key: 'book_meeting', label: 'Wants meeting' },
+  { key: 'positive', label: 'Positive' },
+  { key: 'info_question', label: 'Question' },
+  { key: 'not_interested', label: 'Not interested' },
+];
+
 export default function GmailInboxView({ selectedId, onSelect }: GmailInboxViewProps) {
   const colors = useColors();
   const router = useRouter();
-  const { results: emails, status, loadMore } = usePaginatedQuery(
+  const [linked, setLinked] = useState<boolean | undefined>(undefined);
+  const [intent, setIntent] = useState<string | undefined>(undefined);
+  const [attachmentsOnly, setAttachmentsOnly] = useState(false);
+  const { results: rawEmails, status, loadMore } = usePaginatedQuery(
     api.replyEvents.listInboundPaginated,
-    {},
+    { linked, intent, hasAttachments: attachmentsOnly || undefined },
     { initialNumItems: 25 },
   );
+  // Server filters on attachment-metadata presence; hide stamped-empty rows.
+  const emails = useMemo(
+    () =>
+      attachmentsOnly
+        ? rawEmails.filter((e) => realAttachments(e.attachments).length > 0)
+        : rawEmails,
+    [rawEmails, attachmentsOnly],
+  );
+  const pollStatus = useQuery(api.prospectingInbox.pollStatus, {});
+  const freshest = useMemo(() => {
+    const ok = (pollStatus ?? []).filter((p: any) => !p.needsReconnect && p.lastSyncAt);
+    return ok.length > 0 ? ok.map((p: any) => p.lastSyncAt).sort().reverse()[0] : null;
+  }, [pollStatus]);
 
   const selected = useMemo(
     () => emails.find((e) => e._id === selectedId) ?? null,
     [emails, selectedId],
   );
 
+  const chip = (isActive: boolean) => ({
+    color: isActive ? colors.text.primary : colors.text.muted,
+    background: isActive ? colors.bg.base : 'transparent',
+    border: `1px solid ${isActive ? colors.border.default : colors.border.light}`,
+  });
+
   return (
-    <div className="flex h-full w-full">
+    <div className="flex flex-col h-full w-full">
+      {/* Poll freshness + filters */}
+      <div
+        className="flex flex-wrap items-center gap-1.5 px-4 py-2"
+        style={{ background: colors.bg.light, borderBottom: `1px solid ${colors.border.default}` }}
+      >
+        <span className="text-xs mr-2" style={{ color: colors.text.muted }}>
+          {freshest ? `last polled ${timeAgo(freshest)} ago` : 'no healthy connection'} · 5-min cron
+        </span>
+        {[
+          { key: 'all', label: 'All', on: linked === undefined, set: () => setLinked(undefined) },
+          { key: 'linked', label: 'Linked to client', on: linked === true, set: () => setLinked(true) },
+          { key: 'unlinked', label: 'Unlinked', on: linked === false, set: () => setLinked(false) },
+        ].map((f) => (
+          <button key={f.key} onClick={f.set} className="px-2.5 py-1 rounded-full text-xs" style={chip(f.on)}>
+            {f.label}
+          </button>
+        ))}
+        <button
+          onClick={() => setAttachmentsOnly((s) => !s)}
+          className="px-2.5 py-1 rounded-full text-xs inline-flex items-center gap-1"
+          style={chip(attachmentsOnly)}
+        >
+          <Paperclip size={11} /> Attachments
+        </button>
+        <span style={{ color: colors.border.default }}>|</span>
+        {INTENT_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setIntent(intent === f.key ? undefined : f.key)}
+            className="px-2.5 py-1 rounded-full text-xs"
+            style={chip(intent === f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-1 min-h-0 w-full">
       {/* List pane */}
       <div
         className="w-[380px] flex-shrink-0 flex flex-col h-full overflow-y-auto"
@@ -102,8 +169,37 @@ export default function GmailInboxView({ selectedId, onSelect }: GmailInboxViewP
                   <span className="truncate text-xs" style={{ color: colors.text.secondary }}>
                     {email.replySubject || '(no subject)'}
                   </span>
-                  <span className="truncate text-xs" style={{ color: colors.text.muted }}>
-                    {email.replyBodyText?.slice(0, 90) || ''}
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {email.clientName && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] flex-shrink-0"
+                        style={{
+                          color: colors.accent.blue,
+                          background: `${colors.accent.blue}12`,
+                          border: `1px solid ${colors.accent.blue}30`,
+                        }}
+                      >
+                        {email.clientName}
+                      </span>
+                    )}
+                    {intentTone(email.classifiedIntent) && (
+                      <span
+                        className="text-[10px] flex-shrink-0"
+                        style={{
+                          color:
+                            intentTone(email.classifiedIntent)!.key === 'muted'
+                              ? colors.text.muted
+                              : colors.accent[
+                                  intentTone(email.classifiedIntent)!.key as 'green' | 'red' | 'orange' | 'blue'
+                                ],
+                        }}
+                      >
+                        {intentTone(email.classifiedIntent)!.label}
+                      </span>
+                    )}
+                    <span className="truncate text-xs" style={{ color: colors.text.muted }}>
+                      {email.replyBodyText?.slice(0, 90) || ''}
+                    </span>
                   </span>
                 </button>
               );
@@ -136,6 +232,7 @@ export default function GmailInboxView({ selectedId, onSelect }: GmailInboxViewP
             />
           </div>
         )}
+      </div>
       </div>
     </div>
   );
