@@ -42,6 +42,7 @@ export type ProspectingInboxRow = {
   operatorEmail?: string;
   replyEventId?: string;
   touchpointId: string;
+  threadId?: string;
   classifiedIntent?: string;
   resolvedAt?: string;
   hasAttachments?: boolean;
@@ -133,6 +134,7 @@ export const list = query({
             ? (t.participantEmails ?? [])[0]
             : (t.participantEmails ?? [])[1],
         touchpointId: String(t._id),
+        threadId: t.threadId,
       };
       if (t.payloadType === "replyEvent" && t.payloadRef) {
         row.replyEventId = t.payloadRef;
@@ -163,6 +165,47 @@ export const list = query({
     }
 
     return { rows, windowDays };
+  },
+});
+
+// Full email detail for the drawer's reading pane. Client-linked rows only
+// (the org-visibility rule — an unlinked reply is private inbox mail and
+// never reachable from the prospecting surfaces).
+export const detail = query({
+  args: { replyEventId: v.id("replyEvents") },
+  handler: async (ctx, args) => {
+    const r: any = await ctx.db.get(args.replyEventId);
+    if (!r || !r.linkedClientId) return null;
+    return {
+      replyEventId: String(r._id),
+      subject: r.replySubject,
+      fromEmail: r.fromEmail,
+      fromName: r.fromName,
+      receivedAt: r.receivedAt,
+      bodyHtml: r.replyBodyHtml,
+      bodyText: r.replyBodyText,
+      classifiedIntent: r.classifiedIntent,
+      classifiedConfidence: r.classifiedConfidence,
+      resolvedAt: r.resolvedAt,
+      attachments: r.attachments ?? [],
+      rawMessageRef: r.rawMessageRef,
+      linkedClientId: String(r.linkedClientId),
+    };
+  },
+});
+
+// Poll freshness for the drawer header: per connected mailbox, when the
+// Gmail poller last completed (lastSyncAt advances every 5-min tick) and
+// whether the connection needs re-auth. Tokens never leave the server.
+export const pollStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("googleGmailTokens").collect();
+    return rows.map((r: any) => ({
+      email: r.connectedEmail,
+      lastSyncAt: r.lastSyncAt,
+      needsReconnect: r.needsReconnect === true,
+    }));
   },
 });
 
