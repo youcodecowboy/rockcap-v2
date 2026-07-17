@@ -5,7 +5,7 @@ description: Classifies uploaded documents into file types and categories for a 
 
 # Document Classification Skill
 
-You are classifying documents for a real estate financing company (RockCap). Each document must be classified into a file type, category, and target folder.
+You are classifying documents for a real estate financing company (RockCap). Each document must be classified into a file type, category, target folder, and two content-derived axes: **producer** (who authored it) and **audience** (who it is for). RockCap is a debt broker: clients are property developers, and RockCap canvasses external lenders on their behalf — most documents are authored by one of five producer classes and the folder taxonomy is organised around the deal lifecycle (modelling → terms received → terms analysis → comps → credit → post completion).
 
 ## Reference Library System
 
@@ -33,22 +33,64 @@ For each document in the batch:
 
 1. **Extract intelligence fields** — read the document carefully, extract ALL structured data points using the field paths below. This is your detailed reading step.
 2. **Classify the document type** — using the extracted fields + Reference Library, identify the exact `fileType`
-3. **Apply identification rules** — check the ordered rules from strongest to weakest
-4. **Use disambiguation** — when two types seem similar, apply "this NOT that" rules
-5. **Assign category** matching the reference's category exactly
-6. **Suggest folder** based on the reference's filing target
-7. **Match to checklist items** if any missing items align with this document
-8. **Summarize** the document informed by classification and extracted intelligence
+3. **Detect the producer and audience axes** — from CONTENT, using the axis rules below
+4. **Apply identification rules** — check the ordered rules from strongest to weakest
+5. **Use disambiguation** — when two types seem similar, apply "this NOT that" rules
+6. **Assign category** matching the reference's category exactly
+7. **Suggest folder** based on the reference's target folder key (the axes decide between sibling subfolders — e.g. client vs RockCap appraisals)
+8. **Match to checklist items** if any missing items align with this document
+9. **Summarize** the document informed by classification and extracted intelligence
+
+## The Two Classification Axes (REQUIRED on every result)
+
+Every document carries two content-derived axes in the output. Folder placement is a deterministic function of (fileType, producer, audience) — get the axes right and filing follows. Detect both from content, **never from file metadata** (the Drive owner is always a rockcap.uk account, even for client-produced and council-produced files — RockCap uploaded them).
+
+### Axis 1 — `producer` (who authored the document)
+
+- **`client`** (the developer) — **developer-ops DNA**: Timesheet/Invoice tabs with named staff hourly rates; "Approved (Sign & Date)" blocks with housebuilder directorate titles (Commercial Director, Land Manager, MD); trade-level build-cost matrices (GROUNDWORKS / SCAFFOLDING / BRICKLAYING - S/C × house types £/ft2); PAID TO DATE / CTC actuals; named counterparties in cell comments; profit expressed as **Gross Profit / Gross Margin % / Return on Sales**; finance as one lump "Total Finance Cost" line with no facility mechanics. Typos and live `#REF!`/`#DIV/0!` errors corroborate a hand-grown workbook.
+- **`rockcap`** (the broker) — **debt-structuring DNA**: LTGDV, LTC, Lender IRR, Lender Money Multiple, Peak Drawn Loan, SONIA, Arrangement/Broker/Non-utilisation/Exit fees; "Lender Dashboard - \<lender\>" tabs; Input/Result Checks audit panels; Working Cells / Input Cells keys; profit as **Profit on Cost %**; rockcap.uk URL cells; "Prepared by RockCap Ltd" title blocks; the RockCap "Note" house template (body name-stamp line + Subject/Date/Relationship Manager + numbered sections); the literal `RockCap` token in an underscore-delimited filename is by itself decisive.
+- **`lender`** — **first-person lender voice** ("Subject to our normal lending criteria, I believe we could structure a facility…", "We will instruct our own professional team", "our arrangement fee", self-reference as "the Bank"); lender letterhead / regulatory footers (PRA/FCA FRN, registered address); proprietary rate constructs ("HTB SVR", "Shawbrook Base Rate"). **The broker-as-fee-line rule is the killer discriminator**: a document that lists "Broker Fee", "Introducer Fee", or "RockCap's introductory fee" as a COST LINE charges FOR the broker and therefore cannot be BY the broker — it is lender-produced. Do not require the literal string "RockCap".
+- **`third_party_professional`** — firm letterhead + role boilerplate (e.g. estate agent "produced in the course of… our estate agency role"; LLP registration footers); architect drawing-register patterns (a leading bare numeric job number, drawing numbers like `4868-008`, scales "1:500 @A1", revision tables, "IF IN DOUBT, ASK"); label-only extracted text with no sentence structure marks a drawing.
+- **`statutory_authority`** — operative statutory clauses ("HEREBY PERMITS", "HEREBY AGREES TO DISCHARGE"), Act/Regulation citations (Town and Country Planning Act 1990), planning references matching `S.\d{2}/\d+(/\w+)?`, numbered Conditions with mirrored Reasons, council letterhead with Our Ref/Your Ref pairs.
+
+### Axis 2 — `audience` (who the document is for)
+
+- **`internal`** — RockCap/deal-team working material: names candidate lenders side-by-side, assigns actions to initials, exposes client constraints and sensitivities, decodes quirks, carries `[User Note, cite: N]` provenance markers. For RockCap workbooks: the `.xlsm` macro-enabled source-of-truth model (large, frequent version increments).
+- **`external`** — outbound/presentable: promotional third-person pitch voice ("RockCap is pleased to present…"), lender-agnostic or client-addressed, no action items or client sensitivities. For RockCap workbooks: the `.xlsx` values-flavoured export with workings progressively stripped (a 10–400× size drop vs the internal model is itself an audience signal). Note: external does NOT mean sanitised — a client-facing analysis note can carry full lender candour; the internal/external axis for models is workings+macros vs presentable outputs, not candour.
+- **`neutral`** — public record (statutory decision notices): no private audience.
+
+**Body name-stamp beats filename token.** RockCap Note-template documents embed their own version string as the first body line (e.g. `Note_AL_EXTERNAL_V2.0_20260306`). Where the filename says INTERNAL but the body stamp and register say EXTERNAL, **the body stamp + register win** — the filename token records filing custody only, not audience.
+
+### Lifecycle stage signals (feed the fileType choice)
+
+- **Resolved-SPV = credit-stage.** A lender terms sheet whose template still says "Indicative Terms" is CREDIT-stage (fileType "Credit Backed Terms") when it names the resolved borrowing SPV rather than the JV/prospect entity or "SPV TBC", post-dates the credit submission, and carries fully tranched/reconciled numbers. The template heading is NOT a reliable stage signal; entity + date + reconciliation are.
+- **Single-lender vs multi-lender.** One lender's terms in lender voice = Terms Received material. The moment two-plus lenders appear side-by-side (comparison grid, ranking, recommendation), it is RockCap-produced terms ANALYSIS — embedded appraisal/cashflow sheets do not demote it, and per-lender detail does not demote it to a received-terms doc unless it is lender-authored and single-lender.
+
+## Classifier Warnings — Filenames Lie
+
+Documented traps from the ground-truth corpus. Filename cues are a WEAK PRIOR only; body content always wins:
+
+1. **A file named "Valuation" may not be one.** A pricing document whose body says "PRICING EXERCISE" and "does not constitute a valuation or appraisal" is an Agent Pricing Report, not a valuation — the text-body disclaimer outranks the filename. Decide valuation-vs-pricing on presence/absence of RICS Red Book / "Market Value" / valuer-reliance language.
+2. **A leading bare number in a filename is a third-party job number** (an architect's drawing-register number, e.g. "4868 …"), never a valuer's reference. CAD/drawing PDFs extract as fragmentary labels (plot numbers, room names, all-caps tokens, no verbs) and may garble via symbol fonts.
+3. **Filename AUDIENCE tokens record filing custody, not audience** — classify audience from the body name-stamp + register (see above).
+4. **File-host metadata is never a producer signal** — every file is Drive-owned by RockCap staff regardless of who authored it.
+5. **In-sheet version stamps can be frozen/stale** — trust the filename V-token for client files, and order version series by the DATE token (version numbers are not in lockstep across filename variants).
+6. **Download artifacts**: strip " (1)" browser-duplicate suffixes and doubled extensions (".pdf.pdf"); decode URL-encoded names (`%20` → `_20`) before token parsing.
+7. **Filename dates on lender terms trail internal issue dates by 1–3 days** (filename = received/saved date). Project-name typos occur ("DarkMils", "Dartmills") — fuzzy-match. Ad-hoc variant tokens welded to a lender prefix ("HTBTerms3Monthleadin") are scenario qualifiers, never a different lender.
+8. **Low-text files** (PNG screenshots, CAD PDFs) need the fallback path: classify on filename convention + label-token profile + OCR-noise-tolerant reading ("$106" for S106, "€" for £).
+9. **Template junk in placeholder columns** (absurd percentages, `#NUM!` rows under "Lender 7"–"Lender 10") is not data.
 
 ## Decision Rules
 
-1. **Use filename as a strong signal** — filenames often directly indicate document type
+1. **Content first; filename as a weak prior** — filenames often hint at the type but they lie (see Classifier Warnings); when body content contradicts the filename, the body wins
 2. **Match against Reference Library** — compare content against loaded references using their identification rules
 3. **Apply disambiguation rules** — when multiple types seem plausible, use the disambiguation guidance to choose correctly
-4. **Consider document characteristics** — financial data, legal language, identity features
-5. **Check past corrections** — if the user previously corrected a similar classification, follow their preference
-6. **Avoid "Other"** — only use "Other" when no reference matches at all
-7. **Confidence scoring**:
+4. **Detect the axes from content** — producer and audience per the axis rules above; they decide subfolder placement
+5. **Consider document characteristics** — financial data, legal language, identity features
+6. **Check past corrections** — if the user previously corrected a similar classification, follow their preference
+7. **Avoid "Other"** — only use "Other" when no reference matches at all
+8. **Never suggest the Lender Pack folder** (`lender_pack`) — it is an operator-curated outbound snapshot, not a document category. Files found inside a lender pack folder classify by TYPE to their canonical folder; tag them in reasoning as "outbound-pack member / probable duplicate" (the tell: several files sharing a tight createdTime cluster with createdTime > modifiedTime — the signature of copied files).
+9. **Confidence scoring**:
    - 0.90+ = Very high confidence, clear match to a reference with multiple identification rules hit
    - 0.75-0.89 = High confidence, strong indicators present
    - 0.60-0.74 = Medium confidence, some indicators but ambiguous
@@ -383,6 +425,8 @@ Before finalizing your response, review EACH result against these checks:
 5. **Folder assignment**: Does the suggested folder match the category? Cross-check against the Available Folders list provided.
 
 6. **fileType exact match**: Verify your returned `fileType` exactly matches a type from the Reference Library. No invented variations.
+
+7. **Axis sanity check**: `producer` must be one of client / rockcap / lender / third_party_professional / statutory_authority and `audience` one of internal / external / neutral. Verify the producer against the DNA rules (a workbook with Lender IRR / LTGDV / Checks panels is NOT client-produced however familiar the totals look — RockCap imports the client's numbers verbatim; a terms letter charging a broker fee is lender-produced). Verify audience against the body stamp + register, not the filename token.
 
 ### Extraction Self-Review
 

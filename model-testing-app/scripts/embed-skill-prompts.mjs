@@ -21,6 +21,11 @@ const SOURCES = [
   { exportName: "CLASSIFY_REPLY_INTENT_PROMPT", file: "skills/sub-skills/classify-reply-intent.md" },
   { exportName: "CADENCE_FIRE_SKILL_PROMPT", file: "skills/skills/cadence-fire/SKILL.md" },
   { exportName: "MEETING_PREP_SKILL_PROMPT", file: "skills/skills/meeting-prep/SKILL.md" },
+  // prospecting v3: reply-draft route system prompt (the inbound-reply composer).
+  { exportName: "QUALIFY_AND_DRAFT_SKILL_PROMPT", file: "skills/skills/reply-draft/SKILL.md" },
+  // prospecting v3: intel-revalidate diff pass (route reads from disk + has an
+  // inline fallback, but embed it so the deployed function has a copy too).
+  { exportName: "INTEL_REVALIDATE_SKILL_PROMPT", file: "skills/skills/intel-revalidate/SKILL.md" },
 ];
 
 let out = `// GENERATED FILE — do not edit by hand.

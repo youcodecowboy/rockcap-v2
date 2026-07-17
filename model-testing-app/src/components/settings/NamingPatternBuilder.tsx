@@ -24,9 +24,9 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 export default function NamingPatternBuilder({
   config,
   onChange,
-  sampleClientCode = "ACME",
-  sampleProjectCode = "PARK28",
-  sampleCategory = "Appraisals",
+  sampleClientCode = "DarkMills",
+  sampleProjectCode = "DarkMills",
+  sampleCategory = "Credit Checklist",
   disabled = false,
 }: NamingPatternBuilderProps) {
   const colors = useColors();
@@ -62,8 +62,15 @@ export default function NamingPatternBuilder({
   };
 
   // Generate preview
+  // e.g. DarkMills_CreditChecklist_JS_EXTERNAL_V1.0_20260707
   const sampleTokenValues: Record<string, string> = {
-    ...getBuiltInTokenValues(sampleClientCode, sampleCategory, sampleProjectCode),
+    ...getBuiltInTokenValues({
+      clientName: sampleClientCode,
+      projectShortcode: sampleProjectCode,
+      fileType: sampleCategory,
+      initials: 'JS',
+      audience: 'EXTERNAL',
+    }),
   };
   for (const ct of config.customTokens) {
     sampleTokenValues[ct.id] = "ABC123";

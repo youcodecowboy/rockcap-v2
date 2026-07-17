@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
+import { projectGraphSection } from "./knowledge/graphQueries";
 
 // Query: Get all projects
 export const list = query({
@@ -87,16 +88,28 @@ function generateShortcodeSuggestion(name: string): string {
   return shortcode.slice(0, 10).toUpperCase();
 }
 
-// Fallback project folder types (used when no template exists)
-const FALLBACK_PROJECT_FOLDERS = [
-  { name: "Background", folderKey: "background", order: 1 },
-  { name: "Terms Comparison", folderKey: "terms_comparison", order: 2 },
-  { name: "Terms Request", folderKey: "terms_request", order: 3 },
-  { name: "Credit Submission", folderKey: "credit_submission", order: 4 },
-  { name: "Post-completion Documents", folderKey: "post_completion", order: 5 },
-  { name: "Appraisals", folderKey: "appraisals", order: 6 },
-  { name: "Notes", folderKey: "notes", order: 7 },
-  { name: "Operational Model", folderKey: "operational_model", order: 8 },
+// Fallback project folder types (used when no template exists).
+// Mirrors the borrower/project default template (Dark Mills taxonomy —
+// see migrations/seedFolderTemplatesV2.ts); folderKey strings are a shared
+// contract with the placement engine.
+const FALLBACK_PROJECT_FOLDERS: Array<{
+  name: string;
+  folderKey: string;
+  parentKey?: string;
+  description?: string;
+  order: number;
+}> = [
+  { name: "1. Modelling Info and Terms Request", folderKey: "modelling_info", order: 1 },
+  { name: "Client Appraisals", folderKey: "client_appraisals", parentKey: "modelling_info", order: 2 },
+  { name: "Lender Pack", folderKey: "lender_pack", parentKey: "modelling_info", order: 3 },
+  { name: "Rockcap Appraisals", folderKey: "rockcap_appraisals", parentKey: "modelling_info", order: 4 },
+  { name: "2. Terms Received", folderKey: "terms_received", order: 5 },
+  { name: "3. Terms Analysis", folderKey: "terms_analysis", order: 6 },
+  { name: "4. Comps", folderKey: "comps", order: 7 },
+  { name: "Appendix", folderKey: "comps_appendix", parentKey: "comps", order: 8 },
+  { name: "5. Credit", folderKey: "credit", order: 9 },
+  { name: "6. Post Completion", folderKey: "post_completion", order: 10 },
+  { name: "Notes", folderKey: "notes", order: 11 },
 ];
 
 // Mutation: Create project
@@ -217,17 +230,49 @@ export const create = mutation({
     const folderTemplate = templates.find(t => t.isDefault) || templates[0];
     const folders = folderTemplate?.folders || FALLBACK_PROJECT_FOLDERS;
 
-    // Auto-create project folders from template
+    // Auto-create project folders from template, preserving nesting.
+    // Insert level by level (parents before children, like bootstrapNewClient
+    // in clients.ts) so parentFolderId resolves for templates nested to the
+    // depth cap (0-4).
     const now = new Date().toISOString();
     const sortedFolders = [...folders].sort((a, b) => a.order - b.order);
-    
-    for (const folder of sortedFolders) {
-      await ctx.db.insert("projectFolders", {
-        projectId,
-        folderType: folder.folderKey as any, // The schema will validate
-        name: folder.name,
-        createdAt: now,
-      });
+
+    const folderIdMap: Record<string, Id<"projectFolders">> = {};
+    const folderDepthMap: Record<string, number> = {};
+
+    let pending = sortedFolders;
+    while (pending.length > 0) {
+      const next: typeof pending = [];
+      let progressed = false;
+
+      for (const folder of pending) {
+        const parentId = folder.parentKey ? folderIdMap[folder.parentKey] : undefined;
+        if (folder.parentKey && !parentId) {
+          next.push(folder); // parent not inserted yet (or missing from template)
+          continue;
+        }
+
+        const depth = folder.parentKey
+          ? Math.min((folderDepthMap[folder.parentKey] ?? 0) + 1, 4)
+          : 0;
+
+        const folderId = await ctx.db.insert("projectFolders", {
+          projectId,
+          folderType: folder.folderKey as any, // The schema will validate
+          name: folder.name,
+          description: folder.description,
+          parentFolderId: parentId,
+          depth,
+          order: folder.order,
+          createdAt: now,
+        });
+        folderIdMap[folder.folderKey] = folderId;
+        folderDepthMap[folder.folderKey] = depth;
+        progressed = true;
+      }
+
+      if (!progressed) break; // orphaned parentKey — skip rather than loop forever
+      pending = next;
     }
 
     // Initialize project intelligence
@@ -1006,6 +1051,10 @@ export const getDeepContext = query({
       .collect();
     const pendingApprovals = allApprovals.filter((a: any) => a.status === "pending");
 
+    // 11. Knowledge graph section (atoms/edges/facilities) — parity with
+    // prospects.getDeepContext; near-zero cost when the project has no atoms.
+    const graph = await projectGraphSection(ctx, args.projectId);
+
     // Compose summary
     const summary = {
       name: (project as any).name,
@@ -1031,12 +1080,14 @@ export const getDeepContext = query({
       // reference. Full md rides along on `projectIntelligence`.
       hasOperatorContext: Boolean((projectIntelligence as any)?.contextMarkdown),
       contextUpdatedAt: (projectIntelligence as any)?.contextMarkdownUpdatedAt,
+      graphAtoms: (graph as any).atoms ?? 0,
     };
 
     return {
       summary,
       project,
       projectIntelligence,
+      graph,
       linkedClients,
       meetings: { upcoming: meetingsUpcoming, past: meetingsPast },
       documents,

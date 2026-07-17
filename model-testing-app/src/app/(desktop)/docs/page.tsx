@@ -16,6 +16,7 @@ import FileList from './components/FileList';
 import FileDetailPanel from './components/FileDetailPanel';
 import BreadcrumbNav from './components/BreadcrumbNav';
 import MoveDocumentCrossScopeModal from '@/components/MoveDocumentCrossScopeModal';
+import KnowledgeGraphDrawer from '@/components/knowledge/KnowledgeGraphDrawer';
 import { FolderSelection } from '@/types/folders';
 
 interface Document {
@@ -65,6 +66,7 @@ function DocsPageContent() {
   const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(false);
   const [initializedFromUrl, setInitializedFromUrl] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [isGraphOpen, setIsGraphOpen] = useState(false);
 
   // Initialize from URL params on mount
   useEffect(() => {
@@ -327,6 +329,7 @@ function DocsPageContent() {
           onInternalFolderSelect={handleInternalFolderSelect}
           selectedPersonalFolder={selectedPersonalFolder}
           onPersonalFolderSelect={handlePersonalFolderSelect}
+          onOpenKnowledgeGraph={selectedClientId ? () => setIsGraphOpen(true) : undefined}
         />
 
         {/* Column 2: Folder Browser - only show for client scope with selected client */}
@@ -382,6 +385,16 @@ function DocsPageContent() {
           />
         )}
       </div>
+
+      {/* Knowledge Graph Drawer — overlays all panes (fixed, page-level mount) */}
+      {isGraphOpen && selectedClientId && selectedClient && (
+        <KnowledgeGraphDrawer
+          entryEntityType="client"
+          entryEntityId={selectedClientId}
+          entryName={selectedClient.name}
+          onClose={() => setIsGraphOpen(false)}
+        />
+      )}
     </div>
   );
 }

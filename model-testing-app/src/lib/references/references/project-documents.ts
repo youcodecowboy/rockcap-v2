@@ -19,9 +19,16 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
     fileType: 'Accommodation Schedule',
     category: 'Project Documents',
     filing: {
-      targetFolder: 'Project Documents',
+      targetFolder: 'Comps',
       targetLevel: 'project',
     },
+    targetFolderKey: 'comps',
+    producer: 'rockcap',
+    audience: 'internal',
+    filenameGrammar:
+      '"<Project>_AccommodationSchedule_<II…>_V<n.n>_<YYYYMMDD>". Tolerance: version-token style is per-series habit (dot V3.1 vs underscore V1_1); initials accrete as reviewers join (RS → RS_AL_JP — multi-initial runs signal a reviewed/negotiated artefact); several same-day versions are a series fingerprint.',
+    versionSemantics:
+      'Column count and names vary heavily across versions (multi-source pricing grids collapse to a single agreed pricing column + agent comments); the Plot/Description/Beds/NIA left spine and tenure banding are invariant. Latest (converged, multi-initial) version is operative.',
 
     description:
       'An Accommodation Schedule is a tabular document that provides a complete breakdown of all ' +
@@ -46,26 +53,27 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       'affordable rent units, with separate pricing columns for each tenure type.',
 
     identificationRules: [
-      'PRIMARY: Tabular format listing individual units with columns for unit number/plot, type, size (sqft/sqm), and price/value.',
-      'PRIMARY: Contains a unit mix summary showing the count and proportion of each unit type (1-bed, 2-bed, 3-bed, etc.).',
-      'CRITICAL: Presence of both unit sizes (NIA in sqft or sqm) and individual unit values/prices in a structured table.',
-      'Shows total GDV or aggregate sales value calculated from individual unit prices.',
-      'Includes floor level or block designation for each unit in a multi-storey scheme.',
-      'Contains net internal area (NIA) measurements, possibly with gross internal area (GIA) for comparison.',
-      'May distinguish between tenure types: private sale, shared ownership, affordable rent, or commercial.',
-      'Includes average price per square foot or per square metre calculations.',
-      'Often includes plot numbers or unit identifiers that correspond to floor plans or site layouts.',
-      'May be prepared by architect, selling agent, or borrower\'s development team.',
-      'Presented as a spreadsheet, table, or appendix — not a graphical layout or floor plan.',
-      'Contains summary/total rows aggregating unit counts, areas, and values by type.',
+      'PRIMARY: row key is a bare PLOT NUMBER — small sequential integers (1..N, contiguous) under a "Plot" header, not addresses.',
+      'PRIMARY: tenure banding rows ("Affordable (n units)" / "Private (n units)") with subtotals and a Total Scheme row summing to a GDV.',
+      'CRITICAL: NO date column, NO external addresses, NO Evidence Link, NO source citations — prices are forward-looking targets/opinions, in columns named after valuers/agents (client, agent, RockCap; "Pricing TBC").',
+      'Unit-type code prefix in the Description column (e.g. "Aa |", "Ga |", "D1 |") with tenure suffixes.',
+      'Area column headed "NIA (Sq Ft)" — a design-side metric (Comparable Schedules use plain SqFt with verification notes).',
+      'Title cell self-declares "… - Accommodation Schedule" with a unit-mix subtitle ("36 units | 27 Private + 9 Affordable |").',
+      'Comments justify our own unit\'s price in first person ("we expect this house to sell between £330k and £350k").',
+      'Includes average price per square foot calculations and total scheme GDV.',
     ],
 
     disambiguation: [
-      'This is an Accommodation Schedule, NOT a Floor Plan — the accommodation schedule is a data table listing units, sizes, and values, whereas a floor plan is a graphical architectural drawing showing spatial layouts.',
-      'This is an Accommodation Schedule, NOT a Development Appraisal — while both reference GDV, the accommodation schedule is a unit-level table of sizes and prices, not a full cost-and-revenue financial model.',
-      'This is an Accommodation Schedule, NOT a Sales/Reservation Schedule — a sales schedule tracks buyer reservations, exchange dates, and completion status, whereas the accommodation schedule defines the planned unit mix and target pricing.',
-      'This is an Accommodation Schedule, NOT a Specification — the schedule describes what units exist and their sizes/values, not the materials or finishes used in construction.',
-      'This is an Accommodation Schedule, NOT a KYC document — it describes property units, sizes, and values within a development scheme. It is not an identity, address, or corporate verification document, even if it contains company names or registration numbers.',
+      'THE FLAGSHIP NEAR-MISS is Accommodation Schedule vs Comparable Schedule. Apply these rules in priority order:',
+      'R1 — Row identity (decisive on its own): rows keyed by small sequential integers under a "Plot" header (contiguous, with unit-type codes like "Aa |", "Ga |") → SUBJECT scheme → Accommodation Schedule. Rows keyed by postal addresses / house names of OTHER properties (often with other scheme names and postcodes differing from the subject\'s) → Comparable Schedule.',
+      'R2 — Time direction: no date column; prices are targets/opinions (columns named after agents/valuers; "Pricing TBC") → Accommodation Schedule. Date column of historic transactions and/or "ASKING" flags with exclusion rules → Comparable Schedule.',
+      'R3 — Grouping axis: bands = tenure within the subject ("Affordable (9 units)" / "Private (27 units)") with subtotal + Total Scheme rows summing to a GDV → Accommodation Schedule. Bands = tiers of external evidence ranked by comparability/distance, no scheme-total row → Comparable Schedule.',
+      'R4 — Evidence/source column: presence of Evidence Link / source citations (Rightmove URLs, "RM Postcode", Realyse, EPC, Land Registry) → Comparable Schedule. Accommodation Schedules cite nothing.',
+      'R5 — Narrative direction in Notes: comments justify our unit\'s own price in first person ("we expect this house to sell between £330k and £350k") → Accommodation Schedule. Notes compare the row\'s property TO the subject named in third person ("Sits at the same price as the <subject> 3 bed Type D1…") → Comparable Schedule. Rule of thumb: if the project name appears repeatedly INSIDE row notes, the rows are not the project\'s own units. Tolerated counter-signal: Accommodation Schedule comments may MENTION comps narratively ("similar to Howle Hill, just sold @ £340k") — one-off references, not per-row address+date+source records; R1/R2 still dominate.',
+      'R6 — Area metric: "NIA (Sq Ft)" → Accommodation Schedule; plain "SqFt" with verification notes → Comparable Schedule.',
+      'R7 — Self-declaration (fast path): title cell "Accommodation Schedule" vs "Master Comparable Schedule / Comparable evidence for lender credit pack". Trustworthy, but R1–R3 must be the fallback because titles can be stale-copied.',
+      'Third-wheel guard: the phrase "ACCOMMODATION SCHEDULE" also appears as a legend inside architects\' drawing packs (unit mix in m², no pricing, drawing-number title blocks). A PDF with CAD/title-block features and areas in m² is an Architect Drawing Pack, not either spreadsheet class.',
+      'This is an Accommodation Schedule, NOT a Development Appraisal — a unit-level table of sizes and prices, not a full cost-and-revenue financial model.',
     ],
 
     terminology: {
@@ -189,6 +197,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Project Documents',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A Build Programme is a construction timeline document that maps out the sequencing, duration, ' +
@@ -361,6 +370,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Project Documents',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A Specification (commonly abbreviated to "spec") is a technical construction document that ' +
@@ -532,6 +542,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Project Documents',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A Tender is a formal bid or quotation submitted by a building contractor in response to an ' +
@@ -708,6 +719,7 @@ export const PROJECT_DOCUMENT_REFERENCES: DocumentReference[] = [
       targetFolder: 'Project Documents',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'CGI/Renders (Computer Generated Images) are digitally produced visual representations showing ' +

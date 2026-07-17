@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { mcpHandler } from "./mcp";
 import { pushWebhook } from "./gmailWatch";
+import { triageDigestHandler } from "./triageDigestHttp";
 
 // Convex HTTP router. Skills layer (Claude Code on operator laptops)
 // connects to /mcp here, authenticated by per-user bearer tokens minted
@@ -39,6 +40,14 @@ http.route({
   path: "/webhooks/gmail-push",
   method: "POST",
   handler: pushWebhook,
+});
+
+// Outreach triage digest for the stage-workspace SessionStart hook —
+// authenticated by the same per-user MCP bearer tokens as /mcp.
+http.route({
+  path: "/triage-digest",
+  method: "GET",
+  handler: triageDigestHandler,
 });
 
 export default http;

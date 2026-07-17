@@ -8,7 +8,7 @@ This flow was split into gates on 2026-05-30. Before, `prospect-intel` ran intel
 
 ### Gate 1 — Run intel
 - **Trigger:** operator says "run prospect intel on {company}" → the `prospect-intel` skill.
-- **What runs:** intel only. Companies House sync + group walk, structure chart, a contact per key person (with Apollo status), the 9-section report, per-scheme Track Record rows, lender DNA from the group book, `dealType` + `dealSizeRange`. **It does NOT draft outreach.**
+- **What runs:** intel only. Companies House sync + group walk, structure chart, a contact per key person (with Apollo status), the 9-section report, per-scheme Track Record rows, lender DNA from the group book, `dealType` + `dealSizeRange`, plus atomization of the gathered facts into the knowledge graph and a `graph.sharedNeighbors` connection check that lands as a `## Graph connections` section in the report (each hit provenance-lined and marked public record vs internal — the marking gates what `outreach-draft` may later cite). **It does NOT draft outreach.**
 - **Leaves:** `prospectState: "researched"`. The report ends with a `## Definition of Done` manifest whose last line is `Outreach: not drafted — pending operator accept`.
 - **Why:** research is cheap and uniform; it should run the same way every time and not depend on whether a contact email was found.
 

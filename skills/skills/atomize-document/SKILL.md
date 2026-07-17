@@ -1,0 +1,182 @@
+# atomize-document
+
+The **harness lane** for the Knowledge Layer (Spec 2 §11 / §14b.1). Claude Code reads a client's documents and writes atomic facts into the knowledge graph via the `atoms.*` MCP tools, at subscription cost. This is the bulk path; the API lane (a Convex cron → `/api/knowledge/atomize`) owns cheap incremental re-atomization and you should NOT duplicate it here.
+
+Both lanes persist through the same server-side engine (`knowledge/atomsCore`), so the three persistence gates (anchored / discriminating / material) are machine-checked. You cannot bypass the noise rules; you can only produce good candidates and repair rejects.
+
+## Trigger
+
+Invoke for **bulk / backfill** atomization:
+
+- "Build the knowledge graph for client {name}"
+- Client onboarding — atomize the client's existing document corpus in one pass
+- Pre-Drive migration / backfill of a client's historical documents
+
+Do **NOT** invoke for incremental single-document updates after a Drive edit — the API lane (`knowledge-atomize-sweep` cron) handles those automatically once a client is knowledge-enabled. If asked to "re-atomize one changed doc", defer to the API lane unless the operator explicitly wants a manual pass.
+
+## Inputs
+
+Required:
+
+- `clientId` (Convex id) OR a company name that resolves to one clients row.
+
+Optional:
+
+- `projectId` — narrow the pass to one project's documents.
+- `documentIds` (array) — atomize a specific subset instead of the whole corpus.
+
+## Dedup
+
+- **dedupKey**: `${documentId}:${contentChecksum}` for a single-document invocation; for a whole-client bulk pass, use the `clientId` so a repeated onboarding surfaces the prior run.
+- **dedupWindowDays**: 30.
+- **On `status: "duplicate_found"`**: surface the prior run's brief and ask before re-atomizing (a re-run is safe — the engine converges duplicates — but it spends tokens).
+- Per-document idempotency inside a bulk pass is handled in the procedure (step 3): skip any document whose `(documentId, contentChecksum)` already has observations.
+
+## Cadence package
+
+This skill does **not** produce a cadence package. It writes to the knowledge graph only; nothing leaves the system.
+
+## Outputs
+
+Persisted via the `atoms.*` MCP tools (all through the server-side gates):
+
+- **Atoms + observations** — one canonical atom per fact identity, one observation per source occurrence, via `atoms.createBatch`.
+- **Document chunks** — the narrative dual index for prose-heavy documents, via `atoms.upsertChunks` (skip fact-dense spreadsheets).
+- No structural-table writes, no approvals, no outreach. Facility minting happens automatically inside the engine when facility-shaped predicates land.
+
+## Cost guardrail
+
+Before atomizing, count the documents in scope. **If more than 60 documents are in scope, STOP, report the count to the operator, and get explicit confirmation before proceeding** (mirror the `drive.importFolder` dry-run ethic — a large pass costs real tokens). Under 60, proceed.
+
+## High-level workflow
+
+1. **Resolve the client + gather the ROSTER.** The roster is what mentions resolve against — every `subjectId`/`objectEntityId` you emit MUST be a roster id.
+   - `client.getDeepContext({clientId})` → the client row, its projects (ids + shortcodes), its contacts (ids + names + roles), and CH numbers on the client / related SPVs.
+   - `lender.list({})` → the **global lender roster** (lenders are `clients` rows with `type="lender"`). Cross-client lender resolution is automatic: both clients' documents resolve "Hampshire Trust" to the same lender id.
+   - Note the client's + related SPVs' Companies House numbers — company mentions resolve by CH number first.
+2. **Load the legal predicates.** `atoms.vocabulary` — returns the `{name → {kind, family, direction, store}}` map. Use only these names. `kind: "edge"` → set `objectEntityId` + `objectEntityType`; `kind: "attribute"` → set `objectLiteral`. `store: "native"` predicates are rejected (they belong in structural tables) — never emit them.
+3. **Check existing coverage (idempotency).** `atoms.getForSubject({subjectType:"client", subjectId: clientId})` to see what's already stored. Enumerate the client's documents (`document.listByClient` / `document.get`); each row carries `contentChecksum`. **Skip any document whose `(documentId, contentChecksum)` already has observations** (its facts are already in the graph). This makes re-runs cheap and safe.
+4. **Per document: read + extract.** Read the document's `textContent` (`document.get` or the list row). Apply the EXACT extraction instruction block below (do not paraphrase it). For every extracted fact, attach:
+   - a **locator** — `{page}` for PDFs, `{sheet, row}` for spreadsheets (column letters don't survive v4 parsing yet), `{section}` for prose;
+   - a **sourceText** snippet (verbatim) — the reliable audit anchor;
+   - an **authorityTier** by document type (see the tier table below).
+5. **Persist in chunks.** `atoms.createBatch({atoms})` in batches of ≤100. Emit each atom with exactly one of `objectEntityId` (edge) or `objectLiteral` (attribute), the right `subjectType`/`subjectId` from the roster, `confidence` (0..1), and an `observation` carrying `sourceType:"document"`, `documentId`, `contentChecksum`, `locator`, `sourceText`, `authorityTier`.
+6. **READ `rejected[]` and repair.** Every `atoms.createBatch` return has a `rejected` array of `{index, statement, reason}`. Never drop rejects silently. The usual causes and fixes:
+   - `unresolved_subject` / `unresolved_object` — the id isn't a real row. The mention is a person/company not yet in the system. **Mint a provisional entity**: `atoms.createCandidate({mentionText, guessedType: "person"|"company", contextSnippet, sourceDocumentId, clientId})` — ALWAYS pass `clientId` (the scope hint is what lets the enrichment worker scan the right contact roster and hand Apollo a company context). Then anchor the atom to the candidate (`subjectType`/`objectEntityType: "candidate"`, id = the returned `candidateId`) and resubmit. **Facts are never dropped.** Two return shapes matter: `reused: true` means the same normalized mention already has a candidate (anchor to it); `status: "resolved"` means the candidate already resolved — anchor to the returned `resolvedType`/`resolvedId` REAL entity directly, not the candidate. The background worker (2-hourly cron) resolves candidates (companies → CH exact-name search + sync, people → contacts/Apollo) and re-points every referencing atom automatically. Do not force a wrong id, and do not re-anchor facts about OTHER entities to the client — that flattens edges into island attributes.
+   - `unknown_predicate` / `native_predicate` — you used a name not in the vocabulary or a native-store predicate. Re-map to a real atom-store predicate or drop.
+   - `object_both` / `object_missing` / `predicate_kind_mismatch` — fix edge-vs-attribute and resubmit.
+   Resubmit the repaired atoms in a follow-up `atoms.createBatch`.
+7. **Chunk narrative documents.** For prose-heavy documents (legal opinions, professional reports), `atoms.upsertChunks({documentId, contentChecksum, chunks})` with ~800-token sections. **Skip fact-dense spreadsheets** (spec §3.4 — atoms win there; chunks would be noise).
+8. **Close the run.** `skillRun.complete` with `status` (`complete` or `complete_with_gaps`), a two-paragraph `brief` (documents atomized, atom/observation counts, notable facilities minted, candidates minted for unresolvable mentions, coverage gaps), and the `gaps` array (every skipped document, every parse failure — unresolvable mentions are no longer gaps, they become candidates via step 6).
+
+## Full onboarding (classify + atomize in one pass)
+
+Bulk document processing runs through the harness, not the API pipeline (operator decision 2026-07-07). When the documents in scope are **unclassified** (fresh Drive imports still showing `fileTypeDetected: "Unclassified"`, or an upload backlog), fuse classification into this skill's pass — you already have the text open, so classify and atomize from ONE read. **You are the classifier**; the server only parses and persists.
+
+Per document:
+
+1. **`document.extractText({documentId, textOffset?})`** — server-side parse only, zero LLM. Returns `{text (a ≤120K-char WINDOW), truncated, textOffset, fullTextChars, fileName, mimeType, contentChecksum, source, parsedName, alreadyClassified, alreadyAtomized}`. **Paging (2026-07):** multi-sheet workbooks now parse EVERY sheet (priority-ordered, per-sheet budget; page one opens with a manifest of all sheets and their sizes). When `fullTextChars` exceeds the window, page through with `textOffset` (the note gives the next offset) and atomize fact-dense documents from ALL pages — classify from page one, but do not stop atomizing there; the contentChecksum is identical across pages of one revision. Trust a `parsedName` with `confidence: "full"` as a STRONG classification prior: its `docType` comes from the client-confirmed V1.2 naming standard and maps to a specific `fileTypeDetected` via `src/lib/naming/filename_schema.json`'s `docTypes[].appFileType` — verify against the text rather than re-deriving from scratch (a `"partial"` parse is only a hint; `null` is no signal). Branch on the flags:
+   - `alreadyClassified: true` and `alreadyAtomized: true` → skip the doc entirely.
+   - `alreadyClassified: true`, `alreadyAtomized: false` → skip classification, atomize only (steps 4–7 of the main workflow). Do NOT re-classify unless the operator asked; a re-classification never moves the doc's folder anyway (first-classification-only placement).
+   - both false → full pass below.
+2. **Classify the text yourself.** Restraint over flourish: pick `category` from the 13 canonical categories — Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs — and a specific `fileTypeDetected` matching existing vocabulary (`document.listByClient` on a mature client shows real values: 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes', …). Write a ≤1200-char evidence-first summary and an honest confidence.
+3. **`document.applyClassification({documentId, contentChecksum, fileTypeDetected, category, summary, confidence, reasoning, keyDates?, keyAmounts?, keyEntities?, textContent})`** — pass the `contentChecksum` from step 1 (required for Drive docs) and the parsed text as `textContent` so future re-analysis and the API-lane re-atomizer have it. Folder placement is resolved SERVER-SIDE from your category/fileTypeDetected (project taxonomy when the doc has a projectId, client taxonomy otherwise) — you never choose folders. Side effects (knowledge-bank entry, meeting-job heuristics, context-cache invalidation, ingestionEvents row, Drive mirror-row completion) match the v4 pipeline exactly.
+4. **Atomize the SAME text** — steps 4–7 of the main workflow (`atoms.createBatch` with the step-1 `contentChecksum` on every observation, `atoms.upsertChunks` for narrative docs). One read, both outputs.
+5. **One `skillRun` covers both** — the run's brief reports documents classified AND atomized; classification-only failures (parse errors, unresolvable category) go in the `gaps` array like any other gap.
+
+Pipeline-pause convention for bulk: `extractText` on a pending Drive doc claims its mirror row (`processing`), which pauses the automatic pipeline for that file; complete `applyClassification` within ~30 minutes per document (work doc-by-doc, never extract a big batch up front) or the claim is reclaimed, its settle timer re-arms, and the API pipeline processes it at API cost. Re-processing when a Drive file CHANGES stays fully automated (hydration cron → `/api/drive/ingest` → API-lane re-atomizer) — do not re-run this pass for edits.
+
+## The extraction instruction block (apply verbatim — spec §6.1)
+
+> Extract atomic facts from this document. An atomic fact is ONE self-contained sentence that would remain true and meaningful if read with no surrounding context, attached to ONE subject entity from the roster above (or a new person/company you can identify precisely).
+>
+> EXTRACT a fact only if ALL three hold:
+> 1. **Anchored** — it is about a specific rostered or precisely-identifiable entity. Never about "the market," "the borrower generally," or an unnamed party.
+> 2. **Discriminating** — it would help distinguish this entity from a typical UK property-finance peer. If the statement would be true of most developers, most lenders, or most schemes, do not extract it.
+> 3. **Material** — it is an amount, term, party/role, date/milestone, obligation, security interest, ownership/control fact, status change, or stated appetite/preference.
+>
+> EXTRACT (examples):
+> - "Hampshire Trust Bank provides a £3.2M senior facility to Bayfield Homes (Wellington) Ltd at SONIA + 4.25%, maturing 2027-09-30." *(facility letter)*
+> - "The Wellington Road scheme has a GDV of £4.2M across 6 units." *(appraisal)*
+> - "James Carter is a director of both Bayfield Homes Ltd and Marlow Property Group Ltd." *(KYC — cross-entity control fact)*
+> - "Planning consent 23/01847/FUL for 6 dwellings was granted by Test Valley BC on 2026-03-14 subject to a s106 contribution of £48,000." *(planning)*
+> - "Bayfield Homes (Wellington) Ltd granted a debenture and first legal charge over the Wellington Road site to Hampshire Trust Bank on 2026-04-02." *(security)*
+> - "The facility includes a personal guarantee from James Carter capped at £500,000." *(obligation)*
+>
+> DO NOT EXTRACT (examples):
+> - "Bayfield Homes is a UK-based property developer." *(true of nearly every client — fails discrimination)*
+> - "The property market has experienced volatility in recent months." *(unanchored commentary)*
+> - "The valuation was prepared in accordance with RICS Red Book standards." *(boilerplate)*
+> - "The borrower must comply with all applicable laws." *(standard clause, no deviation)*
+> - "The scheme is subject to obtaining planning permission." *(generic; extract only the specific application, decision, or condition)*
+> - "The directors are experienced in residential development." *(marketing prose)*
+>
+> When a number appears in multiple places with different values, extract each with its exact source location — do not reconcile them yourself.
+
+## Authority tiers (encode on every observation)
+
+The engine resolves cross-document contradictions on this scale (matching `atomsCore.AUTHORITY_TIERS` exactly — higher wins). Stamp `observation.authorityTier` by document type:
+
+| Tier | Document type |
+|---|---|
+| 5 | Executed legal documents (debentures, executed legal charges, deeds) |
+| 4 | Facility letters / term sheets / loan agreements |
+| 3 | Valuations / appraisals |
+| 2 | Internal briefs / memos |
+| 1 | Emails and everything else |
+
+## Facility, lender, and appetite discipline
+
+Five rules that stop the failure modes seen at wave scale (duplicate lenders, fragmented facilities, THIN lender rows) and make every wave silently feed `lender.matchForDeal` and the Lenders tab.
+
+1. **Qualifier discipline (facilities are not document versions).** The atom `qualifier` on financing atoms (`lends_to` and other facility-shaped predicates) is ONLY for tranche: `senior`, `mezzanine`, `bridge`, `equity`, or omitted. Successive revisions of the same lender's terms on the same project are the SAME facility, not new ones. Record a changed rate, fee, or LTV as a new attribute atom on that facility; version precedence supersedes the prior value automatically. Never encode a document version ("indicative terms 2026-07-02") or a pricing variant ("0.75% fee variant") as a qualifier: non-tranche qualifier text no longer mints a facility, and misusing it this way is exactly what fragmented one Allica Bank negotiation into 8 duplicate facility rows on one project. Facility `status` is stamped server-side from the source document class (term sheet / HOTs / DIP / AIP → indicative; facility agreement / facility letter / completion → live); you never set it.
+
+1b. **Anchor quote economics to the FACILITY, never the project (2026-07 Donnington pilot).** Both `lends_to` AND `funds_project` edges with a tranche qualifier now mint/rebuild the `(project, lender, tranche)` facility, and `atoms.createBatch` returns `facilities.minted` / `facilities.rebuilt` as `{facilityId, projectId, lenderClientId?, lenderCompanyId?, tranche?}`. Per terms document, work in two batches: batch 1 = the `funds_project` (or `lends_to`) edge plus scheme-level facts (GDV, units, planning); map YOUR lender+tranche to its `facilityId` in the returned list; batch 2 = the quote's economics — `has_loan_amount`, `has_interest_rate`, `matures_on`, `has_loan_term_months`, `has_guarantee` — with `subjectType: "facility"` and that id. Project-anchored loan economics from rival lenders contest each other as FALSE conflicts (25 artificial contested atoms on one pilot project); the engine now also refuses to materialize project-anchored terms when several same-tranche facilities exist, so facility anchoring is the only path that persists cleanly.
+
+2. **Lender rostering (upsert, never duplicate).** When a document names a lender quoting or lending, call `lender.create` — it now UPSERTS: it normalises the name (case, punctuation, legal suffixes ltd/limited/llp/plc/inc) and matches existing lenders by `name`/`companyName`/`aliases`, enriches the match, and returns it with `deduped: true`. Treat `deduped: true` as success, not a collision. ALWAYS pass `sourceDocumentIds` (the document(s) that evidence the lender); when both a brand and a legal name appear, pass `aliases` (e.g. brand "Paragon" plus legal "Paragon Development Finance Limited"). Never create a lender twice for name variants — the "Funding 365 ×2", "Downing vs Downing LLP", "Paragon vs Paragon Bank" duplicates all came from this. If you later discover an existing duplicate pair, consolidate with `lender.merge({fromClientId, toClientId, dryRun?})`: it repoints atoms, contacts, appetite signals, and facilities onto the survivor and soft-deletes the duplicate.
+
+3. **Appetite extraction (structured, not prose).** When a lender document (term sheet, DIP, HOTs, appetite packet) reveals appetite-shaped facts — deal-size band, LTV / LTGDV ceilings, product types, geography, rates — ALSO call `lender.recordAppetite` with the standard fieldPaths from `../lender-intel/references/appetite-signal-catalogue.md` (reference it; do not reproduce the paths here). Set `sourceType: "lender_doc"` (or `"deal_behaviour"` for what the lender actually completed), `sourceRef` = the document id, and `asOfDate` = the document date. Writing rich term-sheet intel only into a prose `notes` field is the miss that left `lender.matchForDeal` learning nothing from ingestion; the structured signal is the record, a prose note is a supplement.
+
+4. **Lender PEOPLE (2026-07-11 — thin-lender fix).** Lender documents are full of named people the roster never captured: the BDM who signs a term sheet, the "your contact for this facility" line, the credit contact on a DIP, signatories on facility letters, names+emails in quoted email chains. When a document names a person AT a lender (name plus role/email/phone/signature context), create the contact on the lender's clients row: `contact.create({name, role, email?, phone?, clientId: <lenderClientId from the lender.create upsert>, sourceDocumentId, notes: "<where in the doc they appear>"})` — check `contact.getByClient` first so re-atomizing a document doesn't duplicate people. A named BDM with a direct email is worth more to outreach than any appetite field; this was the single biggest source of "lenders with 0 contacts". (People at the BORROWER side keep flowing through the normal candidate path — this rule is the lender-side shortcut because the lender row id is already in hand from rule 2.)
+
+5. **Lender IDENTITY facts (2026-07-11 — thin-lender fix).** Lender letterhead and footers routinely carry the legal entity's registration: "Registered in England & Wales No. 07706156", a registered-office address, FCA reference numbers, and the web domain. When a document states a lender's Companies House number, link it: `clients.setProspectFacts({clientId: <lenderClientId>, companiesHouseNumber})` (the only mutation that sets it; prospect-flavoured name, generic clients-row patch) — and pass `website` the same way when the row lacks one. A document-stated CH number beats any name-search guess, and it unlocks officers, group charges, and the graph's `officer_of` edges for that lender. Don't hunt for it (no web searches during atomization) — but never skip one that is printed on the page you are already reading.
+
+## Style rules
+
+- All CONVENTIONS.md rules apply. The atoms you emit are data, not prose — but keep `statement` sentences UK-English, evidence-first, and free of em dashes / rule-of-three.
+- **Never fabricate a resolution.** If a mention doesn't resolve to a roster id, drop the fact and log a gap — do not attach a plausible-but-wrong id to satisfy the anchoring gate.
+- **One fact, one atom.** Do not pack multiple facts into one statement; the engine dedups per identity, and compound statements defeat that.
+
+## Tool dependencies
+
+MCP tools:
+
+- `atoms.vocabulary` — legal predicates (step 2).
+- `atoms.getForSubject` — existing coverage / idempotency (step 3).
+- `atoms.createBatch` — persist atoms; READ its `rejected` array (steps 5–6).
+- `atoms.createCandidate` — mint a provisional entity for an unresolvable mention (step 6 repair path); pass `clientId` so the enrichment worker can resolve it.
+- `atoms.upsertChunks` — narrative dual index (step 7).
+- `client.getDeepContext`, `lender.list` — roster (step 1).
+- `contact.create` / `contact.getByClient` — lender-side people found in documents (discipline rule 4).
+- `clients.setProspectFacts` — link a document-stated lender CH number / website (discipline rule 5).
+- `document.listByClient`, `document.get` — enumerate + read documents (steps 3–4).
+- `document.extractText` / `document.applyClassification` — the fused classify+atomize pass ("Full onboarding" above): server-side parse in, agent classification out.
+- `skillRun.start` / `skillRun.complete` — runtime contract.
+
+Claude Code native tools: `Read` for any local artefacts; no `WebSearch`/`WebFetch` needed (atomization is corpus-only).
+
+## What goes wrong
+
+1. **Unresolvable mention.** A person/company in the document isn't in the roster. Mint a candidate (`atoms.createCandidate` with `clientId`) and anchor the atom to it — never force a wrong id, never re-anchor another entity's fact to the client, never drop the fact. If `createCandidate` returns `status: "resolved"`, anchor to the returned real entity instead.
+2. **Rejects ignored.** The single most common failure is not reading `atoms.createBatch.rejected`. Always read it; repair and resubmit.
+3. **Native predicate used.** `officer_of`, `funds_project` (native side), `has_appetite_for`, `developing`, `spv_of_group`, `works_at`, `psc_of` are rejected — those live in structural tables. Use `atoms.vocabulary` to see `store`.
+4. **Spreadsheet chunked.** Don't `upsertChunks` fact-dense spreadsheets; atomize them instead.
+5. **Big pass fired without confirmation.** >60 documents in scope must be confirmed by the operator first.
+6. **Re-atomizing already-covered docs.** Skip documents whose `(documentId, contentChecksum)` already has observations (step 3) — otherwise you spend tokens re-deriving facts the engine already holds.
+7. **Lender created twice for a name variant.** `lender.create` upserts; a `deduped: true` return is the correct outcome. Pass `aliases` (brand + legal name) and `sourceDocumentIds` so future variants resolve to the same row. Consolidate any pre-existing duplicate with `lender.merge`.
+8. **Qualifier used for a document version or pricing variant.** `qualifier` is tranche-only (`senior`/`mezzanine`/`bridge`/`equity`) or omitted. Term changes across revisions are new attribute atoms on the SAME facility, not qualifier variants — see "Facility, lender, and appetite discipline".
+9. **Appetite left in prose.** Term-sheet appetite facts must go to `lender.recordAppetite` at the standard fieldPaths, not only into a `notes` string; prose alone never reaches `lender.matchForDeal`.
+
+## References
+
+None yet — the extraction block above and `atoms.vocabulary` are the ground truth. As good runs accumulate, anonymised exemplars will land in `corpora/`.

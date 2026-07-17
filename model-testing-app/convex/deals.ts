@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 /**
@@ -176,5 +176,113 @@ export const updateLocalEdits = mutation({
 
     await ctx.db.patch(dealId, patch);
     return dealId;
+  },
+});
+
+// ── Prospecting selection read (cold-reachout Phase 1, 2026-07-15) ──────────
+//
+// Powers the deal.listByStage MCP tool: the /cold-reachout action command
+// selects its N candidates from a mirrored HubSpot pipeline stage (e.g.
+// Weekly Targets). Joins each deal to the app-side prospect where one exists
+// (linkedCompanyIds → companies.promotedToClientId, falling back to a
+// case-insensitive company-name match against clients) and returns explicit
+// dedupe / readiness flags so the command can skip rows that are already
+// being worked instead of re-researching them. dealstage ids are only unique
+// within a pipeline in HubSpot, so the pipeline id is required and enforced.
+
+const SELECTION_CAP = 100;
+
+export const listByStageForSelectionInternal = internalQuery({
+  args: {
+    pipelineId: v.string(),
+    stageId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), SELECTION_CAP);
+    const raw = await ctx.db
+      .query("deals")
+      .withIndex("by_stage", (q: any) => q.eq("stage", args.stageId))
+      .take(SELECTION_CAP * 3);
+    const deals = raw
+      .filter((d: any) => d.pipeline === args.pipelineId && !d.archivedAt)
+      .slice(0, limit);
+
+    const out = [];
+    for (const deal of deals) {
+      // Company join: first linked companies row, if any.
+      let company: any = null;
+      for (const cid of deal.linkedCompanyIds ?? []) {
+        company = await ctx.db.get(cid);
+        if (company) break;
+      }
+
+      // App-prospect join: promotion link first, then name match.
+      let client: any = null;
+      if (company?.promotedToClientId) {
+        client = await ctx.db.get(company.promotedToClientId);
+      }
+      const matchName = (company?.name ?? deal.name ?? "").trim();
+      if (!client && matchName) {
+        const exact = await ctx.db
+          .query("clients")
+          .withIndex("by_name", (q: any) => q.eq("name", matchName))
+          .first();
+        client = exact ?? null;
+      }
+
+      // Contact readiness: does any linked contact carry an email?
+      let contactWithEmail: { contactId: string; name: string | null; email: string } | null = null;
+      let linkedContactCount = 0;
+      for (const cid of deal.linkedContactIds ?? []) {
+        const c: any = await ctx.db.get(cid);
+        if (!c || c.isDeleted) continue;
+        linkedContactCount++;
+        if (!contactWithEmail && c.email) {
+          contactWithEmail = { contactId: String(c._id), name: c.name ?? null, email: c.email };
+        }
+      }
+
+      out.push({
+        dealId: String(deal._id),
+        hubspotDealId: deal.hubspotDealId,
+        hubspotUrl: deal.hubspotUrl ?? null,
+        name: deal.name,
+        stageId: deal.stage ?? null,
+        stageName: deal.stageName ?? null,
+        pipelineName: deal.pipelineName ?? null,
+        lastContactedDate: deal.lastContactedDate ?? null,
+        lastActivityDate: deal.lastActivityDate ?? null,
+        company: company
+          ? {
+              companyId: String(company._id),
+              name: company.name ?? null,
+              companiesHouseNumber: company.companiesHouseNumber ?? null,
+            }
+          : null,
+        // The dedupe verdict the command acts on:
+        appClient: client
+          ? {
+              clientId: String(client._id),
+              name: client.name ?? null,
+              status: client.status ?? null,
+              pipelineStage: client.pipelineStage ?? null,
+              prospectState: client.prospectState ?? null,
+              lastOutreachSendAt: client.lastOutreachSendAt ?? null,
+              outreachReadyAt: client.outreachReadyAt ?? null,
+            }
+          : null,
+        alreadyWorked: !!(client && (client.lastOutreachSendAt || client.prospectState === "active")),
+        linkedContactCount,
+        contactWithEmail,
+      });
+    }
+    return {
+      pipelineId: args.pipelineId,
+      stageId: args.stageId,
+      count: out.length,
+      capped: deals.length >= limit && raw.length > deals.length,
+      deals: out,
+    };
   },
 });

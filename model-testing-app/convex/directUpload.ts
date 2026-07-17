@@ -3,71 +3,7 @@ import { mutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser } from "./authHelpers";
-
-// Helper functions for document code generation (same as in documents.ts)
-function abbreviateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, maxLength);
-}
-
-function abbreviateCategory(category: string): string {
-  if (!category) return 'DOC';
-  
-  const categoryMap: Record<string, string> = {
-    'valuation': 'VAL',
-    'operating': 'OPR',
-    'operating statement': 'OPR',
-    'appraisal': 'APP',
-    'financial': 'FIN',
-    'contract': 'CNT',
-    'agreement': 'AGR',
-    'invoice': 'INV',
-    'report': 'RPT',
-    'letter': 'LTR',
-    'email': 'EML',
-    'note': 'NTE',
-    'memo': 'MEM',
-    'proposal': 'PRP',
-    'quote': 'QTE',
-    'receipt': 'RCP',
-  };
-  
-  const categoryLower = category.toLowerCase();
-  for (const [key, value] of Object.entries(categoryMap)) {
-    if (categoryLower.includes(key)) {
-      return value;
-    }
-  }
-  
-  return abbreviateText(category, 3);
-}
-
-function formatDateDDMMYY(dateString: string | Date): string {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
-}
-
-function generateDocumentCode(
-  clientName: string,
-  category: string,
-  projectName: string | undefined,
-  uploadedAt: string | Date
-): string {
-  const clientCode = abbreviateText(clientName, 8);
-  const typeCode = abbreviateCategory(category);
-  const projectCode = projectName ? abbreviateText(projectName, 10) : '';
-  const dateCode = formatDateDDMMYY(uploadedAt);
-  
-  if (projectCode) {
-    return `${clientCode}-${typeCode}-${projectCode}-${dateCode}`;
-  } else {
-    return `${clientCode}-${typeCode}-${dateCode}`;
-  }
-}
+import { buildDocumentName } from "../src/lib/documentNaming";
 
 // Mutation: Direct upload document with AI analysis
 // This bypasses the queue and creates the document immediately
@@ -104,17 +40,18 @@ export const uploadDocumentDirect = mutation({
       // This allows for backward compatibility
     }
     
-    // Generate document code
+    // Generate document code via the canonical convention
+    // e.g. DarkMills_CreditChecklist_V1.0_20260707
     let documentCode: string | undefined = undefined;
     if (args.clientName) {
       // For base documents, don't include project name in code
       const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
-      documentCode = generateDocumentCode(
-        args.clientName,
-        args.category,
-        projectNameForCode,
-        uploadedAt
-      );
+      documentCode = buildDocumentName({
+        fileType: args.fileTypeDetected || args.category,
+        clientName: args.clientName,
+        projectName: projectNameForCode,
+        date: uploadedAt,
+      });
       
       // Ensure uniqueness
       const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
@@ -152,66 +89,10 @@ export const uploadDocumentDirect = mutation({
       uploadedBy: uploadedBy,
     });
 
-    // Automatically create knowledge bank entry if document is linked to a client
+    // (Knowledge-bank entry write retired 2026-07-11 — knowledgeBankEntries
+    // is read-only legacy data.)
     if (args.clientId) {
-      try {
-        // Determine entry type based on category and file type
-        let entryType: "deal_update" | "call_transcript" | "email" | "document_summary" | "project_status" | "general" = "document_summary";
-        
-        const categoryLower = args.category.toLowerCase();
-        const fileNameLower = args.fileName.toLowerCase();
-        
-        if (categoryLower.includes("deal") || categoryLower.includes("loan") || categoryLower.includes("term")) {
-          entryType = "deal_update";
-        } else if (categoryLower.includes("project") || categoryLower.includes("development")) {
-          entryType = "project_status";
-        } else if (fileNameLower.includes("call") || fileNameLower.includes("transcript")) {
-          entryType = "call_transcript";
-        } else if (categoryLower.includes("email") || fileNameLower.includes("email")) {
-          entryType = "email";
-        }
-
-        // Extract key points from summary
-        const keyPoints: string[] = [];
-        const summaryLines = args.summary.split(/[.!?]\s+/).filter(line => line.trim().length > 0);
-        keyPoints.push(...summaryLines.slice(0, 5).map(line => line.trim()));
-
-        // Extract metadata from extractedData if available
-        const metadata: any = {};
-        if (args.extractedData) {
-          if (args.extractedData.loanAmount) metadata.loanAmount = args.extractedData.loanAmount;
-          if (args.extractedData.interestRate) metadata.interestRate = args.extractedData.interestRate;
-          if (args.extractedData.loanNumber) metadata.loanNumber = args.extractedData.loanNumber;
-          if (args.extractedData.costsTotal) metadata.costsTotal = args.extractedData.costsTotal;
-          if (args.extractedData.detectedCurrency) metadata.currency = args.extractedData.detectedCurrency;
-        }
-
-        // Generate tags from category and file type
-        const tags: string[] = [args.category];
-        if (args.fileTypeDetected) tags.push(args.fileTypeDetected);
-        if (args.projectName) tags.push("project-related");
-
-        // Create knowledge bank entry
-        await ctx.db.insert("knowledgeBankEntries", {
-          clientId: args.clientId,
-          projectId: args.isBaseDocument ? undefined : args.projectId,
-          sourceType: "document",
-          sourceId: documentId,
-          entryType: entryType,
-          title: `${args.fileName} - ${args.category}`,
-          content: args.summary,
-          keyPoints: keyPoints,
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-          tags: tags,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        // Log error but don't fail document creation if knowledge bank entry fails
-        console.error("Failed to create knowledge bank entry:", error);
-      }
-
-      // Meeting extraction: Check if this is a meeting document
+      // Meeting extraction: Check if this is a meeting document      // Meeting extraction: Check if this is a meeting document
       const meetingTypes = ['Meeting Minutes', 'Meeting Notes', 'Minutes'];
       const fileTypeLower = args.fileTypeDetected.toLowerCase();
       const fileNameLower = args.fileName.toLowerCase();

@@ -87,6 +87,51 @@ crons.interval(
   internal.gmailInbound.pollAllInbound,
 );
 
+// Meeting auto-complete (prospecting v3). Every hour. Marks scheduled meetings
+// whose meetingDate has passed as completed (completionSource 'date_passed'),
+// which advances the prospect to warm_post_meeting and pulls any transcript
+// into intel. The internal mutation caps rows per run so a legacy backlog of
+// past undated-status meetings drains gradually instead of mass-firing.
+crons.interval(
+  "meeting-auto-complete",
+  { hours: 1 },
+  internal.meetings.autoCompleteDueMeetings,
+  {},
+);
+
+// Google Drive changes poll. Every 2 minutes, page Drive's changes.list
+// from the stored startPageToken watermark and apply each change to the
+// metadata mirror (driveFolders/driveFiles). Self-skips when there is no
+// connection, the connection needs re-consent, or the initial backfill
+// hasn't seeded a watermark yet; a 90s overlap lease stops a slow tick
+// being overlapped by the next fire.
+crons.interval(
+  "drive-changes-poll",
+  { minutes: 2 },
+  internal.driveSync.pollChanges,
+);
+
+// Google Drive hydration sweep. Every 5 minutes, reclaim crashed
+// "processing" rows, then pick up to 5 due settled/retryable driveFiles,
+// fetch their bytes, run them through the v4 extraction pipeline (via the
+// Next.js /api/drive/ingest route) and persist documents + ingestionEvents.
+// Self-skips when there is nothing due or no usable Drive connection.
+crons.interval(
+  "drive-hydration-sweep",
+  { minutes: 5 },
+  internal.driveHydration.hydrateSettled,
+);
+
+// Google Drive nightly reconcile. Re-walks the whole tree under the root
+// folder and trashes any live mirror row the walk didn't see — the safety
+// net for per-user changes-feed gaps on shared-with-me content. 2:30 UTC
+// sits clear of the other daily jobs (3:15 / 3:30 / 3:45 / 4:00 / 5:00).
+crons.daily(
+  "drive-reconcile",
+  { hourUTC: 2, minuteUTC: 30 },
+  internal.driveSync.reconcileWalk,
+);
+
 // v1.2: stale skillRun sweep. Once daily, mark any skillRun with
 // status=running AND _creationTime > 6h as failed. Prevents stuck runs
 // from blocking future dedup checks.
@@ -94,6 +139,58 @@ crons.daily(
   "skillrun-staleness-sweep",
   { hourUTC: 3, minuteUTC: 45 },
   internal.skillRuns.sweepStaleRunningRunsInternal,
+);
+
+// Approval expiry sweep (spec-3 F6). Nightly, mark pending approvals past
+// their expiresAt (default 14d from requestedAt) as expired so the queue
+// can't silently re-accumulate stale rows. 3:00 UTC sits clear of the
+// other daily jobs (2:30 / 3:15 / 3:30 / 3:45 / 4:00 / 5:00).
+crons.daily(
+  "approval-expiry-sweep",
+  { hourUTC: 3, minuteUTC: 0 },
+  internal.approvals.expireStale,
+);
+
+// Knowledge-layer atomization sweep (Spec 2 §11 + §14b.1). Every 10 minutes,
+// tail the ingestionEvents feed for changed documents whose client is already
+// knowledge-enabled (has ≥1 atom) and whose (documentId, contentChecksum) has
+// no atomObservations yet, then re-atomize up to 3/tick via the Next
+// /api/knowledge/atomize route → reatomizeDiff. The knowledge-enabled gate is
+// the cost wall: clients never onboarded through the harness lane are skipped.
+// Self-skips when NEXT_APP_URL / CRON_SECRET are unset.
+crons.interval(
+  "knowledge-atomize-sweep",
+  { minutes: 10 },
+  internal.knowledge.atomizerLane.sweep,
+);
+
+// Entity-candidate enrichment worker (Spec 2 Phase 2b, §3.5). Every 2 hours,
+// process up to 10 pending entityCandidates: companies via CH name search
+// (exact-normalized-name matches only → sync profile+charges+officers+PSCs),
+// people via client-scoped contact match then Apollo (conservative). On
+// resolution, atomsCore.repointCandidateAtoms re-points every referencing
+// atom through the identity machinery (duplicates merge). Failed attempts
+// cap at 3 — the candidate then stays pending for operator triage
+// (atoms.listCandidates / atoms.dismissCandidate); never auto-dismissed.
+// Infra errors (missing CH/Apollo keys, rate limits) don't burn attempts.
+crons.interval(
+  "entity-candidate-enrichment",
+  { hours: 2 },
+  internal.knowledge.candidates.enrichmentSweep,
+);
+
+// Knowledge-graph nightly integrity sweep (Spec 2 §10). Once daily, chains
+// paginated sub-jobs: retro version-precedence pass over contested groups →
+// stale-contest ageing (flag contests older than 14d the retro didn't resolve)
+// → orphan/dangling atom retirement + supersededBy repair + resolved-candidate
+// tombstone hygiene → salience/IDF refresh → retrievalLog prune + chunk-backfill
+// tick. Every table walk is a sequence of bounded mutations so no transaction is
+// unbounded. 2:45 UTC sits clear of the other daily jobs (2:30 / 3:00 / 3:15 /
+// 3:30 / 3:45 / 4:00 / 5:00).
+crons.daily(
+  "knowledge-integrity-sweep",
+  { hourUTC: 2, minuteUTC: 45 },
+  internal.knowledge.integritySweep.nightlyIntegritySweep,
 );
 
 export default crons;

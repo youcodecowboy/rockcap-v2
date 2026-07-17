@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { clientGraphSection } from "./knowledge/graphQueries";
 
 /**
  * Create a prospect from a company number
@@ -592,6 +593,13 @@ export const getDeepContext = query({
       );
     summary.knowledgeItemCount = knowledgeItems.length;
 
+    // 13. Knowledge-layer Graph section (Spec 2 Phase 2a.4, spec §9). Bounded:
+    // top-10 federated edges + facilities + atom counts, computed via the
+    // shared graph cores. Near-zero cost for non-knowledge-enabled clients —
+    // two indexed count reads, and with zero atoms the section is {atoms: 0}.
+    const graph = await clientGraphSection(ctx, args.clientId);
+    summary.graphAtoms = (graph as any).atoms ?? 0;
+
     return {
       summary,
       prospect,
@@ -614,6 +622,9 @@ export const getDeepContext = query({
       deals: { all: deals, active: dealsActive },
       projects: { all: projects, active: projectsActive },
       pendingApprovals,
+      // Spec 2 Phase 2a.4 — bounded knowledge-graph section ({atoms: 0} when
+      // the client has no atoms; else counts + top-10 federated edges + facilities)
+      graph,
     };
   },
 });

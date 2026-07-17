@@ -32,8 +32,9 @@ export { callMockBatch } from './lib/mock-client';
 export {
   resolvePlacement,
   resolveBatchPlacement,
-  getTypeAbbreviation,
   FOLDER_DEFINITIONS,
+  NEVER_AUTO_CLASSIFY_FOLDER_KEYS,
+  getParentFolderKey,
 } from './lib/placement-rules';
 export type { PlacementResult } from './lib/placement-rules';
 

@@ -27,6 +27,7 @@ import {
   ChevronDown,
   ChevronRight,
   Ban,
+  RefreshCw,
 } from "lucide-react";
 
 // Approval queue page (BL-5.7).
@@ -79,7 +80,9 @@ function statusLabel(status: ApprovalStatus, entityType?: string): string {
     case "approved":
       return "Executing";
     case "executed":
-      return entityType === "document_publish" ? "Filed" : "Sent";
+      if (entityType === "document_publish") return "Filed";
+      if (entityType === "drive_write") return "Applied";
+      return "Sent";
     case "execution_failed":
       return "Failed";
     default:
@@ -146,6 +149,7 @@ function ApprovalRow({ approval }: { approval: any }) {
   const approve = useMutation(api.approvals.approve as any);
   const reject = useMutation(api.approvals.reject as any);
   const cancel = useMutation(api.approvals.cancel as any);
+  const retry = useMutation(api.approvals.retry as any);
 
   const handleApprove = async () => {
     setActing(true);
@@ -177,6 +181,17 @@ function ApprovalRow({ approval }: { approval: any }) {
       await cancel({ approvalId: approval._id });
     } catch (e: any) {
       alert(e?.message || "Failed to cancel");
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    setActing(true);
+    try {
+      await retry({ approvalId: approval._id });
+    } catch (e: any) {
+      alert(e?.message || "Failed to retry");
     } finally {
       setActing(false);
     }
@@ -332,6 +347,27 @@ function ApprovalRow({ approval }: { approval: any }) {
                 {approval.executionError}
               </div>
             )}
+            {/* Retry — re-queue a send that failed at execution time (kill
+                switch was off, token needed reconnect, transient error). The
+                action was already approved, so this re-runs it without a
+                re-draft. See approvals.retry. */}
+            {approval.status === "execution_failed" && (
+              <div style={{ paddingTop: 12, borderTop: `1px solid ${colors.border.light}`, display: "flex", alignItems: "center", gap: 8 }}>
+                <Button variant="primary" accent={colors.accent.green} onClick={handleRetry} disabled={acting} size="sm">
+                  {acting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <>
+                      <RefreshCw size={14} />
+                      Retry send
+                    </>
+                  )}
+                </Button>
+                <span style={{ fontSize: 11, color: colors.text.muted }}>
+                  Re-queues the send. If it failed on a Gmail reconnect, reconnect first.
+                </span>
+              </div>
+            )}
             {approval.status === "rejected" && approval.rejectedReason && (
               <div
                 style={{
@@ -431,12 +467,15 @@ export default function ApprovalsPage() {
               {counts.executionFailed > 0 && (
                 <StatusPill label={`${counts.executionFailed} failed`} tone={colors.accent.red} />
               )}
+              {counts.expired > 0 && (
+                <StatusPill label={`${counts.expired} expired`} tone={colors.text.dim} />
+              )}
             </div>
           )}
         </div>
 
         <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${colors.border.default}` }}>
-          {(["pending", "executed", "execution_failed", "rejected", "cancelled", "all"] as const).map((s) => {
+          {(["pending", "executed", "execution_failed", "rejected", "expired", "cancelled", "all"] as const).map((s) => {
             const active = filter === s;
             return (
               <button

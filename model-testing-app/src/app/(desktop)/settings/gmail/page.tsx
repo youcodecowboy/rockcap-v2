@@ -39,12 +39,14 @@ function GmailSettingsInner() {
   );
   const sendConfig = useQuery(api.gmailTokens.getSendConfig as any);
   const setMySendEnabled = useMutation(api.gmailTokens.setMySendEnabled as any);
+  const updateSendConfig = useMutation(api.gmailTokens.updateSendConfig as any);
 
   const params = useSearchParams();
   const callbackState = params.get("gmail");
 
   const [disconnecting, setDisconnecting] = useState(false);
   const [togglingSend, setTogglingSend] = useState(false);
+  const [togglingGlobal, setTogglingGlobal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -89,6 +91,19 @@ function GmailSettingsInner() {
       setError(e?.message || "Failed to toggle send enable.");
     } finally {
       setTogglingSend(false);
+    }
+  };
+
+  const handleToggleGlobalSend = async () => {
+    setError(null);
+    setSuccessMessage(null);
+    setTogglingGlobal(true);
+    try {
+      await updateSendConfig({ isEnabled: !(sendConfig?.isEnabled === true) });
+    } catch (e: any) {
+      setError(e?.message || "Failed to toggle global send.");
+    } finally {
+      setTogglingGlobal(false);
     }
   };
 
@@ -313,14 +328,27 @@ function GmailSettingsInner() {
                     Global send
                   </div>
                   <div style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
-                    Admin-controlled. If off, no skill can send from any
-                    account, even if individual users have opted in.
+                    The org-wide kill switch. If off, no skill can send from
+                    any account, even if individual users have opted in.
                   </div>
                 </div>
-                <StatusPill
-                  label={globalSendOn ? "on" : "off"}
-                  tone={globalSendOn ? colors.accent.green : colors.text.dim}
-                />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <StatusPill
+                    label={globalSendOn ? "on" : "off"}
+                    tone={globalSendOn ? colors.accent.green : colors.text.dim}
+                  />
+                  <Button
+                    onClick={handleToggleGlobalSend}
+                    variant={globalSendOn ? "secondary" : "primary"}
+                    disabled={togglingGlobal || sendConfig === undefined}
+                  >
+                    {togglingGlobal
+                      ? "Saving"
+                      : globalSendOn
+                      ? "Disable global send"
+                      : "Enable global send"}
+                  </Button>
+                </div>
               </div>
 
               <div

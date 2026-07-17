@@ -48,7 +48,7 @@ type ScoreResult = {
 ## Workflow
 
 1. Load the project's profile via deal context: scheme type, location, asset class, GDV, TDC, target facility size, target leverage, timing constraint.
-2. For each candidate lender, load their LenderProfile (static layer from `clientIntelligence`, live appetite from `appetiteSignals` where `isCurrent: true`, behavioural from `lenderApproaches` history).
+2. For each candidate lender, load their profile graph-first: `lender.getDeepContext` (read its `graph` section — facilities, atom counts, top edges — for the lender's actual charge/facility footprint), plus live appetite from `appetiteSignals` where `isCurrent: true` and behavioural from `lenderApproaches` history. If the graph section is empty (lender not yet atomized), fall back to the static layer on `clientIntelligence`.
 3. Apply hard filters first:
    - Min ticket size: lender's stated min must be at or below deal facility.
    - Max ticket size: lender's stated max must be at or above deal facility.
@@ -76,10 +76,10 @@ CONVENTIONS apply. Two that matter most:
 
 ## Tool dependencies
 
-- `project.get`, `intelligence.getProjectIntelligence`
+- `project.get`, `project.getDeepContext` (graph section) / `atoms.search` (fallback: `intelligence.getProjectIntelligence` when the project's graph is empty — not yet atomized)
 - `appetite.getCurrentForLender`
 - `lenderApproach.listByLender` (for behavioural)
-- `intelligence.getClientIntelligence` (for the lender's static layer)
+- `lender.getDeepContext` (graph section: facilities + atoms; fallback: `intelligence.getClientIntelligence` for the static layer when the lender is not yet atomized)
 - `contact.get` (for BDM resolution)
 
 ## What goes wrong

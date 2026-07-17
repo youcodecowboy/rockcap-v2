@@ -158,6 +158,26 @@ export interface SkillMetadata {
 // CLASSIFY OUTPUT (per document in a batch)
 // =============================================================================
 
+/**
+ * Producer axis — WHO authored the document, detected from CONTENT, never
+ * from Drive metadata (Drive owner is always rockcap.uk — see the Dark Mills
+ * exemplar pack §2/§4). Drives subfolder placement (e.g. client vs rockcap
+ * appraisals).
+ */
+export type ProducerAxis =
+  | 'client'                     // developer-ops DNA (timesheets, trade cost matrices, Gross Margin %)
+  | 'rockcap'                    // debt-structuring DNA (LTGDV/Lender IRR, Lender Dashboard, Note template)
+  | 'lender'                     // first-person lender voice + broker-as-fee-line
+  | 'third_party_professional'   // firm letterhead / architect job numbers (KF, RRA)
+  | 'statutory_authority';       // HEREBY PERMITS / TCPA citations / planning refs
+
+/**
+ * Audience axis — WHO the document is for, detected from body name-stamp +
+ * register (the filename AUDIENCE token records filing custody only and can
+ * lie — pack §4.3). 'neutral' = public record (statutory decisions).
+ */
+export type AudienceAxis = 'internal' | 'external' | 'neutral';
+
 export interface DocumentClassification {
   /** Index matching the BatchDocument.index */
   documentIndex: number;
@@ -169,6 +189,10 @@ export interface DocumentClassification {
     category: string;
     suggestedFolder: string;
     targetLevel: 'client' | 'project';
+    /** Producer axis (content-derived; optional for backward compat) */
+    producer?: ProducerAxis;
+    /** Audience axis (body stamp + register beat filename tokens) */
+    audience?: AudienceAxis;
     confidence: number;
     reasoning: string;
     alternativeTypes?: Array<{

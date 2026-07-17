@@ -49,7 +49,7 @@ type ResolutionCandidate = {
 1. **If `companiesHouseNumber` is given**, look up directly via `companies-house.getCompanyProfile`. Then check whether a `clients` row references this company number; if yes, return `kind: "client"`. Else check `companiesHouseCompanies` cache; return `kind: "companies_house"` either way.
 2. **If `emailDomain` is given**, search `clients` for a row whose `companyName` or trading name matches a domain-to-name heuristic. Search `companies` (HubSpot projection) for `domain` field match. If exactly one hit, return it with `confidence: "high"`. If multiple plausible hits, return `kind: "needs_disambiguation"`. If none, return `kind: "no_match"` with candidates suggested via Companies House name search using the domain root.
 3. **If `companyName` is given**, search `clients.list` for matches. Search `companies` for matches. Search Companies House. Score matches by exact-vs-fuzzy match plus incorporation recency (younger active companies score above old dissolved ones). Return the top match if confidence is high, else needs_disambiguation with top three candidates.
-4. **If `freeDescription` is given**, attempt to extract a scheme address or a recognisable company name. Search internal first (intelligence might already link a scheme to a developer); fall back to Companies House. If extraction fails, return `kind: "no_match"` with no candidates and surface for human disambiguation.
+4. **If `freeDescription` is given**, attempt to extract a scheme address or a recognisable company name. Search internal first — graph-first via `atoms.search` + `graph.findPaths` (the graph may already link a scheme to a developer; `intelligence.queryIntelligence` only as fallback for not-yet-atomized clients); then fall back to Companies House. If extraction fails, return `kind: "no_match"` with no candidates and surface for human disambiguation.
 5. **Apply the `triggerHint`** as a tie-breaker when scoring candidates. "Planning hit" weights towards active development SPVs; "referral" weights towards parent or sponsor entities; "inbound reply" weights towards the company whose email domain we last touched.
 
 ## Confidence guidance
@@ -68,7 +68,7 @@ type ResolutionCandidate = {
 - `client.list`, `client.checkExists`
 - `companies.list`, `companies.getByDomain` (where indexed)
 - `companies-house.searchCompanies`, `companies-house.getCompanyProfile`
-- `intelligence.queryIntelligence` (for scheme-to-developer lookups via `freeDescription` path)
+- `atoms.search`, `graph.findPaths` (for scheme-to-developer lookups via `freeDescription` path; `intelligence.queryIntelligence` fallback only, when the graph has no coverage — client not yet atomized)
 
 ## What goes wrong
 

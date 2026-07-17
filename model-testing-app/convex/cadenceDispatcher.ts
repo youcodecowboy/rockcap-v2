@@ -1,5 +1,16 @@
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import {
+  CADENCE_REVALIDATE_GAP_DAYS,
+  INTEL_STALE_DAYS,
+} from "./lib/pipelineStages";
+
+// Trigger-B knobs. CADENCE_REVALIDATE_GAP_DAYS (30): a touch whose gap since the
+// client's last outreach send exceeds this triggers an intel-revalidate before
+// firing. INTEL_STALE_DAYS (7) doubles as the re-run guard — once we've
+// revalidated within 7 days, don't revalidate again on every 5-min tick (so a
+// held cadence doesn't hammer the route).
+const DAY_MS = 86_400_000;
 
 // Cadence dispatcher (cadence-fire v1).
 //
@@ -91,6 +102,60 @@ export const tick = internalAction({
         continue;
       }
 
+      // ── Trigger B: 30-day cadence-gap intel re-validation ──────────────
+      // Before firing a due touch, if the gap since this prospect's last
+      // outreach send exceeds 30 days, run the cheap intel-revalidate pass.
+      //   • still_valid (or revalidate errored — fail-open) → fire as normal.
+      //   • materially_changed → HOLD the touch (deactivate but preserve
+      //     nextDueAt) and DO NOT fire stale outreach; the held touch is
+      //     re-draftable via cadences.clearIntelHoldInternal.
+      // A 7-day guard on lastIntelRevalidateAt stops us re-running every tick
+      // (e.g. while a touch sits held). First-ever touches have no
+      // lastOutreachSendAt base, so Trigger B correctly never fires there.
+      if (row.relatedClientId) {
+        const fresh = await ctx.runQuery(
+          internal.intelRevalidate.getTriggerBContextInternal,
+          { clientId: row.relatedClientId },
+        );
+        if (fresh?.lastOutreachSendAt) {
+          const gapMs = Date.parse(row.nextDueAt) - Date.parse(fresh.lastOutreachSendAt);
+          const recentlyRevalidated =
+            !!fresh.lastIntelRevalidateAt &&
+            Date.now() - Date.parse(fresh.lastIntelRevalidateAt) < INTEL_STALE_DAYS * DAY_MS;
+          if (
+            isFinite(gapMs) &&
+            gapMs > CADENCE_REVALIDATE_GAP_DAYS * DAY_MS &&
+            !recentlyRevalidated
+          ) {
+            let verdict: { result: "still_valid" | "materially_changed" };
+            try {
+              verdict = await ctx.runAction(
+                internal.intelRevalidate.runRevalidateInternal,
+                {
+                  clientId: row.relatedClientId,
+                  companyNumber: fresh.companyNumber,
+                  sinceIso: fresh.lastFullIntelAt,
+                  reason: "cadence_gap_30d",
+                  triggeredBy: "cadence_dispatcher",
+                },
+              );
+            } catch {
+              // Fail-open: a thrown revalidate must not block outreach. Fire.
+              verdict = { result: "still_valid" };
+            }
+            if (verdict.result === "materially_changed") {
+              await ctx.runMutation(internal.cadences.holdForIntelInternal, {
+                cadenceId: row._id,
+                reason: "intel_materially_changed",
+              });
+              skipped++;
+              continue;
+            }
+            // still_valid → fall through to the normal fire path below.
+          }
+        }
+      }
+
       // Branch on drafting mode
       if (row.preDraftedTouch) {
         // Pre-drafted: create the approval row first. If that fails, record
@@ -114,6 +179,11 @@ export const tick = internalAction({
               subject: row.preDraftedTouch.subject,
               bodyText: row.preDraftedTouch.bodyText,
               bodyHtml: row.preDraftedTouch.bodyHtml,
+              // Phase 2 metrics: carry the drafting skill's template tag
+              // through to the send so outreach.metrics can attribute
+              // response rates by template. Absent on untagged legacy rows.
+              templateKey: row.preDraftedTouch.dynamicVars?.templateKey,
+              hookRung: row.preDraftedTouch.dynamicVars?.hookRung,
             },
             requestedBy: row.createdBy,
             requestSource: "cadence",

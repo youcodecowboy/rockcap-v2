@@ -16,6 +16,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Passport',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A government-issued passport serves as the primary photographic identity document in ' +
       'UK property finance KYC checks. Under the Money Laundering, Terrorist Financing and ' +
@@ -136,6 +137,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Driving License',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A UK driving licence issued by the Driver and Vehicle Licensing Agency (DVLA) is one ' +
       'of the most commonly submitted photographic identity documents in property finance KYC ' +
@@ -252,6 +254,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'ID Document',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'An ID Document is a catch-all classification for identity verification documents that ' +
       'do not fall squarely into the Passport or Driving Licence categories. In UK property ' +
@@ -370,6 +373,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Proof of Address',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A Proof of Address document is a generic classification for any document that verifies ' +
       'an individual\'s current residential address as part of UK property finance KYC ' +
@@ -488,6 +492,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Utility Bill',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A utility bill is one of the most widely accepted documents for proving a borrower\'s ' +
       'current residential address in UK property finance KYC checks. Under the Money ' +
@@ -610,6 +615,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Bank Statement',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A bank statement or building society statement is a key KYC document used in UK ' +
       'property finance to verify a borrower\'s residential address and, in some cases, to ' +
@@ -736,6 +742,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Application Form',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'An application form in the context of UK property finance KYC is the initial document ' +
       'completed BY the borrower (or their broker) to apply for a loan facility, open an ' +
@@ -865,6 +872,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Assets & Liabilities Statement',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'An Assets & Liabilities Statement (A&L Statement) is a personal financial declaration ' +
       'completed by the borrower to provide lenders with a comprehensive snapshot of their ' +
@@ -991,6 +999,7 @@ export const KYC_REFERENCES: DocumentReference[] = [
     fileType: 'Certificate of Incorporation',
     category: 'KYC',
     filing: { targetFolder: 'KYC', targetLevel: 'client' },
+    targetFolderKey: 'kyc',
     description:
       'A Certificate of Incorporation is the official document issued by Companies House ' +
       'confirming that a company has been legally registered and incorporated under the ' +

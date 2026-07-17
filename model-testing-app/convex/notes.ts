@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { markdownToTipTapDoc, wordCount as countWords } from "./lib/markdownToTipTap";
+import { NOTE_ATOMIZE_DEBOUNCE_MS } from "./knowledge/noteAtomizer";
 
 // Mutation: Create new note
 export const create = mutation({
@@ -77,6 +78,16 @@ export const create = mutation({
       });
     }
 
+    // Knowledge feed — filed notes atomize (debounced; the action re-checks
+    // scope, text, and the checksum so stale schedules no-op).
+    if (args.clientId || args.projectId) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId },
+      );
+    }
+
     return noteId;
   },
 });
@@ -90,6 +101,37 @@ export const create = mutation({
 // Notes are a separate lane from intelligence; these tools exist so the agent
 // can drop a note when a note is the right home (a to-do, a reminder), not to
 // route intelligence here.
+// Public (Clerk-authed) markdown note creation — the Lenders-tab notes panel
+// writes through here. Same conversion + side effects as the internal MCP
+// path (context-cache invalidation, debounced note atomization), so a lender
+// note lands in the knowledge graph like any other filed note.
+export const createFromMarkdown = mutation({
+  args: {
+    title: v.string(),
+    markdown: v.string(),
+    emoji: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+    const users = await ctx.db.query("users").take(1);
+    const userId = users[0]?._id;
+    if (!userId) throw new Error("No user available");
+    return await ctx.runMutation(internal.notes.createFromMarkdownInternal, {
+      userId,
+      title: args.title,
+      markdown: args.markdown,
+      emoji: args.emoji,
+      clientId: args.clientId,
+      projectId: args.projectId,
+      tags: args.tags,
+    });
+  },
+});
+
 export const createFromMarkdownInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -136,6 +178,13 @@ export const createFromMarkdownInternal = internalMutation({
         contextId: args.projectId,
       });
     }
+    if (args.clientId || args.projectId) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId },
+      );
+    }
     return noteId;
   },
 });
@@ -170,6 +219,13 @@ export const updateFromMarkdownInternal = internalMutation({
         contextType: "project",
         contextId: existing.projectId,
       });
+    }
+    if (args.markdown !== undefined && (existing.clientId || existing.projectId)) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId: args.noteId },
+      );
     }
     return { ok: true, noteId: args.noteId };
   },
@@ -300,6 +356,17 @@ export const update = mutation({
         contextType: "project",
         contextId: existing.projectId,
       });
+    }
+
+    // Knowledge feed — re-atomize on content change or on filing an existing
+    // note into a client/project scope (debounced; checksum-idempotent).
+    const becameFiled = wasUnfiled && !isUnfiled;
+    if ((updates.content !== undefined || becameFiled) && !isUnfiled) {
+      await ctx.scheduler.runAfter(
+        NOTE_ATOMIZE_DEBOUNCE_MS,
+        internal.knowledge.noteAtomizer.atomizeNote,
+        { noteId: id },
+      );
     }
 
     return id;

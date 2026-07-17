@@ -5,8 +5,11 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
-import { StatePill } from "./StatePill";
+import { Network } from "lucide-react";
+import { StageChip } from "./StageChip";
 import { FlagChip } from "./FlagChip";
+import { PIPELINE_STAGES, derivePipelineStage, ladderForStage } from "@/lib/prospects/stages";
+import { DealValueControl } from "./DealValueControl";
 
 interface ProspectDetailHeaderProps {
   prospect: any;
@@ -22,15 +25,53 @@ interface ProspectDetailHeaderProps {
   threadsCount?: number;
   knowledgeCount?: number;
   lenderTierConflict?: { action: "park" | "soften" | "none"; tier1: string[]; tier2: string[] };
+  /** Opens the Knowledge Graph drawer (mounted by the page). Prospect entry is
+   * always unfiltered — spec §14b.6a: prospecting sees the whole graph. */
+  onOpenGraph?: () => void;
 }
 
-export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, threadsCount, knowledgeCount, lenderTierConflict }: ProspectDetailHeaderProps) {
+export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, onTabChange, peopleCount, chargesCount, repliesCount, meetingsCount, schemesCount, threadsCount, knowledgeCount, lenderTierConflict, onOpenGraph }: ProspectDetailHeaderProps) {
   const colors = useColors();
   const router = useRouter();
   const activate = useMutation(api.clients.activate as any);
-  const transition = useMutation(api.prospects.transitionState as any);
+  // v3: pipelineStage is the single visible axis. The old prospectState "Stage"
+  // dropdown (api.prospects.transitionState) is retired from this surface;
+  // prospectState lives on only as HubSpot/cadence plumbing.
+  const promoteStage = useMutation(api.prospectStages.promoteStage as any);
+  const setQualSubStage = useMutation(api.prospectStages.setQualSubStage as any);
   const [promoting, setPromoting] = useState(false);
-  const [changingStage, setChangingStage] = useState(false);
+  const [changingPipeline, setChangingPipeline] = useState(false);
+  const [changingSubStage, setChangingSubStage] = useState(false);
+
+  // Effective pipeline stage (stored value wins; else derived from prospectState).
+  const pipelineStage = derivePipelineStage(prospect ?? {});
+  // The sub-stage ladder only applies to pre-qualification / qualified.
+  const ladder = pipelineStage ? ladderForStage(pipelineStage) : null;
+  const qualSubStage = (prospect as any)?.qualSubStage as string | undefined;
+
+  const handlePipelineChange = async (toStage: string) => {
+    if (!prospect?._id || changingPipeline || toStage === pipelineStage) return;
+    setChangingPipeline(true);
+    try {
+      await promoteStage({ clientId: prospect._id as string, toStage });
+    } catch (err) {
+      console.error("Failed to change pipeline stage", err);
+    } finally {
+      setChangingPipeline(false);
+    }
+  };
+
+  const handleSubStageChange = async (subStage: string) => {
+    if (!prospect?._id || changingSubStage || !subStage || subStage === qualSubStage) return;
+    setChangingSubStage(true);
+    try {
+      await setQualSubStage({ clientId: prospect._id as string, subStage });
+    } catch (err) {
+      console.error("Failed to change sub-stage", err);
+    } finally {
+      setChangingSubStage(false);
+    }
+  };
 
   // Collapse the chrome (breadcrumb + metrics cards + title meta) once the
   // operator scrolls into the content, so the sticky header stops eating half
@@ -48,28 +89,14 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // prospectState is no longer a visible axis — kept here only as the plumbing
+  // gate for the "Graduate to client" button (a graduated prospect shouldn't
+  // offer to graduate again).
   const state = prospect?.prospectState ?? "drafted";
   const touchCount = cadences?.length ?? 0;
-  // Every step is operator-advanceable: promote is available from any non-promoted
-  // state (it's a judgment call, not gated to a rung), and the stage dropdown lets
-  // the operator move to any other stage manually.
+  // Graduation is available from any non-promoted prospect (it's a judgment
+  // call, not gated to a stage); the single Stage control handles all other moves.
   const canPromote = state !== "promoted" && !!prospect?._id;
-
-  // Manual stages the operator can set directly (promotion is the separate button,
-  // since it also flips the client to active).
-  const MANUAL_STAGES = ["researched", "drafted", "needs_revision", "active", "replied", "engaged", "parked", "lost"] as const;
-
-  const handleStageChange = async (newState: string) => {
-    if (!prospect?._id || changingStage || newState === state) return;
-    setChangingStage(true);
-    try {
-      await transition({ clientId: prospect._id as string, newState });
-    } catch (err) {
-      console.error("Failed to change prospect stage", err);
-    } finally {
-      setChangingStage(false);
-    }
-  };
 
   const handlePromote = async () => {
     if (!prospect?._id || promoting) return;
@@ -134,7 +161,9 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                 </>
               )}
             </div>
-            <StatePill state={state} />
+            {/* v3: the single visible stage axis — pipelineStage via StageChip,
+                replacing the old prospectState StatePill. */}
+            <StageChip stage={pipelineStage} size="md" />
             {lenderTierConflict?.action === "park" && (
               <FlagChip label="Parked — Tier 1 lender" severity="warn" colors={colors} />
             )}
@@ -144,13 +173,25 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Manual stage control — operator can advance to any stage. */}
+            {/* Operator-entered deal value — the only source of the pipeline-value
+                metric (never the AI dealSizeRange estimate). */}
+            {prospect?._id && (
+              <DealValueControl
+                clientId={prospect._id as string}
+                valueGBP={(prospect as any)?.dealValueGBP}
+                note={(prospect as any)?.dealValueNote}
+                aiEstimate={(prospect as any)?.dealSizeRange}
+              />
+            )}
+            {/* The single Stage control (v3) — moves the prospect between the
+                5 pipeline dashboards via pipelineStage. This is now the only
+                stage axis; the old prospectState dropdown has been retired. */}
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
               Stage
               <select
-                value={MANUAL_STAGES.includes(state as any) ? state : ""}
-                disabled={changingStage}
-                onChange={(e) => handleStageChange(e.target.value)}
+                value={pipelineStage ?? ""}
+                disabled={changingPipeline}
+                onChange={(e) => handlePipelineChange(e.target.value)}
                 style={{
                   padding: "6px 10px",
                   fontSize: 12,
@@ -158,15 +199,66 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                   border: `1px solid ${colors.border.default}`,
                   background: colors.bg.card,
                   color: colors.text.primary,
-                  cursor: changingStage ? "default" : "pointer",
+                  cursor: changingPipeline ? "default" : "pointer",
                 }}
               >
-                {!MANUAL_STAGES.includes(state as any) && <option value="">{state}</option>}
-                {MANUAL_STAGES.map((s) => (
-                  <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                {!pipelineStage && <option value="">— holding —</option>}
+                {PIPELINE_STAGES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
                 ))}
               </select>
             </label>
+            {/* Sub-stage ladder — only for pre-qualification / qualified, where the
+                operator advances a discrete workflow step (modelling → feedback,
+                terms requested → credit approved). */}
+            {ladder && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: colors.text.muted }}>
+                Step
+                <select
+                  value={qualSubStage ?? ""}
+                  disabled={changingSubStage}
+                  onChange={(e) => handleSubStageChange(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: `1px solid ${colors.border.default}`,
+                    background: colors.bg.card,
+                    color: colors.text.primary,
+                    cursor: changingSubStage ? "default" : "pointer",
+                  }}
+                >
+                  <option value="">— not set —</option>
+                  {ladder.map((s) => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {/* Knowledge graph — peer of "Graduate to client" in prominence.
+                The prospect view is always unfiltered (§14b.6a). */}
+            {onOpenGraph && (
+              <button
+                onClick={onOpenGraph}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  border: `1px solid ${colors.accent.indigo}`,
+                  background: colors.accent.indigo,
+                  color: "#fff",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <Network size={15} />
+                Knowledge Graph
+              </button>
+            )}
             {canPromote && (
               <button
                 onClick={handlePromote}
@@ -184,7 +276,7 @@ export function ProspectDetailHeader({ prospect, intelRun, cadences, activeTab, 
                   whiteSpace: "nowrap",
                 }}
               >
-                {promoting ? "Promoting…" : "Promote to client"}
+                {promoting ? "Graduating…" : "Graduate to client"}
               </button>
             )}
           </div>

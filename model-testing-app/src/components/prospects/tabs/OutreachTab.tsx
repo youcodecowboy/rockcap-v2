@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { useColors } from "@/lib/useColors";
 import { CadencePresetPicker } from "../CadencePresetPicker";
-import { Save, RotateCcw, Eye, Edit3, CheckCircle2, AlertTriangle, Mail, Linkedin, User } from "lucide-react";
+import { InlineDraftEditor } from "../InlineDraftEditor";
+import { Save, RotateCcw, Eye, Edit3, CheckCircle2, AlertTriangle, Mail, Linkedin, User, Clock } from "lucide-react";
 
 interface OutreachTabProps {
   cadences: any[];
   contacts?: any[];
+  clientId?: Id<"clients">;
 }
 
 // v1.2.1 Outreach tab. Per-touch inline editing of subject + body. Save
@@ -80,7 +83,7 @@ function inferCurrentPreset(cadences: any[]): string {
   return "custom";
 }
 
-export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
+export function OutreachTab({ cadences, contacts, clientId }: OutreachTabProps) {
   const colors = useColors();
   const updateCadence = useMutation(api.cadences.update);
   const applyPreset = useMutation(api.cadences.applyPresetSchedule);
@@ -92,6 +95,25 @@ export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
   );
   const packageId = sorted[0]?.packageId;
   const currentPreset = useMemo(() => inferCurrentPreset(sorted), [sorted]);
+
+  // Staged-but-unsent emails: once a touch fires, the dispatcher creates a
+  // pending gmail_send/email_reply approval keyed by relatedCadenceId. For
+  // those touches we edit the approval's draftPayload IN PLACE via the shared
+  // InlineDraftEditor (approvals.updateDraft + approve), rather than the
+  // pre-fire preDraftedTouch path (cadences.update). Map cadenceId → pending
+  // approval so each touch renders the right editor.
+  const resolvedClientId = clientId ?? (sorted[0]?.relatedClientId as Id<"clients"> | undefined);
+  const pendingApprovals = useQuery(
+    api.approvals.listPendingByClient,
+    resolvedClientId ? { clientId: resolvedClientId, limit: 50 } : "skip",
+  );
+  const approvalByCadenceId = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const a of (pendingApprovals as any[]) ?? []) {
+      if (a.relatedCadenceId) m[a.relatedCadenceId] = a;
+    }
+    return m;
+  }, [pendingApprovals]);
 
   // Per-touch local draft state, keyed by cadence id
   const [drafts, setDrafts] = useState<Record<string, TouchDraft>>({});
@@ -260,6 +282,11 @@ export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
 
   return (
     <div>
+      {/* Sequence summary — the package at a glance. Reinforces the single-gate
+          contract: Touch 1 sends the moment the operator approves; the rest are
+          scheduled and auto-send on their dates. */}
+      <SequenceSummary sorted={sorted} colors={colors} />
+
       {/* Recipient bar — who this whole package sends to. Changing it
           re-points every unfired touch (fired touches keep their history),
           so the package approval below is unambiguously "approve sending
@@ -335,16 +362,32 @@ export function OutreachTab({ cadences, contacts }: OutreachTabProps) {
         </div>
       )}
 
-      {/* Per-touch editable cards */}
+      {/* Per-touch editable cards. Two edit paths:
+          1. A pending approval exists for this touch (it has fired and is staged
+             but unsent) → edit the approval draft in place via InlineDraftEditor.
+          2. No approval yet (pre-fire) → edit the preDraftedTouch via TouchCard. */}
       {sorted.map((c) => {
+        const pendingApproval = approvalByCadenceId[c._id];
+        if (pendingApproval) {
+          const dp = pendingApproval.draftPayload ?? {};
+          return (
+            <StagedTouchCard key={c._id} cadence={c} colors={colors}>
+              <InlineDraftEditor
+                approvalId={pendingApproval._id as Id<"approvals">}
+                initialSubject={dp.subject ?? c.preDraftedTouch?.subject ?? ""}
+                initialBodyText={dp.bodyText ?? c.preDraftedTouch?.bodyText ?? ""}
+                initialBodyHtml={dp.bodyHtml ?? c.preDraftedTouch?.bodyHtml}
+                to={Array.isArray(dp.to) ? dp.to.join(", ") : dp.to}
+              />
+            </StagedTouchCard>
+          );
+        }
         const draft = drafts[c._id] ?? {
           subject: c.preDraftedTouch?.subject ?? "",
           bodyText: c.preDraftedTouch?.bodyText ?? "",
         };
         const dirty = isDirty(c);
         const isSaving = savingId === c._id;
-        const isPreview = editingId !== null && editingId !== c._id ? false : editingId === c._id ? false : false;
-        // Simpler: track preview state per-touch in separate state
         return (
           <TouchCard
             key={c._id}
@@ -542,6 +585,111 @@ function RecipientCard({
           Updating recipient on unfired touches…
         </div>
       )}
+    </div>
+  );
+}
+
+// Compact "package at a glance" strip above the recipient bar. States the
+// single-gate contract (Touch 1 sends on approve) and lists each touch's
+// scheduled send date so the operator sees the whole sequence before approving.
+function SequenceSummary({ sorted, colors }: { sorted: any[]; colors: any }) {
+  const total = sorted.length;
+  if (total === 0) return null;
+  const fmt = (iso?: string) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+  return (
+    <div
+      style={{
+        border: `1px solid ${colors.border.default}`,
+        borderLeft: `3px solid ${colors.entityTypes.cadence}`,
+        borderRadius: 4,
+        background: colors.bg.card,
+        padding: "12px 14px",
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <Clock size={13} color={colors.entityTypes.cadence} />
+        <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
+          {total} {total === 1 ? "touch" : "touches"}
+        </span>
+        <span style={{ fontSize: 11, color: colors.text.muted }}>
+          · Touch 1 sends immediately on approve · the rest auto-send on their dates
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {sorted.map((c) => {
+          const fired = !!c.lastFiredAt;
+          return (
+            <span
+              key={c._id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "3px 8px",
+                borderRadius: 3,
+                fontFamily: "ui-monospace, monospace",
+                fontSize: 10,
+                border: `1px solid ${fired ? `${colors.accent.green}50` : colors.border.default}`,
+                background: fired ? `${colors.accent.green}10` : colors.bg.cardAlt,
+                color: fired ? colors.accent.green : colors.text.secondary,
+              }}
+            >
+              T{c.packageOrder ?? "?"} {fired ? `· fired ${fmt(c.lastFiredAt)}` : `· ${fmt(c.nextDueAt)}`}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Wrapper around InlineDraftEditor for a touch that has fired and is staged as
+// a pending approval (unsent). Gives the inline editor the same "Touch N"
+// header context as the pre-fire TouchCard so the sequence reads consistently.
+function StagedTouchCard({
+  cadence,
+  colors,
+  children,
+}: {
+  cadence: any;
+  colors: any;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${colors.accent.orange}50`,
+        borderLeft: `3px solid ${colors.accent.orange}`,
+        borderRadius: 4,
+        marginBottom: 14,
+        background: colors.bg.card,
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 14px",
+          borderBottom: `1px solid ${colors.border.default}`,
+          background: colors.bg.light,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: colors.text.primary, fontWeight: 500 }}>
+          Touch {cadence.packageOrder}
+        </span>
+        <Pill colors={colors} bg={`${colors.accent.orange}18`} fg={colors.accent.orange} border={`${colors.accent.orange}50`}>
+          staged — edit &amp; approve to send
+        </Pill>
+      </div>
+      <div style={{ padding: 14 }}>{children}</div>
     </div>
   );
 }

@@ -1,0 +1,114 @@
+{
+  "$comment": "Single source of truth for the RockCap file-naming standard (docs/classification/RockCap_FileNamingStandard_RC_INTERNAL_V1.2_20260708.md §9). Consumed by humans, the filename parser, and the classifier. Extend deliberately — DocTypes are a controlled list.",
+  "standardVersion": "1.2",
+  "standardDate": "2026-07-08",
+  "grammar": {
+    "standard": "[Scheme]_[DocType]_[Origin]_[Status]_[Version]_[FilingDate].ext",
+    "dualDate": "[Scheme]_[DocType]_[DocumentDate]_[Origin]_[Status]_[Version]_[FilingDate].ext",
+    "fieldSeparator": "_",
+    "subpartSeparator": "-",
+    "fieldCase": "PascalCase",
+    "notes": [
+      "Status and Version appear on RockCap-authored docs and any third-party doc that arrives in drafts/versions (valuations, QS and monitoring reports, legals); simple inbound docs omit them.",
+      "Filing date is ALWAYS the final token. Document date (dual-date types only) sits immediately after the DocType — never adjacent to the filing date.",
+      "No spaces, underscores, or full stops inside a field value."
+    ]
+  },
+  "parseOrder": [
+    "extension: after the final '.'",
+    "filingDate: the trailing \\d{8} token",
+    "documentDate: a \\d{8} token immediately after the DocType (dual-date DocTypes only)",
+    "version/revision/status: recognised tokens (V\\d+.\\d+, R\\d+, or a status word)",
+    "origin: the token that is 'RC' or begins with an origin role prefix",
+    "docType: the token after the Scheme",
+    "scheme: the first token"
+  ],
+  "dates": {
+    "format": "YYYYMMDD",
+    "filingDate": "On every file, final token. When the file entered our filing as the current version (issue date for RC docs, received date for third-party). The recency marker.",
+    "documentDate": "Dual-date DocTypes only, immediately after the DocType. The date printed on / effective for the document itself — pins true vintage (an old planning permission can be received after a new one).",
+    "documentDateSource": {
+      "PlanningPermission": "permission/decision date; application date if unavailable",
+      "Valuation": "valuation date",
+      "QSReport": "report date",
+      "InitialMonitoringReport": "report date",
+      "InterimMonitoringReport": "report date",
+      "AssetsLiabilitiesStatement": "statement date",
+      "FacilityAgreement": "document/execution date",
+      "Debenture": "document/execution date",
+      "PersonalGuarantee": "document/execution date",
+      "LegalOpinion": "document/execution date",
+      "CertificateOfTitle": "document/execution date"
+    }
+  },
+  "version": {
+    "pattern": "^V\\d+\\.\\d+$",
+    "majorBump": "client issues a NEW appraisal, or a material change lands: GDV moves, comps added, scheme scope changes",
+    "minorBump": "smaller edits and iterations",
+    "oneVersionPerFile": true
+  },
+  "reissue": {
+    "pattern": "^R\\d+$",
+    "appliesTo": ["Terms"],
+    "rule": "A lender may send several term sheets, sometimes within the hour. Keep EVERY set, numbered R1, R2, R3… Never delete earlier ones — how terms changed is intelligence."
+  },
+  "origins": {
+    "RC": "RockCap-authored. No individual initials — the app tracks who edited.",
+    "CLIENT-": "From the borrower/sponsor. Council consents, drawings and client-side reports arriving via the client are CLIENT-.",
+    "LENDER-": "From a funder. Canonical name aligned to the lender database (LENDER-Funding365, never F365).",
+    "VALUER-": "Only when the valuer delivered to RockCap directly.",
+    "QS-": "Quantity / monitoring surveyor, direct delivery only.",
+    "LEGAL-": "Solicitor, direct delivery only.",
+    "SPV-": "Borrowing vehicle if distinct from sponsor, direct delivery only.",
+    "CH-": "Companies House.",
+    "OTHER-": "Direct delivery from any other party.",
+    "_reserved": ["COUNCIL-", "ARCHITECT-", "PLANNER-"]
+  },
+  "statuses": {
+    "advisory": ["INTERNAL", "EXTERNAL"],
+    "draftLegal": ["DRAFT", "FINAL", "UNSIGNED", "SIGNED", "EXECUTED", "SUPERSEDED"]
+  },
+  "docTypes": {
+    "LenderBrief": { "group": "modelling", "dualDate": false, "appFileType": "Lender Brief Note" },
+    "ClientBrief": { "group": "modelling", "dualDate": false, "appFileType": null, "note": "no taxonomy equivalent — 'Lender Brief Note' is the lender-facing brief; a client-facing brief type doesn't exist yet" },
+    "BuildCostSchedule": { "group": "modelling", "dualDate": false, "appFileType": null, "note": "our costed schedule; nearest taxonomy value is 'Contract Sum Analysis' but that denotes the QS/contractor cost plan — no clear equivalent, needs an operator call" },
+    "DeveloperBuildCosts": { "group": "modelling", "dualDate": false, "appFileType": null, "note": "client's raw costs; same 'Contract Sum Analysis' ambiguity as BuildCostSchedule — no clear equivalent" },
+    "AppraisalModel": { "group": "modelling", "dualDate": false, "appFileType": "RockCap Appraisal Model", "appFileTypeAlt": "Client Land Appraisal", "note": "RC-origin maps to RockCap Appraisal Model; CLIENT-origin to Client Land Appraisal" },
+    "TermsAnalysis": { "group": "modelling", "dualDate": false, "appFileType": "Lender Comparison Sheet", "note": "confirmed against placement-rules (terms_analysis); 'Lender Comparison Table' / 'Lender Analysis Note' are sibling types for the same folder" },
+    "CompsReport": { "group": "modelling", "dualDate": false, "appFileType": "Comparables" },
+    "AppendixA": { "group": "modelling", "dualDate": false, "appFileType": "Comparable Schedule", "note": "comps master schedule — placement-rules documents 'Comparable Schedule' as the address-keyed Appendix A deliverable" },
+    "DrawingSiteLocation": { "group": "modelling", "dualDate": false, "appFileType": "Location Plans" },
+    "DrawingElevations": { "group": "modelling", "dualDate": false, "appFileType": "Elevations" },
+    "DrawingFloorplans": { "group": "modelling", "dualDate": false, "appFileType": "Floor Plans" },
+    "SiteLayout": { "group": "modelling", "dualDate": false, "appFileType": "Site Plans" },
+    "PlanningPermission": { "group": "planning", "dualDate": true, "appFileType": "Planning Permission Decision Notice", "note": "NEVER abbreviate Drawing…/PlanningPermission to 'Plan/Plans' — design drawings and granted consent are different documents with different credit weight" },
+    "S106Agreement": { "group": "planning", "dualDate": false, "appFileType": "Planning Documentation", "note": "CORRECTED from tentative 'S106 Discharge/Variation' — that taxonomy type is explicitly the council's discharge/variation DECISION, 'distinct from the original S106 deed' (fileTypeDefinitions). The original deed files under the generic 'Planning Documentation' (its keywords include s106)" },
+    "CILNotice": { "group": "planning", "dualDate": false, "appFileType": "Planning Documentation", "note": "'Planning Documentation' keywords include 'cil'; no CIL-specific taxonomy type exists" },
+    "PlanningConditions": { "group": "planning", "dualDate": false, "appFileType": "Planning Documentation", "note": "confirmed — the decision notice itself (conditions attached) is 'Planning Permission Decision Notice'; standalone conditions docs are generic planning documentation" },
+    "Terms": { "group": "lender", "dualDate": false, "appFileType": "Indicative Terms", "appFileTypeAlt": "Credit Backed Terms" },
+    "TermsBundle": { "group": "lender", "dualDate": false, "appFileType": null, "note": "multiple lenders in one doc — origin LENDER-Multiple; no multi-lender bundle type in the taxonomy ('Indicative Terms' is per-lender)" },
+    "EmailTerms": { "group": "lender", "dualDate": false, "appFileType": "Indicative Terms", "note": "terms captured as an email/screenshot (PNG term sheets); vision-extracted text chunks by design" },
+    "Valuation": { "group": "credit", "dualDate": true, "appFileType": "RedBook Valuation" },
+    "QSReport": { "group": "credit", "dualDate": true, "appFileType": null, "note": "no generic QS-report type — content resolves to 'Initial Monitoring Report' / 'Interim Monitoring Report' (monitoring surveys) or 'Contract Sum Analysis' (cost plan); can't pick one statically" },
+    "InitialMonitoringReport": { "group": "credit", "dualDate": true, "appFileType": "Initial Monitoring Report" },
+    "InterimMonitoringReport": { "group": "credit", "dualDate": true, "appFileType": "Interim Monitoring Report", "note": "number the interims: InterimMonitoringReport-No2" },
+    "AssetsLiabilitiesStatement": { "group": "credit", "dualDate": true, "appFileType": "Assets & Liabilities Statement" },
+    "FacilityAgreement": { "group": "legal", "dualDate": true, "appFileType": "Facility Letter", "note": "confirmed — 'Facility Letter' is the taxonomy's executed-facility type (placement: post_completion)" },
+    "Debenture": { "group": "legal", "dualDate": true, "appFileType": "Debenture" },
+    "PersonalGuarantee": { "group": "legal", "dualDate": true, "appFileType": "Personal Guarantee" },
+    "LegalOpinion": { "group": "legal", "dualDate": true, "appFileType": "Legal Opinion" },
+    "CertificateOfTitle": { "group": "legal", "dualDate": true, "appFileType": "Report on Title", "note": "confirmed — the taxonomy's 'Report on Title' keywords/identification rules explicitly include 'Certificate of Title'" },
+    "Warranty": { "group": "legal", "dualDate": false, "appFileType": null, "note": "taxonomy splits warranties into 'Collateral Warranty' and 'NHBC Warranty' — the generic token can't pick one; classifier decides from content" },
+    "Insurance": { "group": "dd", "dualDate": false, "appFileType": "Insurance Policy" },
+    "BankStatement": { "group": "dd", "dualDate": false, "appFileType": "Bank Statement" },
+    "KYC": { "group": "dd", "dualDate": false, "appFileType": null, "note": "taxonomy holds specific KYC types (Passport, Driving License, Utility Bill, Application Form, Track Record, …) — no umbrella 'KYC' type; classifier picks the specific one" },
+    "ID": { "group": "dd", "dualDate": false, "appFileType": null, "note": "resolves to 'Passport' or 'Driving License' by content — no generic ID type" },
+    "CorporateStructure": { "group": "dd", "dualDate": false, "appFileType": null, "note": "no structure-chart type in the taxonomy ('Company Search' / 'Corporate Authorisations' are different documents)" },
+    "Misc": { "group": "fallback", "dualDate": false, "appFileType": null, "note": "temporary — raise to add the real type, don't invent one" }
+  },
+  "aliases": {
+    "docTypes": { "LenderNote": "LenderBrief" },
+    "lenders": { "F365": "Funding365" }
+  },
+  "$todo": "Reconciliation against src/v4/lib/placement-rules.ts + convex/fileTypeDefinitions.ts DONE 2026-07-08 (all tentative flags resolved: 5 confirmed, S106Agreement corrected to 'Planning Documentation'; nulls filled where a clear taxonomy value exists). Remaining nulls are GENUINE taxonomy gaps (ClientBrief, BuildCostSchedule, DeveloperBuildCosts, TermsBundle, QSReport, Warranty, KYC, ID, CorporateStructure, Misc) — see each entry's note; do not invent taxonomy values, extend fileTypeDefinitions deliberately if one is needed."
+}

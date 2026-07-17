@@ -5,15 +5,21 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
 import { useRouter } from "next/navigation";
-import { rungFor, RUNGS, PROSPECT_RUNGS } from "@/lib/prospects/ladder";
+import {
+  derivePipelineStage,
+  PIPELINE_STAGES,
+  type PipelineStage,
+  type StageDef,
+} from "@/lib/prospects/stages";
 import { computeProspectFlags } from "@/lib/prospects/flags";
 import { FlagChip } from "../FlagChip";
 
-// "Prospects" tab — the canonical prospect ladder. Every client with
-// status==="prospect" + a prospectState, grouped by its operator-facing rung
-// (researched → drafted → active → replied → meeting booked). promoted/parked/lost
-// collapse into a "Holding" group at the bottom so they don't clutter the live
-// pipeline but stay reachable.
+// "Prospects" tab — the canonical prospect pipeline. Every client with
+// status==="prospect" + a prospectState, grouped by its effective pipelineStage
+// (Cold → Pre-meeting → Post-meeting → Pre-qual → Qualified) — the single v3
+// stage vocabulary. Off-pipeline holding (parked / lost / promoted, which derive
+// to no stage) collapses into a "Holding" group at the bottom so they don't
+// clutter the live pipeline but stay reachable.
 
 const DEAL_TYPE_LABELS: Record<string, string> = {
   new_development: "New development",
@@ -27,20 +33,17 @@ function dealTypeLabel(dealType: string | undefined | null): string {
   return DEAL_TYPE_LABELS[dealType] ?? "—";
 }
 
-// Holding rungs shown collapsed beneath the active ladder.
-const HOLDING_RUNGS = [RUNGS.promoted, RUNGS.parked, RUNGS.lost];
-
-export function ProspectsTab() {
+export function ProspectsTab({ pipelineStage }: { pipelineStage?: PipelineStage } = {}) {
   const colors = useColors();
   const router = useRouter();
   const [holdingOpen, setHoldingOpen] = useState(false);
   // Outreach-ready filter (2026-05-30): surface the "accepted, awaiting draft"
   // pool at a glance. Reads outreachReadyAt off the client rows already in scope.
   const [readyOnly, setReadyOnly] = useState(false);
-  // Rung filter: null = all groups; a rung key (or "holding") narrows the
-  // table to that group so the operator never scrolls past dozens of rows
+  // Stage filter: null = all groups; a pipelineStage key (or "holding") narrows
+  // the table to that group so the operator never scrolls past dozens of rows
   // to reach the one they want.
-  const [rungFilter, setRungFilter] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
 
   const allClients = useQuery(api.clients.list as any, {}) ?? [];
   // Batched per-prospect rollup: real sends (outbound gmail touchpoints) +
@@ -51,39 +54,46 @@ export function ProspectsTab() {
       { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }
     > | undefined) ?? {};
   const allProspects = (allClients as any[]).filter(
-    (c) => c.status === "prospect" && c.prospectState,
+    (c) =>
+      c.status === "prospect" &&
+      c.prospectState &&
+      // When rendered inside a stage dashboard, narrow to that pipeline stage.
+      (!pipelineStage || derivePipelineStage(c) === pipelineStage),
   );
   const readyCount = allProspects.filter((c) => c.outreachReadyAt).length;
   const prospects = readyOnly
     ? allProspects.filter((c) => c.outreachReadyAt)
     : allProspects;
 
-  // Bucket prospects by rung key. A client maps to exactly one rung via rungFor.
-  const byRung = new Map<string, any[]>();
+  // Bucket prospects by effective pipelineStage. A client maps to exactly one
+  // stage via derivePipelineStage; rows that derive to no stage (off-pipeline
+  // holding — parked / lost / promoted) collect in `holding`.
+  const byStage = new Map<string, any[]>();
+  const holding: any[] = [];
   for (const c of prospects) {
-    const rung = rungFor(c.prospectState);
-    if (!rung) continue;
-    const arr = byRung.get(rung.key) ?? [];
+    const stage = derivePipelineStage(c);
+    if (!stage) {
+      holding.push(c);
+      continue;
+    }
+    const arr = byStage.get(stage) ?? [];
     arr.push(c);
-    byRung.set(rung.key, arr);
+    byStage.set(stage, arr);
   }
 
-  const holdingCount = HOLDING_RUNGS.reduce(
-    (sum, r) => sum + (byRung.get(r.key)?.length ?? 0),
-    0,
-  );
+  const holdingCount = holding.length;
 
-  // Which groups render under the current rung filter. "holding" narrows to
-  // the holding block (forced open); a ladder rung narrows to that rung; null
+  // Which groups render under the current stage filter. "holding" narrows to
+  // the holding block (forced open); a stage key narrows to that stage; null
   // shows everything.
-  const visibleRungs =
-    rungFilter === null
-      ? PROSPECT_RUNGS
-      : PROSPECT_RUNGS.filter((r) => r.key === rungFilter);
-  const showHolding = (rungFilter === null || rungFilter === "holding") && holdingCount > 0;
-  const holdingExpanded = holdingOpen || rungFilter === "holding";
+  const visibleStages =
+    stageFilter === null
+      ? PIPELINE_STAGES
+      : PIPELINE_STAGES.filter((s) => s.key === stageFilter);
+  const showHolding = (stageFilter === null || stageFilter === "holding") && holdingCount > 0;
+  const holdingExpanded = holdingOpen || stageFilter === "holding";
   const visibleRowCount =
-    visibleRungs.reduce((sum, r) => sum + (byRung.get(r.key)?.length ?? 0), 0) +
+    visibleStages.reduce((sum, s) => sum + (byStage.get(s.key)?.length ?? 0), 0) +
     (showHolding ? holdingCount : 0);
 
   return (
@@ -102,33 +112,33 @@ export function ProspectsTab() {
         padding: "8px 14px", borderBottom: `1px solid ${colors.border.default}`,
         background: colors.bg.card,
       }}>
-        {/* Rung filter buttons — jump straight to a group instead of
-            scrolling the whole ladder. Counts respect the ready-only toggle. */}
-        <RungFilterButton
+        {/* Stage filter buttons — jump straight to a pipeline stage instead of
+            scrolling the whole list. Counts respect the ready-only toggle. */}
+        <StageFilterButton
           label="All"
           count={prospects.length}
-          active={rungFilter === null}
+          active={stageFilter === null}
           dot={null}
-          onClick={() => setRungFilter(null)}
+          onClick={() => setStageFilter(null)}
           colors={colors}
         />
-        {PROSPECT_RUNGS.map((rung) => (
-          <RungFilterButton
-            key={rung.key}
-            label={rung.label}
-            count={byRung.get(rung.key)?.length ?? 0}
-            active={rungFilter === rung.key}
-            dot={rungDotColor(rung.key, colors)}
-            onClick={() => setRungFilter((f) => (f === rung.key ? null : rung.key))}
+        {PIPELINE_STAGES.map((stage) => (
+          <StageFilterButton
+            key={stage.key}
+            label={stage.shortLabel}
+            count={byStage.get(stage.key)?.length ?? 0}
+            active={stageFilter === stage.key}
+            dot={colors.accent[stage.accentKey]}
+            onClick={() => setStageFilter((f) => (f === stage.key ? null : stage.key))}
             colors={colors}
           />
         ))}
-        <RungFilterButton
+        <StageFilterButton
           label="Holding"
           count={holdingCount}
-          active={rungFilter === "holding"}
+          active={stageFilter === "holding"}
           dot={colors.text.dim}
-          onClick={() => setRungFilter((f) => (f === "holding" ? null : "holding"))}
+          onClick={() => setStageFilter((f) => (f === "holding" ? null : "holding"))}
           colors={colors}
         />
         <span style={{ width: 1, alignSelf: "stretch", background: colors.border.default, margin: "0 4px" }} />
@@ -172,21 +182,21 @@ export function ProspectsTab() {
               <td colSpan={7} style={{ ...tdStyle(colors), color: colors.text.muted, textAlign: "center" }}>
                 {readyOnly
                   ? "No prospects marked ready for outreach yet."
-                  : rungFilter
+                  : stageFilter
                     ? "No prospects in this group."
-                    : "No prospects in the ladder yet."}
+                    : "No prospects in the pipeline yet."}
               </td>
             </tr>
           )}
 
-          {/* Active ladder — researched → … → meeting booked */}
-          {visibleRungs.map((rung) => {
-            const rows = byRung.get(rung.key) ?? [];
+          {/* Active pipeline — Cold → … → Qualified */}
+          {visibleStages.map((stage) => {
+            const rows = byStage.get(stage.key) ?? [];
             if (rows.length === 0) return null;
             return (
-              <RungGroup
-                key={rung.key}
-                rung={rung}
+              <StageGroup
+                key={stage.key}
+                stage={stage}
                 rows={rows}
                 stats={outreachStats}
                 colors={colors}
@@ -195,8 +205,8 @@ export function ProspectsTab() {
             );
           })}
 
-          {/* Holding — promoted / parked / lost, collapsed by default
-              (forced open when the Holding filter is selected) */}
+          {/* Holding — off-pipeline (parked / lost / promoted), collapsed by
+              default (forced open when the Holding filter is selected) */}
           {showHolding && (
             <>
               <tr
@@ -214,19 +224,16 @@ export function ProspectsTab() {
                 </td>
               </tr>
               {holdingExpanded &&
-                HOLDING_RUNGS.map((rung) => {
-                  const rows = byRung.get(rung.key) ?? [];
-                  return rows.map((c: any) => (
-                    <ProspectRow
-                      key={c._id}
-                      client={c}
-                      rungLabel={rung.label}
-                      stats={outreachStats[c._id]}
-                      colors={colors}
-                      router={router}
-                    />
-                  ));
-                })}
+                holding.map((c: any) => (
+                  <ProspectRow
+                    key={c._id}
+                    client={c}
+                    stageLabel={holdingLabel(c.prospectState)}
+                    stats={outreachStats[c._id]}
+                    colors={colors}
+                    router={router}
+                  />
+                ))}
             </>
           )}
         </tbody>
@@ -235,7 +242,7 @@ export function ProspectsTab() {
   );
 }
 
-function RungFilterButton({
+function StageFilterButton({
   label,
   count,
   active,
@@ -271,25 +278,25 @@ function RungFilterButton({
   );
 }
 
-function RungGroup({ rung, rows, stats, colors, router }: { rung: { key: string; label: string }; rows: any[]; stats: Record<string, { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }>; colors: any; router: any }) {
+function StageGroup({ stage, rows, stats, colors, router }: { stage: StageDef; rows: any[]; stats: Record<string, { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }>; colors: any; router: any }) {
   return (
     <>
       <tr style={{ background: colors.bg.cardAlt }}>
         <td colSpan={7} style={subheadStyle(colors)}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: rungDotColor(rung.key, colors) }} />
-            {rung.label} · {rows.length}
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: colors.accent[stage.accentKey] }} />
+            {stage.label} · {rows.length}
           </span>
         </td>
       </tr>
       {rows.map((c: any) => (
-        <ProspectRow key={c._id} client={c} rungLabel={rung.label} stats={stats[c._id]} colors={colors} router={router} />
+        <ProspectRow key={c._id} client={c} stageLabel={stage.shortLabel} stats={stats[c._id]} colors={colors} router={router} />
       ))}
     </>
   );
 }
 
-function ProspectRow({ client, rungLabel, stats, colors, router }: { client: any; rungLabel: string; stats?: { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }; colors: any; router: any }) {
+function ProspectRow({ client, stageLabel, stats, colors, router }: { client: any; stageLabel: string; stats?: { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }; colors: any; router: any }) {
   // Pass null for the intel run: clients.list carries no per-row skillRun, so
   // only the contact-presence flag resolves here. The rich gap flags live on
   // the detail Overview (which has the latest intel run in scope).
@@ -312,7 +319,7 @@ function ProspectRow({ client, rungLabel, stats, colors, router }: { client: any
       <td style={tdStyle(colors)}>{client.dealSizeRange ?? "—"}</td>
       <td style={tdStyle(colors)}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {rungLabel}
+          {stageLabel}
           {client.outreachReadyAt && (
             <span
               title={`Accepted for outreach${client.outreachReadyAt ? ` · ${String(client.outreachReadyAt).slice(0, 10)}` : ""}`}
@@ -357,15 +364,11 @@ function ProspectRow({ client, rungLabel, stats, colors, router }: { client: any
   );
 }
 
-function rungDotColor(key: string, colors: any): string {
-  switch (key) {
-    case "researched": return colors.entityTypes.prospect;
-    case "drafted": return colors.status.drafted;
-    case "active": return colors.status.active;
-    case "replied": return colors.status.replied;
-    case "engaged": return colors.status.engaged;
-    default: return colors.text.dim;
-  }
+// Off-pipeline holding rows show their prospectState reason (parked / lost /
+// promoted) as the Status-column label, since they derive to no pipeline stage.
+function holdingLabel(prospectState: string | undefined | null): string {
+  if (!prospectState) return "Holding";
+  return prospectState.charAt(0).toUpperCase() + prospectState.slice(1).replace(/_/g, " ");
 }
 
 function subheadStyle(colors: any) {

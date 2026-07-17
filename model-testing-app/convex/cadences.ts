@@ -1,7 +1,9 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { isCadenceFireable } from "./lib/cadenceGating";
+import { applyPipelineStage } from "./prospectStages";
 
 // Internal API for the cadences table. The MCP tools cadence.create and
 // cadence.cancel wrap these (see convex/mcp.ts). The cron dispatcher in
@@ -187,6 +189,18 @@ export const advanceAfterFireInternal = internalMutation({
       patch.nextDueAt = args.nextDueAt;
     }
     await ctx.db.patch(args.cadenceId, patch);
+
+    // Trigger-B base: a fired touch (an approval was staged, or the legacy
+    // "sent" result) is an outbound send, so stamp the related prospect's
+    // lastOutreachSendAt — this is the base the 30-day cadence-gap freshness
+    // check measures from. Skips (paused / holiday / opted-out) are NOT sends,
+    // so they leave the clock untouched.
+    if (args.lastResult === "approval_staged" || args.lastResult === "sent") {
+      const row = await ctx.db.get(args.cadenceId);
+      if (row?.relatedClientId) {
+        await ctx.db.patch(row.relatedClientId, { lastOutreachSendAt: now });
+      }
+    }
     return { ok: true };
   },
 });
@@ -320,7 +334,15 @@ export const updateInternal = internalMutation({
       editedBy: args.userId,
       updatedAt: now,
     };
-    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.preDraftedTouch !== undefined) {
+      patch.preDraftedTouch = args.preDraftedTouch;
+      // Phase 2 metrics/learning: preserve the as-drafted touch on the FIRST
+      // content edit so triage can diff operator changes vs. the template.
+      const row = await ctx.db.get(args.cadenceId);
+      if (row?.preDraftedTouch && row.originalPreDraftedTouch === undefined) {
+        patch.originalPreDraftedTouch = row.preDraftedTouch;
+      }
+    }
     if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
     if (args.cadenceType !== undefined) patch.cadenceType = args.cadenceType;
     if (args.scheduleConfig !== undefined) patch.scheduleConfig = args.scheduleConfig;
@@ -330,10 +352,239 @@ export const updateInternal = internalMutation({
 });
 
 // ── Approve all cadences in a package (single-gate approval model) ──
+//
+// THE shared package-approval helper. A plain async helper (NOT a registered
+// Convex function) so both the public approvePackage and the internal
+// approvePackageInternal route through one place. `ctx` is always a mutation
+// ctx (both callers are mutations), which lets the pipeline-stage write go
+// through applyPipelineStage directly for same-transaction consistency.
+//
+// Responsibilities, in order:
+//   1. NO-CONTACT GUARD — mirror the dispatcher's fire-time sendability check
+//      (cadenceDispatcher.ts ~lines 84-92: a touch with no contact email can
+//      never send). If no package member has a contact with an email on file,
+//      refuse to approve rather than approving a package that can only fail at
+//      fire time.
+//   2. Flip every row to approved (+ approvedBy / approvedAt / updatedAt).
+//   3. Stage write → cold_outreach (forward_only, so a prospect already further
+//      along is never demoted), keyed off the package's relatedClientId.
+//   4. Backfill clients.outreachReadyAt if unset (plumbing).
+//   5. Kick the dispatcher now so a touch already due fires within seconds.
+export async function applyPackageApproval(
+  ctx: any,
+  args: { packageId: string; userId: Id<"users"> },
+  // Batch callers (approvePackageBatchInternal) kick the dispatcher ONCE after
+  // the last package instead of once per package — concurrent ticks can race
+  // the lastFireKey idempotency check and double-stage a due touch.
+  opts?: { skipDispatcherKick?: boolean },
+): Promise<{ ok: boolean; patched: number }> {
+  const rows = await ctx.db
+    .query("cadences")
+    .withIndex("by_package", (q: any) => q.eq("packageId", args.packageId))
+    .collect();
+
+  // 1. No-contact guard — at least one member must have a contact with an email.
+  const contactIds = Array.from(
+    new Set(rows.map((r: any) => r.contactId).filter(Boolean)),
+  );
+  const contacts = await Promise.all(
+    contactIds.map((cid: any) => ctx.db.get(cid)),
+  );
+  const hasSendableContact = contacts.some((c: any) => c?.email);
+  if (!hasSendableContact) {
+    throw new Error(
+      "Cannot approve cadence package: no contact with an email address on file. Attach a sendable contact before approving.",
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // 2. Flip every row to approved.
+  let patched = 0;
+  for (const row of rows) {
+    await ctx.db.patch(row._id, {
+      packageApprovalStatus: "approved",
+      approvedBy: args.userId,
+      approvedAt: now,
+      updatedAt: now,
+    });
+    patched++;
+  }
+
+  // 3 + 4. Stage write + outreachReadyAt backfill, keyed off the package's
+  // related client (same value across the members, but tolerate stragglers).
+  const relatedClientId = rows.find((r: any) => r.relatedClientId)
+    ?.relatedClientId as Id<"clients"> | undefined;
+  if (relatedClientId) {
+    await applyPipelineStage(ctx, {
+      clientId: relatedClientId,
+      toStage: "cold_outreach",
+      reason: "cadence_approved",
+      userId: args.userId,
+      mode: "forward_only",
+    });
+    const client = await ctx.db.get(relatedClientId);
+    if (client && !(client as any).outreachReadyAt) {
+      await ctx.db.patch(relatedClientId, { outreachReadyAt: now });
+    }
+  }
+
+  // 5. "Approve & Schedule" should feel immediate: run the dispatcher now so
+  // any touch already due (touch 1 usually is) fires within seconds instead of
+  // waiting up to 5 minutes for the next cron tick. Future touches are
+  // untouched — they fire on their own nextDueAt.
+  if (!opts?.skipDispatcherKick) {
+    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+  }
+
+  return { ok: true, patched };
+}
+
+// Batch package approval — the /outreach triage path. Each package still gets
+// the full applyPackageApproval treatment (no-contact guard, stage write,
+// outreachReadyAt backfill); a package that fails its guard is reported in the
+// per-item results instead of aborting the batch. One dispatcher kick at the
+// end covers every newly-approved due touch.
+const PACKAGE_BATCH_CAP = 25;
+
+export const approvePackageBatchInternal = internalMutation({
+  args: {
+    packageIds: v.array(v.string()),
+    userId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    approved: number;
+    results: Array<
+      | { packageId: string; ok: true; patched: number }
+      | { packageId: string; ok: false; error: string }
+    >;
+  }> => {
+    if (args.packageIds.length > PACKAGE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.packageIds.length} > ${PACKAGE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const results: Array<
+      | { packageId: string; ok: true; patched: number }
+      | { packageId: string; ok: false; error: string }
+    > = [];
+    let approved = 0;
+    for (const packageId of args.packageIds) {
+      try {
+        const r = await applyPackageApproval(
+          ctx,
+          { packageId, userId: args.userId },
+          { skipDispatcherKick: true },
+        );
+        results.push({ packageId, ok: true, patched: r.patched });
+        approved++;
+      } catch (err: any) {
+        results.push({
+          packageId,
+          ok: false,
+          error: err?.message ?? String(err),
+        });
+      }
+    }
+    if (approved > 0) {
+      await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
+    }
+    return { total: args.packageIds.length, approved, results };
+  },
+});
 
 export const approvePackageInternal = internalMutation({
   args: {
     packageId: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) =>
+    applyPackageApproval(ctx, { packageId: args.packageId, userId: args.userId }),
+});
+
+// Batch package DENY — the backlog-reset primitive (2026-07-14). Marks every
+// touch in every listed package denied + inactive so none ever fire. Use when
+// clearing stale drafted outreach (e.g. prospects already contacted manually
+// outside the system). Per-item safe; a missing package is reported, not
+// thrown. cancelledReason records WHY for the audit trail.
+export const denyPackageBatchInternal = internalMutation({
+  args: {
+    packageIds: v.array(v.string()),
+    userId: v.id("users"),
+    reason: v.optional(v.string()), // defaults to operator_denied_package
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    denied: number;
+    results: Array<{ packageId: string; ok: boolean; patched?: number; error?: string }>;
+  }> => {
+    if (args.packageIds.length > PACKAGE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.packageIds.length} > ${PACKAGE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const reason = args.reason ?? "operator_denied_package";
+    const results: Array<{ packageId: string; ok: boolean; patched?: number; error?: string }> = [];
+    let denied = 0;
+    for (const packageId of args.packageIds) {
+      const rows = await ctx.db
+        .query("cadences")
+        .withIndex("by_package", (q) => q.eq("packageId", packageId))
+        .collect();
+      if (rows.length === 0) {
+        results.push({ packageId, ok: false, error: "package_not_found" });
+        continue;
+      }
+      let patched = 0;
+      for (const row of rows) {
+        await ctx.db.patch(row._id, {
+          packageApprovalStatus: "denied",
+          isActive: false,
+          cancelledReason: reason,
+          updatedAt: now,
+        });
+        patched++;
+      }
+      results.push({ packageId, ok: true, patched });
+      denied++;
+    }
+    return { total: args.packageIds.length, denied, results };
+  },
+});
+
+// ── Adopt a manual send into a drafted package (backlog reset, 2026-07-14) ──
+//
+// The operator sent touch 1 THEMSELVES (generic Gmail tool, outside the
+// system) after the package was drafted. Denying the package would waste the
+// drafted follow-ups; approving it as-is would re-send touch 1. This adopts
+// reality instead:
+//   1. Touch 1 is marked fired-externally (lastFiredAt = the real send date,
+//      lastResult "sent", isActive false) so the dispatcher can never send it.
+//   2. Unfired touches 2..4 are REFIT onto the preset schedule anchored at
+//      the real send date; anything that would land in the past is pushed
+//      forward (min 2 days from now, min 2 days apart, order preserved).
+//   3. The send is logged as an outbound touchpoint (idempotent on
+//      gmailMessageId), lastOutreachSendAt is stamped, and the prospect state
+//      machine advances exactly as a real send would.
+// The package stays at its current approval status — firing the refit
+// follow-ups still requires the operator's normal "Approve & begin outreach".
+export const adoptManualSendInternal = internalMutation({
+  args: {
+    packageId: v.string(),
+    sentAt: v.string(), // ISO — when the operator actually sent touch 1
+    preset: v.optional(
+      v.union(v.literal("light"), v.literal("moderate"), v.literal("aggressive")),
+    ),
+    gmailMessageId: v.optional(v.string()),
+    subject: v.optional(v.string()),
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
@@ -341,23 +592,206 @@ export const approvePackageInternal = internalMutation({
       .query("cadences")
       .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
       .collect();
+    if (rows.length === 0) {
+      return { ok: false as const, error: "package_not_found", packageId: args.packageId };
+    }
+    const sorted = [...rows].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+    const touch1 = sorted[0];
+    if (touch1.lastFiredAt) {
+      return {
+        ok: false as const,
+        error: "touch_1_already_fired",
+        message: `Touch 1 already fired via the system on ${touch1.lastFiredAt} — nothing to adopt.`,
+      };
+    }
+    const sentMs = Date.parse(args.sentAt);
+    if (!Number.isFinite(sentMs)) {
+      return { ok: false as const, error: "invalid_sentAt" };
+    }
+
     const now = new Date().toISOString();
-    let patched = 0;
-    for (const row of rows) {
+    const nowMs = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    // 1. Touch 1 = fired externally.
+    await ctx.db.patch(touch1._id, {
+      isActive: false,
+      lastFiredAt: args.sentAt,
+      lastResult: "sent",
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: args.userId,
+      updatedAt: now,
+    });
+
+    // 2. Refit the unfired follow-ups off the real send date.
+    const offsets = PRESET_OFFSETS[args.preset ?? "moderate"];
+    let prevDueMs = 0;
+    const rescheduled: Array<{ packageOrder: number; nextDueAt: string }> = [];
+    for (const row of sorted.slice(1)) {
+      const order = row.packageOrder ?? 0;
+      if (row.lastFiredAt || order < 2 || order > 4) continue;
+      const offsetDays = offsets[order - 1] ?? offsets[offsets.length - 1];
+      let dueMs = sentMs + offsetDays * DAY;
+      dueMs = Math.max(dueMs, nowMs + 2 * DAY); // never schedule into the past
+      if (prevDueMs) dueMs = Math.max(dueMs, prevDueMs + 2 * DAY); // keep order + spacing
+      prevDueMs = dueMs;
+      const nextDueAt = new Date(dueMs).toISOString();
       await ctx.db.patch(row._id, {
-        packageApprovalStatus: "approved",
-        approvedBy: args.userId,
-        approvedAt: now,
+        nextDueAt,
+        editedByOperator: true,
+        editedAt: now,
+        editedBy: args.userId,
         updatedAt: now,
       });
-      patched++;
+      rescheduled.push({ packageOrder: order, nextDueAt });
     }
-    // "Approve & Schedule" should feel immediate: run the dispatcher now so
-    // any touch already due (touch 1 usually is) fires within seconds
-    // instead of waiting up to 5 minutes for the next cron tick. Future
-    // touches are untouched — they fire on their own nextDueAt.
-    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
-    return { ok: true, patched };
+
+    // 3. Truth repair: touchpoint (idempotent on gmailMessageId) + prospect stamps.
+    let touchpointLogged = false;
+    if (args.gmailMessageId) {
+      const dup = await ctx.db
+        .query("touchpoints")
+        .withIndex("by_provider_payload", (q: any) =>
+          q.eq("provider", "gmail").eq("payloadRef", args.gmailMessageId),
+        )
+        .first();
+      if (dup) touchpointLogged = true;
+    }
+    if (!touchpointLogged) {
+      await ctx.db.insert("touchpoints", {
+        provider: args.gmailMessageId ? ("gmail" as const) : ("manual" as const),
+        direction: "outbound" as const,
+        kind: "email" as const,
+        contactId: touch1.contactId,
+        relatedClientId: touch1.relatedClientId,
+        occurredAt: args.sentAt,
+        payloadRef: args.gmailMessageId,
+        payloadType: args.gmailMessageId ? "gmail.message" : undefined,
+        subject: args.subject ?? touch1.preDraftedTouch?.subject,
+        summary: "Manual send adopted into cadence package during backlog reconciliation",
+        capturedBy: args.userId,
+        createdAt: now,
+      });
+      touchpointLogged = true;
+    }
+    if (touch1.relatedClientId) {
+      const client: any = await ctx.db.get(touch1.relatedClientId);
+      if (client && (!client.lastOutreachSendAt || client.lastOutreachSendAt < args.sentAt)) {
+        await ctx.db.patch(touch1.relatedClientId, { lastOutreachSendAt: args.sentAt });
+      }
+      await ctx.scheduler.runAfter(0, internal.prospects.markOutreachInFlightInternal, {
+        clientId: touch1.relatedClientId,
+        userId: args.userId,
+      });
+    }
+
+    return {
+      ok: true as const,
+      packageId: args.packageId,
+      touch1MarkedSentAt: args.sentAt,
+      rescheduled,
+      packageApprovalStatus: touch1.packageApprovalStatus ?? null,
+      note:
+        touch1.packageApprovalStatus === "approved"
+          ? "Package already approved — refit follow-ups will auto-send on their new dates."
+          : "Follow-ups refit but still need the normal package approval before they send.",
+    };
+  },
+});
+
+// ── Hold / release a cadence for an in-flight intel run ──
+// holdForIntelInternal pauses a cadence while intel is (re)gathered: deactivate
+// it but PRESERVE nextDueAt so clearIntelHoldInternal can reactivate it in
+// place. The intelHoldAt / intelHoldReason fields are the audit trail.
+
+export const holdForIntelInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.cadenceId, {
+      isActive: false,
+      intelHoldAt: now,
+      intelHoldReason: args.reason,
+      updatedAt: now,
+    });
+    return { ok: true };
+  },
+});
+
+// Reactivate a STALLED cadence — the operator-facing recovery for the three
+// silent stall states the triage queue surfaces (intel hold, 3-strike
+// auto-deactivation, pause). Deliberate stops are refused: a cancelled row
+// (reply cancellation / operator cancel) or a denied package member is a
+// decision, not a stall — those go back through their own flows.
+export const reactivateInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+    userId: v.id("users"),
+    newNextDueAt: v.optional(v.string()), // ISO; reschedule on reactivation
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.cadenceId);
+    if (!row) return { ok: false as const, error: "cadence_not_found" };
+    if (row.cancelledReason) {
+      return {
+        ok: false as const,
+        error: "cadence_cancelled",
+        message: `Cancelled (${row.cancelledReason}) — a deliberate stop, not a stall. Create a fresh cadence if outreach should restart.`,
+      };
+    }
+    if (row.packageApprovalStatus === "denied") {
+      return {
+        ok: false as const,
+        error: "package_denied",
+        message: "This package was denied by the operator; reactivation would bypass that decision.",
+      };
+    }
+    if (row.packageApprovalStatus === "needs_contact") {
+      return {
+        ok: false as const,
+        error: "needs_contact",
+        message: "Held for a missing contact — attach one via cadence.setPackageContact instead.",
+      };
+    }
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.cadenceId, {
+      isActive: true,
+      pauseUntil: undefined,
+      intelHoldAt: undefined,
+      intelHoldReason: undefined,
+      consecutiveFailures: 0,
+      ...(args.newNextDueAt ? { nextDueAt: args.newNextDueAt } : {}),
+      editedByOperator: true,
+      editedAt: now,
+      editedBy: args.userId,
+      updatedAt: now,
+    });
+    return {
+      ok: true as const,
+      cadenceId: args.cadenceId,
+      nextDueAt: args.newNextDueAt ?? row.nextDueAt,
+      clearedIntelHold: !!row.intelHoldAt,
+      clearedFailures: (row.consecutiveFailures ?? 0) > 0,
+    };
+  },
+});
+
+export const clearIntelHoldInternal = internalMutation({
+  args: {
+    cadenceId: v.id("cadences"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.cadenceId, {
+      isActive: true,
+      intelHoldAt: undefined,
+      intelHoldReason: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
   },
 });
 
@@ -467,23 +901,10 @@ export const approvePackage = mutation({
     const users = await ctx.db.query("users").take(1);
     const userId = users[0]?._id;
     if (!userId) throw new Error("No user available");
-    const rows = await ctx.db
-      .query("cadences")
-      .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
-      .collect();
-    const now = new Date().toISOString();
-    for (const row of rows) {
-      await ctx.db.patch(row._id, {
-        packageApprovalStatus: "approved",
-        approvedBy: userId,
-        approvedAt: now,
-        updatedAt: now,
-      });
-    }
-    // Fire due touches immediately (same rationale as approvePackageInternal:
-    // "Approve & Schedule" should send touch 1 now, not on the next cron tick).
-    await ctx.scheduler.runAfter(0, internal.cadenceDispatcher.tick, {});
-    return { ok: true, patched: rows.length };
+    // Route through the shared helper: no-contact guard, flip rows approved,
+    // stage write (→ cold_outreach, forward_only), outreachReadyAt backfill,
+    // immediate dispatcher kick.
+    return applyPackageApproval(ctx, { packageId: args.packageId, userId });
   },
 });
 
@@ -573,7 +994,13 @@ export const update = mutation({
       editedBy: userId,
       updatedAt: now,
     };
-    if (args.preDraftedTouch !== undefined) patch.preDraftedTouch = args.preDraftedTouch;
+    if (args.preDraftedTouch !== undefined) {
+      patch.preDraftedTouch = args.preDraftedTouch;
+      // Phase 2 metrics/learning: first-content-edit snapshot (see updateInternal).
+      if (cadence.preDraftedTouch && cadence.originalPreDraftedTouch === undefined) {
+        patch.originalPreDraftedTouch = cadence.preDraftedTouch;
+      }
+    }
     if (args.nextDueAt !== undefined) patch.nextDueAt = args.nextDueAt;
 
     await ctx.db.patch(args.cadenceId, patch);

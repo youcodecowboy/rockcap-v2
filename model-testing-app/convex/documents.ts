@@ -1,54 +1,18 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { api } from "./_generated/api";
+import { recordUploadIngestion } from "./knowledge/ingestUpload";
+import {
+  buildDocumentName,
+  buildInternalDocumentName,
+  toCompactPascalCase,
+  formatDateForNaming,
+} from "../src/lib/documentNaming";
 
-// Helper functions for document code generation
-function abbreviateText(text: string, maxLength: number): string {
-  if (!text) return '';
-  const cleaned = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, maxLength);
-}
-
-function abbreviateCategory(category: string): string {
-  if (!category) return 'DOC';
-  
-  const categoryMap: Record<string, string> = {
-    'valuation': 'VAL',
-    'operating': 'OPR',
-    'operating statement': 'OPR',
-    'appraisal': 'APP',
-    'financial': 'FIN',
-    'contract': 'CNT',
-    'agreement': 'AGR',
-    'invoice': 'INV',
-    'report': 'RPT',
-    'letter': 'LTR',
-    'email': 'EML',
-    'note': 'NTE',
-    'memo': 'MEM',
-    'proposal': 'PRP',
-    'quote': 'QTE',
-    'receipt': 'RCP',
-  };
-  
-  const categoryLower = category.toLowerCase();
-  for (const [key, value] of Object.entries(categoryMap)) {
-    if (categoryLower.includes(key)) {
-      return value;
-    }
-  }
-  
-  return abbreviateText(category, 3);
-}
-
-function formatDateDDMMYY(dateString: string | Date): string {
-  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}${month}${year}`;
-}
-
+// Document code generation — delegates to the canonical convention in
+// src/lib/documentNaming (see docs/classification/dark-mills-exemplar-pack.md §5).
+// Forward-only: existing documentCodes are never regenerated; only new
+// creates/moves that already regenerate get the new format.
 function generateDocumentCode(
   clientName: string,
   category: string,
@@ -57,32 +21,35 @@ function generateDocumentCode(
   options?: {
     scope?: "client" | "internal" | "personal";
     uploaderInitials?: string;
+    audience?: "INTERNAL" | "EXTERNAL";
+    projectShortcode?: string;
   }
 ): string {
-  const typeCode = abbreviateCategory(category);
-  const dateCode = formatDateDDMMYY(uploadedAt);
   const scope = options?.scope || "client";
 
-  // Internal scope: RC-TYPE-DATE (e.g., RC-POLICY-231215)
+  // Internal scope: RockCap_<Topic>_<YYYYMMDD> (e.g., RockCap_LendingPolicy_20260707)
   if (scope === "internal") {
-    return `RC-${typeCode}-${dateCode}`;
+    return buildInternalDocumentName(category, uploadedAt);
   }
 
-  // Personal scope: INITIALS-TYPE-DATE (e.g., JS-NOTE-231215)
+  // Personal scope: <Initials>_<Topic>_<YYYYMMDD> (e.g., JS_Note_20260707)
   if (scope === "personal") {
-    const initials = options?.uploaderInitials || "XX";
-    return `${initials}-${typeCode}-${dateCode}`;
+    const initials = (options?.uploaderInitials || "XX").toUpperCase();
+    const topic = toCompactPascalCase(category) || "Document";
+    return `${initials}_${topic}_${formatDateForNaming(uploadedAt)}`;
   }
 
-  // Client scope: CLIENT-TYPE-PROJECT-DATE (existing behavior)
-  const clientCode = abbreviateText(clientName, 8);
-  const projectCode = projectName ? abbreviateText(projectName, 10) : '';
-
-  if (projectCode) {
-    return `${clientCode}-${typeCode}-${projectCode}-${dateCode}`;
-  } else {
-    return `${clientCode}-${typeCode}-${dateCode}`;
-  }
+  // Client scope: <Project>_<DocType>_<Initials>_<AUDIENCE>_V1.0_<YYYYMMDD>
+  // (e.g., DarkMills_CreditChecklist_RS_INTERNAL_V1.0_20260707)
+  return buildDocumentName({
+    fileType: category,
+    clientName,
+    projectName,
+    projectShortcode: options?.projectShortcode,
+    initials: options?.uploaderInitials,
+    audience: options?.audience,
+    date: uploadedAt,
+  });
 }
 
 // Query: Get all documents
@@ -434,14 +401,18 @@ export const create = mutation({
           { scope, uploaderInitials: args.uploaderInitials }
         );
       } else if (args.clientName) {
-        // Client scope: existing behavior
+        // Client scope: canonical convention (DocType = classified fileType)
         const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
         documentCode = generateDocumentCode(
           args.clientName,
-          args.category,
+          args.fileTypeDetected || args.category,
           projectNameForCode,
           uploadedAt,
-          { scope: "client" }
+          {
+            scope: "client",
+            uploaderInitials: args.uploaderInitials,
+            audience: args.isInternal ? "INTERNAL" : undefined,
+          }
         );
       }
 
@@ -498,66 +469,15 @@ export const create = mutation({
       classificationReasoning: args.classificationReasoning,
     });
 
-    // Automatically create knowledge bank entry if document is linked to a client
+    // Knowledge feed — the upload lane's ingestionEvents row + prose chunking.
+    if (args.status !== "error") {
+      await recordUploadIngestion(ctx, documentId);
+    }
+
+    // (Knowledge-bank entry write retired 2026-07-11 — the knowledge feed
+    // above is the sole knowledge side effect; knowledgeBankEntries is
+    // read-only legacy data.)
     if (args.clientId && args.status !== "error") {
-      try {
-        // Determine entry type based on category and file type
-        let entryType: "deal_update" | "call_transcript" | "email" | "document_summary" | "project_status" | "general" = "document_summary";
-        
-        const categoryLower = args.category.toLowerCase();
-        const fileNameLower = args.fileName.toLowerCase();
-        
-        if (categoryLower.includes("deal") || categoryLower.includes("loan") || categoryLower.includes("term")) {
-          entryType = "deal_update";
-        } else if (categoryLower.includes("project") || categoryLower.includes("development")) {
-          entryType = "project_status";
-        } else if (fileNameLower.includes("call") || fileNameLower.includes("transcript")) {
-          entryType = "call_transcript";
-        } else if (categoryLower.includes("email") || fileNameLower.includes("email")) {
-          entryType = "email";
-        }
-
-        // Extract key points from summary (first 3-5 sentences or bullet points)
-        const keyPoints: string[] = [];
-        const summaryLines = args.summary.split(/[.!?]\s+/).filter(line => line.trim().length > 0);
-        keyPoints.push(...summaryLines.slice(0, 5).map(line => line.trim()));
-
-        // Extract metadata from extractedData if available
-        const metadata: any = {};
-        if (args.extractedData) {
-          // Store relevant extracted data in metadata
-          if (args.extractedData.loanAmount) metadata.loanAmount = args.extractedData.loanAmount;
-          if (args.extractedData.interestRate) metadata.interestRate = args.extractedData.interestRate;
-          if (args.extractedData.loanNumber) metadata.loanNumber = args.extractedData.loanNumber;
-          if (args.extractedData.costsTotal) metadata.costsTotal = args.extractedData.costsTotal;
-          if (args.extractedData.detectedCurrency) metadata.currency = args.extractedData.detectedCurrency;
-        }
-
-        // Generate tags from category and file type
-        const tags: string[] = [args.category];
-        if (args.fileTypeDetected) tags.push(args.fileTypeDetected);
-        if (args.projectName) tags.push("project-related");
-
-        // Create knowledge bank entry
-        await ctx.db.insert("knowledgeBankEntries", {
-          clientId: args.clientId,
-          projectId: args.projectId,
-          sourceType: "document",
-          sourceId: documentId,
-          entryType: entryType,
-          title: `${args.fileName} - ${args.category}`,
-          content: args.summary,
-          keyPoints: keyPoints,
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-          tags: tags,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        // Log error but don't fail document creation if knowledge bank entry fails
-        console.error("Failed to create knowledge bank entry:", error);
-      }
-
       // Meeting extraction: Check if this is a meeting document
       const meetingTypes = ['Meeting Minutes', 'Meeting Notes', 'Minutes'];
       const fileTypeLower = args.fileTypeDetected.toLowerCase();
@@ -657,11 +577,11 @@ export const uploadFileAndCreateDocument = mutation({
       const projectNameForCode = args.isBaseDocument ? undefined : args.projectName;
       documentCode = generateDocumentCode(
         args.clientName,
-        args.category,
+        args.fileTypeDetected || args.category,
         projectNameForCode,
         uploadedAt
       );
-      
+
       // Ensure uniqueness
       const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
       let finalCode = documentCode;
@@ -672,7 +592,7 @@ export const uploadFileAndCreateDocument = mutation({
       }
       documentCode = finalCode;
     }
-    
+
     const documentId = await ctx.db.insert("documents", {
       fileStorageId: args.storageId,
       fileName: args.fileName,
@@ -1134,9 +1054,14 @@ export const moveDocument = mutation({
     if (clientName) {
       newDocumentCode = generateDocumentCode(
         clientName,
-        doc.category,
+        doc.fileTypeDetected || doc.category,
         projectNameForCode,
-        doc.uploadedAt
+        doc.uploadedAt,
+        {
+          scope: "client",
+          uploaderInitials: doc.uploaderInitials,
+          audience: doc.isInternal ? "INTERNAL" : undefined,
+        }
       );
       
       // Ensure uniqueness
@@ -1593,14 +1518,19 @@ export const getUnfiled = query({
 });
 
 // Query: Get count of unfiled documents
+//
+// 2026-07-11 rewrite: the old version .collect()ed the ENTIRE documents table
+// (rows carry full textContent) and blew Convex's 16MiB read budget once the
+// corpus grew. Unfiled documents in EVERY scope have no clientId — client
+// scope by definition, internal/personal structurally — so the by_client
+// undefined index lane bounds the scan to unfiled candidates + unfiled-able
+// internal/personal rows. Capped at 150 rows: the badge saturates instead of
+// the query crashing (an inbox past 150 has bigger problems than the badge).
 export const getUnfiledCount = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
 
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-
-    // Get current user for personal document access
     let currentUserId: string | null = null;
     if (identity) {
       const user = await ctx.db
@@ -1610,11 +1540,17 @@ export const getUnfiledCount = query({
       currentUserId = user?._id ?? null;
     }
 
-    return allDocs.filter(doc => {
+    const candidates = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q) => q.eq("clientId", undefined))
+      .take(150);
+
+    return candidates.filter((doc) => {
+      if (doc.isDeleted === true) return false;
       const scope = doc.scope || "client";
 
       if (scope === "client") {
-        return !doc.clientId;
+        return true; // no clientId by the index lane — unfiled
       }
 
       if (scope === "internal") {
@@ -2564,5 +2500,17 @@ export const linkToProject = mutation({
         unlinked: true,
       };
     }
+  },
+});
+
+// Operator "Analyze document" (file panel) — after a manual text
+// (re-)extraction, re-enter the knowledge feed: ingestionEvents row + prose
+// chunking now, atomization on the next sweep tick. Idempotent — the sweep's
+// observation probe skips checksums it has already handled.
+export const requestKnowledgeIngestion = mutation({
+  args: { id: v.id("documents") },
+  handler: async (ctx, args) => {
+    await recordUploadIngestion(ctx, args.id);
+    return { ok: true };
   },
 });

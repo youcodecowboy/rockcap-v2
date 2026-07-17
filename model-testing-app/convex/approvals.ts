@@ -36,6 +36,9 @@ const executeClientCommunicationRef = makeFunctionReference<"action", { approval
 const executeLenderOutreachRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
   "gmailSend:executeLenderOutreach",
 );
+const executeDriveWriteRef = makeFunctionReference<"action", { approvalId: Id<"approvals"> }>(
+  "driveWriteback:execute",
+);
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 
 // Approvals (BL-1.9 surface, BL-5.7 queries + dispatch).
@@ -73,6 +76,7 @@ const ENTITY_TYPE = v.union(
   v.literal("client_communication"),
   v.literal("skill_action"),
   v.literal("cadence_fire"),
+  v.literal("drive_write"),
   v.literal("other"),
 );
 
@@ -165,27 +169,32 @@ export const get = query({
   },
 });
 
+// Badge counts saturate at this cap rather than walking the whole status
+// partition — approval rows carry full draft bodies, and an unbounded
+// .collect() over a re-accumulated backlog is how countUnrouted blew the
+// 16MB read limit in production (spec-3 F5).
+const COUNT_CAP = 200;
+
+async function countByStatus(ctx: any, status: string): Promise<number> {
+  const rows = await ctx.db
+    .query("approvals")
+    .withIndex("by_status", (q: any) => q.eq("status", status))
+    .take(COUNT_CAP);
+  return rows.length;
+}
+
 export const getCounts = query({
   args: {},
   handler: async (ctx) => {
     // Tolerate the cold-load pre-auth window (Clerk token not yet at
     // Convex): return an empty default instead of crashing useQuery callers.
     if (!(await getAuthenticatedUserOrNull(ctx))) {
-      return { pending: 0, executionFailed: 0 };
+      return { pending: 0, executionFailed: 0, expired: 0 };
     }
-    // Cheap counts via index walks. For larger volumes this would
-    // become a separate denormalised counter; today the volume is zero.
-    const pending = await ctx.db
-      .query("approvals")
-      .withIndex("by_status", (q: any) => q.eq("status", "pending"))
-      .collect();
-    const failed = await ctx.db
-      .query("approvals")
-      .withIndex("by_status", (q: any) => q.eq("status", "execution_failed"))
-      .collect();
     return {
-      pending: pending.length,
-      executionFailed: failed.length,
+      pending: await countByStatus(ctx, "pending"),
+      executionFailed: await countByStatus(ctx, "execution_failed"),
+      expired: await countByStatus(ctx, "expired"),
     };
   },
 });
@@ -403,6 +412,60 @@ export const approveInternal = internalMutation({
   },
 });
 
+// Batch approve — the /outreach triage path. One operator "yes" covers a
+// reviewed batch (each item was itemised to the operator first — recipient,
+// subject, touch — batch approval is a convenience, not a blind bulk flip).
+// Per-item no-op-safe: a row that is missing or no longer pending is reported
+// in `skipped`, never thrown, so one stale id doesn't abort the batch. Each
+// approved row schedules its own executor, same as approveInternal.
+const APPROVE_BATCH_CAP = 50;
+
+export const approveBatchInternal = internalMutation({
+  args: {
+    approvalIds: v.array(v.id("approvals")),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    approved: number;
+    skipped: Array<{ approvalId: string; reason: string }>;
+  }> => {
+    if (args.approvalIds.length > APPROVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.approvalIds.length} > ${APPROVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ approvalId: string; reason: string }> = [];
+    let approved = 0;
+    for (const approvalId of args.approvalIds) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval) {
+        skipped.push({ approvalId: String(approvalId), reason: "not_found" });
+        continue;
+      }
+      if (approval.status !== "pending") {
+        skipped.push({
+          approvalId: String(approvalId),
+          reason: `not_pending_${approval.status}`,
+        });
+        continue;
+      }
+      await ctx.db.patch(approvalId, {
+        status: "approved",
+        approvedBy: args.actorUserId,
+        approvedAt: now,
+      });
+      await ctx.scheduler.runAfter(0, executeApprovalRef, { approvalId });
+      approved++;
+    }
+    return { total: args.approvalIds.length, approved, skipped };
+  },
+});
+
 // Internal reject — for system flows (a denied/parked cadence package clearing
 // its staged gmail_send approvals, or operator-driven cleanup) that have no
 // auth session. Idempotent: only acts on pending rows.
@@ -442,6 +505,301 @@ export const cancel = mutation({
     }
     await ctx.db.patch(args.approvalId, { status: "cancelled" });
     return { ok: true };
+  },
+});
+
+// Retry a send that failed at execution time (a kill switch was off, the
+// Gmail token needed reconnect, a transient network error, …). The operator
+// already approved this exact action, so re-queue it rather than forcing a
+// re-draft. Only acts on execution_failed rows: clears the prior error, flips
+// back to approved, and re-schedules the same executor the approve path uses.
+export const retry = mutation({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args): Promise<{ ok: boolean }> => {
+    const user = await getAuthenticatedUser(ctx);
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    if (approval.status !== "execution_failed") {
+      throw new Error(
+        `Can only retry a failed approval (this one is ${approval.status})`,
+      );
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      approvedBy: user._id,
+      approvedAt: new Date().toISOString(),
+      // Clear the stale failure record so the row reads cleanly if it fails
+      // again. Setting an optional field to undefined removes it in Convex.
+      executionError: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
+// Batch reject — the backlog-reset counterpart of approveBatchInternal.
+// Discards up to 50 pending drafts in one call (nothing fires). Per-item
+// no-op-safe: missing / non-pending rows land in `skipped`.
+export const rejectBatchInternal = internalMutation({
+  args: {
+    approvalIds: v.array(v.id("approvals")),
+    reason: v.optional(v.string()),
+    actorUserId: v.id("users"),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    rejected: number;
+    skipped: Array<{ approvalId: string; reason: string }>;
+  }> => {
+    if (args.approvalIds.length > APPROVE_BATCH_CAP) {
+      throw new Error(
+        `Batch too large: ${args.approvalIds.length} > ${APPROVE_BATCH_CAP}. Split into smaller batches.`,
+      );
+    }
+    const now = new Date().toISOString();
+    const skipped: Array<{ approvalId: string; reason: string }> = [];
+    let rejected = 0;
+    for (const approvalId of args.approvalIds) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval) {
+        skipped.push({ approvalId: String(approvalId), reason: "not_found" });
+        continue;
+      }
+      if (approval.status !== "pending") {
+        skipped.push({
+          approvalId: String(approvalId),
+          reason: `not_pending_${approval.status}`,
+        });
+        continue;
+      }
+      await ctx.db.patch(approvalId, {
+        status: "rejected",
+        approvedBy: args.actorUserId,
+        approvedAt: now,
+        rejectedReason: args.reason ?? "operator_batch_reject",
+      });
+      rejected++;
+    }
+    return { total: args.approvalIds.length, rejected, skipped };
+  },
+});
+
+// Internal retry — MCP path (mirrors `retry` above with an explicit actor).
+// Re-queues an execution_failed approval: the operator already approved this
+// exact content, so clear the failure record, flip back to approved, and
+// re-schedule the same executor. No-op-safe on non-failed rows.
+export const retryInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; reason?: string }> => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) return { ok: false, reason: "not_found" };
+    if (approval.status !== "execution_failed") {
+      return { ok: false, reason: `not_failed_${approval.status}` };
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      approvedBy: args.actorUserId,
+      approvedAt: new Date().toISOString(),
+      executionError: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
+// ── Expiry sweep (spec-3 F6, nightly cron) ───────────────────
+//
+// Pending approvals used to live forever: "expired" + expiresAt existed in
+// the schema with zero enforcement, and the queue re-accumulated stale rows
+// (227 bulk-rejected 2026-06-06). Nightly, mark pending rows past their
+// expiresAt — or past a 14-day default from requestedAt when unset — as
+// expired. Bounded take: expired rows leave "pending", so a backlog larger
+// than one batch drains across consecutive runs.
+const DEFAULT_APPROVAL_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+export const expireStale = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<{ scanned: number; expired: number }> => {
+    const now = Date.now();
+    const pending = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q: any) => q.eq("status", "pending"))
+      .take(500);
+    let expired = 0;
+    for (const row of pending) {
+      const deadline = row.expiresAt
+        ? new Date(row.expiresAt).getTime()
+        : new Date(row.requestedAt).getTime() + DEFAULT_APPROVAL_TTL_MS;
+      if (Number.isFinite(deadline) && deadline < now) {
+        await ctx.db.patch(row._id, { status: "expired" });
+        expired++;
+      }
+    }
+    return { scanned: pending.length, expired };
+  },
+});
+
+// ── W0-F1 audit (2026-07-07) ─────────────────────────────────
+//
+// Before the email_fresh executor was wired, approved fresh-outreach
+// approvals fell through client_communication's stub branch and were
+// marked "executed" WITHOUT any mail leaving (spec-3 F1). These two
+// functions let the operator audit that history and selectively re-send.
+// Run from the Convex dashboard / CLI:
+//   npx convex run approvals:listStubbedEmailFresh
+//   npx convex run approvals:resendStubbedEmailFresh '{"approvalId": "..."}'
+
+export const listStubbedEmailFresh = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q: any) => q.eq("status", "executed"))
+      .order("desc")
+      .take(args.limit ?? 500);
+    return rows
+      .filter((r) => {
+        const p: any = r.draftPayload;
+        return (
+          r.entityType === "client_communication" &&
+          p?.kind === "email_fresh" &&
+          (r.executionResult as any)?.stub === true
+        );
+      })
+      .map((r) => ({
+        approvalId: r._id,
+        summary: r.summary,
+        subject: (r.draftPayload as any)?.subject,
+        requestedAt: r.requestedAt,
+        executedAt: r.executedAt,
+        relatedClientId: r.relatedClientId,
+        relatedContactId: r.relatedContactId,
+      }));
+  },
+});
+
+// Re-queue one stub-executed email_fresh approval for a REAL send. The
+// operator already approved this exact content; "executed" was recorded
+// without a send. Same re-queue shape as retry, gated to exactly the rows
+// the audit above surfaces. The kill switches still gate at execute time,
+// and staleness is the operator's call — they review the audit list first.
+export const resendStubbedEmailFresh = internalMutation({
+  args: { approvalId: v.id("approvals") },
+  handler: async (ctx, args) => {
+    const approval = await ctx.db.get(args.approvalId);
+    if (!approval) throw new Error("Approval not found");
+    const p: any = approval.draftPayload;
+    if (
+      approval.status !== "executed" ||
+      approval.entityType !== "client_communication" ||
+      p?.kind !== "email_fresh" ||
+      (approval.executionResult as any)?.stub !== true
+    ) {
+      throw new Error("Not a stub-executed email_fresh approval");
+    }
+    await ctx.db.patch(args.approvalId, {
+      status: "approved",
+      executionResult: undefined,
+      executedAt: undefined,
+    });
+    await ctx.scheduler.runAfter(0, executeApprovalRef, {
+      approvalId: args.approvalId,
+    });
+    return { ok: true };
+  },
+});
+
+// ── Inline draft editing ─────────────────────────────────────
+//
+// Generic partial patch of a pending approval's draftPayload. The operator
+// tweaks subject/body/recipient inline before approving (the InlineDraftEditor
+// surface). draftPayload is v.any() and may be EITHER a gmail_send shape
+// ({ subject, bodyText, bodyHtml, to, ... }) OR a client_communication /
+// email_reply shape ({ kind: "email_reply", subject, bodyText, bodyHtml, ... }).
+// We patch only the keys provided, in place, preserving every other key.
+
+// Shared core: applies the partial patch + stamps the editor. The actor is
+// already resolved by the caller (public path = Clerk session, internal path =
+// passed-in userId).
+async function applyDraftEdit(
+  ctx: any,
+  args: {
+    approvalId: Id<"approvals">;
+    subject?: string;
+    bodyText?: string;
+    bodyHtml?: string;
+    to?: string[];
+    editedBy: Id<"users">;
+  },
+): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> {
+  const approval = await ctx.db.get(args.approvalId);
+  if (!approval) throw new Error("Approval not found");
+  if (approval.status !== "pending") {
+    throw new Error(`Cannot edit the draft of an approval that is ${approval.status}`);
+  }
+  const current: any =
+    approval.draftPayload && typeof approval.draftPayload === "object" && !Array.isArray(approval.draftPayload)
+      ? approval.draftPayload
+      : {};
+  const next: any = { ...current };
+  if (args.subject !== undefined) next.subject = args.subject;
+  if (args.bodyText !== undefined) next.bodyText = args.bodyText;
+  if (args.bodyHtml !== undefined) next.bodyHtml = args.bodyHtml;
+  if (args.to !== undefined) next.to = args.to;
+  await ctx.db.patch(args.approvalId, {
+    draftPayload: next,
+    draftEditedAt: new Date().toISOString(),
+    draftEditedBy: args.editedBy,
+    // Phase 2 metrics/learning: preserve the as-drafted payload on the FIRST
+    // edit so triage can diff exactly what the operator changed vs. the
+    // template. Subsequent edits keep the original original.
+    ...(approval.originalDraftPayload === undefined
+      ? { originalDraftPayload: approval.draftPayload }
+      : {}),
+  });
+  return { ok: true, approvalId: args.approvalId };
+}
+
+export const updateDraft = mutation({
+  args: {
+    approvalId: v.id("approvals"),
+    subject: v.optional(v.string()),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    to: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> => {
+    const user = await getAuthenticatedUser(ctx);
+    return applyDraftEdit(ctx, { ...args, editedBy: user._id });
+  },
+});
+
+// Internal variant — MCP / system path. The actor is resolved by the caller
+// and passed in explicitly (mirrors approveInternal / internalCreate).
+export const updateDraftInternal = internalMutation({
+  args: {
+    approvalId: v.id("approvals"),
+    subject: v.optional(v.string()),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    to: v.optional(v.array(v.string())),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<{ ok: boolean; approvalId: Id<"approvals"> }> => {
+    const { actorUserId, ...rest } = args;
+    return applyDraftEdit(ctx, { ...rest, editedBy: actorUserId });
   },
 });
 
@@ -514,13 +872,15 @@ export const executeApproval = internalAction({
           });
           break;
         case "client_communication": {
-          // client_communication covers BOTH drafted email replies
+          // client_communication covers drafted email replies
           // (kind === "email_reply", from outreach.draftReply / the web
-          // inbox composer) AND non-sendable operator-review markers (the
-          // reply router's createOperatorReviewApproval). Only the former
-          // sends; the latter just advances the lifecycle.
+          // inbox composer), fresh operator-initiated outreach
+          // (kind === "email_fresh", from outreach.draftFreshEmail) AND
+          // non-sendable operator-review markers (the reply router's
+          // createOperatorReviewApproval). The first two send; the marker
+          // just advances the lifecycle.
           const p: any = approval.draftPayload;
-          if (p && p.kind === "email_reply") {
+          if (p && (p.kind === "email_reply" || p.kind === "email_fresh")) {
             result = await ctx.runAction(executeClientCommunicationRef, {
               approvalId: args.approvalId,
             });
@@ -535,6 +895,17 @@ export const executeApproval = internalAction({
           // the related BDM contact. The entityType stays distinct only so the
           // approvals UI can apply lender-specific review gates.
           result = await ctx.runAction(executeLenderOutreachRef, {
+            approvalId: args.approvalId,
+          });
+          break;
+        case "drive_write":
+          // Drive write-back (create folder / move file / rename / upload
+          // email attachment) — the ONLY class of writes the app makes to
+          // Drive; existing file contents are never edited.
+          // The executor re-checks the driveWriteConfig kill switch at
+          // fire time (defense-in-depth, mirrors the gmail_send pattern)
+          // and echoes the result into the mirror on success.
+          result = await ctx.runAction(executeDriveWriteRef, {
             approvalId: args.approvalId,
           });
           break;

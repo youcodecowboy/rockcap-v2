@@ -15,6 +15,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Facility Letter',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A facility letter (also called a facility agreement or loan agreement) is the binding legal contract between RockCap as lender and the borrower setting out the definitive terms under which credit is extended for a property development project. Unlike indicative terms or heads of terms which are non-binding proposals, the facility letter is a fully executed legal document that creates enforceable obligations on both parties. ' +
@@ -125,6 +126,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Title Deed',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A title deed is the official Land Registry document that records ownership of a property or parcel of land in England and Wales. Issued by HM Land Registry, the title deed comprises the official copy of the register (also known as the official copy entries) and the title plan. These documents together form the definitive proof of the registered proprietor\'s ownership and any encumbrances on the title. ' +
@@ -231,6 +233,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Personal Guarantee',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'client' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A personal guarantee is a legally binding document in which an individual (the guarantor) personally guarantees repayment of a loan made by RockCap to a borrower company (typically a Special Purpose Vehicle or SPV). In property development finance, personal guarantees are a standard part of the security package because borrower companies are often newly incorporated SPVs with no assets beyond the development site itself. The personal guarantee provides the lender with recourse to the individual\'s personal assets if the borrower defaults. ' +
@@ -335,6 +338,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Corporate Guarantee',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A corporate guarantee is a legally binding document in which a company (the corporate guarantor) guarantees the obligations of another company (the borrower) under a loan facility. In RockCap\'s development finance context, the corporate guarantor is typically a parent company, holding company, or another entity within the borrower\'s corporate group that has a stronger balance sheet or asset base than the SPV borrower. ' +
@@ -440,6 +444,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Debenture',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A debenture is a security instrument that creates fixed and floating charges over all or substantially all of a company\'s assets in favour of the lender. In UK property development finance, the debenture is a fundamental component of the lender\'s security package, granting RockCap priority claims over the borrower company\'s entire undertaking — including its property, plant, equipment, receivables, bank accounts, intellectual property, goodwill, and uncalled capital. ' +
@@ -544,6 +549,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Share Charge',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A share charge (also known as a charge over shares or share pledge) is a security document in which a shareholder grants a charge over their shares in a company to the lender as security for a loan. In RockCap\'s development finance structure, the borrower is typically a Special Purpose Vehicle (SPV) established solely to hold the development site and undertake the project. The share charge is granted by the SPV\'s shareholders (often the developer\'s holding company or the individual developers) over their shares in the borrower SPV. ' +
@@ -649,6 +655,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Shareholders Agreement',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'client' },
+    targetFolderKey: 'credit',
 
     description:
       'A shareholders agreement is a private contract between the shareholders of a company that governs their relationship, rights, and obligations in respect of the company and their shareholdings. In property development finance, shareholders agreements are particularly important when the borrower SPV has multiple shareholders — for example, a joint venture between two developers, or a developer and an investor. RockCap reviews the shareholders agreement as part of its due diligence to understand the governance and control dynamics of the borrower company. ' +
@@ -753,6 +760,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Corporate Authorisations',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'Corporate authorisations are the formal corporate governance documents that evidence a company\'s authority to enter into a transaction. In RockCap\'s development lending, these documents are a standard Condition Precedent (CP) that must be delivered before the loan can be drawn down. The lender needs assurance that the borrower company (and any guarantor company) has the legal power and internal authority to borrow, grant security, and perform its obligations under the loan documents. ' +
@@ -858,6 +866,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Building Contract',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'credit',
 
     description:
       'A building contract is the legal agreement between the employer (typically the borrower SPV or developer) and the building contractor for the construction or refurbishment of a development project. In UK property development, the most widely used standard form contracts are published by the Joint Contracts Tribunal (JCT), with the JCT Design and Build Contract (DB) and JCT Standard Building Contract (SBC) being the most common for RockCap-funded developments. For smaller projects, the JCT Minor Works or Intermediate Building Contract may be used. ' +
@@ -968,6 +977,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Professional Appointment',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'credit',
 
     description:
       'A professional appointment is the formal engagement letter or consultancy agreement appointing a professional consultant to provide services on a development project. In UK property development, the key professional team members typically include the architect (who designs the scheme), the quantity surveyor or QS (who manages costs and prepares cost plans), the structural engineer, the mechanical and electrical (M&E) engineer, the project manager, the planning consultant, and the employer\'s agent (who administers the building contract on behalf of the developer). ' +
@@ -1077,6 +1087,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Collateral Warranty',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'post_completion',
 
     description:
       'A collateral warranty is a contract under which a building contractor, sub-contractor, or professional consultant (the warrantor) gives a direct contractual duty of care to a third party (the beneficiary) who is not a party to the underlying building contract or professional appointment. In development finance, the key beneficiary is RockCap as the funding institution, and the warrantors are the main contractor, the architect, the structural engineer, the quantity surveyor, and any other key consultants or sub-contractors on the project. ' +
@@ -1186,6 +1197,7 @@ export const LEGAL_REFERENCES: DocumentReference[] = [
     fileType: 'Lease',
     category: 'Legal Documents',
     filing: { targetFolder: 'Legal', targetLevel: 'project' },
+    targetFolderKey: 'modelling_info',
 
     description:
       'A lease is a legal document that grants the tenant (lessee) the right to occupy and use a property for a specified period in exchange for rent, while the landlord (lessor) retains the freehold or superior leasehold interest. In RockCap\'s development finance context, leases are relevant in several scenarios: the development site may be held on a long lease (ground lease) rather than freehold, completed units may be let to tenants generating rental income, or the development may involve the grant of new leases to purchasers (as is standard with flats and apartments which are almost always sold on long leasehold terms in England and Wales). ' +

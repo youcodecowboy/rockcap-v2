@@ -40,6 +40,18 @@ const isPublicRoute = createRouteMatcher([
   // action. Self-authenticates via X-Cron-Secret, same pattern as
   // webhook-process.
   '/api/hubspot/fireflies-backfill(.*)',
+  // Drive hydration bridge — the Convex hydration sweep POSTs settled Drive
+  // files here to run v4 extraction (pipeline code lives Next-side). Self-
+  // authenticates via x-cron-secret, same pattern as the hubspot bridges.
+  // Without this entry Clerk 404-rejects the cookie-less Convex fetch and
+  // every Drive extraction fails with "ingest route 404".
+  '/api/drive/ingest(.*)',
+  // Knowledge-layer bridges — Convex actions POST here server-to-server:
+  // /api/knowledge/atomize (API atomization lane) and
+  // /api/knowledge/extract-text (harness classification parse). Both
+  // self-authenticate via x-cron-secret. Same Clerk-404 failure mode as
+  // /api/drive/ingest when absent (bit the first harness fleet, 2026-07-07).
+  '/api/knowledge/(.*)',
   // Convex action → Next bridge for the corporate-structure chart renderer.
   // The `structureGen.renderChart` action POSTs here server-to-server (no Clerk
   // cookie); the handler self-authenticates via x-convex-internal-secret. Public
@@ -55,6 +67,12 @@ const isPublicRoute = createRouteMatcher([
   '/api/classify-reply-intent(.*)',
   '/api/cadence-compose(.*)',
   '/api/meeting-prep-respond(.*)',
+  // Prospecting v3 bridge routes — Convex actions POST here server-to-server
+  // (replyEventProcessor → reply-draft; cadenceDispatcher/intelRevalidate →
+  // intel-revalidate). Self-authenticate via x-convex-internal-secret; public
+  // here so Clerk doesn't 404-reject the cookie-less Convex fetch.
+  '/api/reply-draft(.*)',
+  '/api/intel-revalidate(.*)',
 ])
 
 // Mobile route mapping: URL path → (mobile) route group path.

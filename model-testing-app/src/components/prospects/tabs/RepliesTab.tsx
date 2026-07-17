@@ -1,10 +1,14 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import { useColors } from "@/lib/useColors";
-import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink, AlertCircle, Copy, Check } from "lucide-react";
+import { InlineDraftEditor } from "../InlineDraftEditor";
+import { PromptLauncherModal } from "../PromptLauncherModal";
+import { buildActionPrompt, type ActionPrompt } from "@/lib/prospects/actionPrompts";
+import type { Id } from "../../../../convex/_generated/dataModel";
+import { MessageSquare, Mail, Clock, ArrowRight, ExternalLink, Send, Pencil, X, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
 
 interface RepliesTabProps {
   prospect: any;
@@ -26,6 +30,7 @@ const INTENT_LABELS: Record<string, { label: string; color: "green" | "blue" | "
   not_interested: { label: "Not interested", color: "red" },
   info_question: { label: "Info question", color: "yellow" },
   out_of_office: { label: "Out of office", color: "grey" },
+  positive: { label: "Positive", color: "green" },
   unknown: { label: "Unknown", color: "orange" },
 };
 
@@ -37,6 +42,9 @@ const DISPATCH_LABELS: Record<string, string> = {
   operator_review: "Awaiting operator review",
   restored_cadences: "Restored cadences",
   no_contact_match: "No contact match (lost)",
+  reply_drafted: "Drafted reply awaiting your accept",
+  flag_only: "Flagged — your decision",
+  unlinked_no_review: "Unlinked (no review)",
 };
 
 export function RepliesTab({ prospect }: RepliesTabProps) {
@@ -78,13 +86,13 @@ export function RepliesTab({ prospect }: RepliesTabProps) {
       </div>
 
       {replies.map((reply: any) => (
-        <ReplyCard key={reply._id} reply={reply} colors={colors} />
+        <ReplyCard key={reply._id} reply={reply} colors={colors} prospectName={prospect?.name ?? prospect?.companyName ?? "this prospect"} />
       ))}
     </div>
   );
 }
 
-function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
+function ReplyCard({ reply, colors, prospectName }: { reply: any; colors: any; prospectName: string }) {
   const intent = INTENT_LABELS[reply.classifiedIntent] ?? INTENT_LABELS.unknown;
   const intentColor = intentPillColor(intent.color, colors);
   const dispatchLabel = reply.dispatchedTo ? DISPATCH_LABELS[reply.dispatchedTo] ?? reply.dispatchedTo : "Pending";
@@ -94,28 +102,78 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
     ? Math.round(reply.classifiedConfidence * 100)
     : null;
 
-  // v1.3 Sprint B — check whether an approval has been staged for this reply
-  // (qualify-and-draft / meeting-prep-respond output). Drives the
-  // "operator action needed" hint when no approval exists yet and the
-  // dispatch destination expects one.
+  // Reply lifecycle — the auto-staged email_reply approval is now actionable
+  // inline: Accept & send / Edit (shared inline editor) / Reject, no detour to
+  // /approvals. Drafts are auto-staged by replyEventProcessor, so the old "Run
+  // qualify-and-draft in Claude Code" nag is gone.
   const linkedApprovals = useQuery(api.approvals.listByReplyEvent, {
     replyEventId: reply._id,
   }) ?? [];
-  const hasPendingDraft = linkedApprovals.some((a: any) => a.status === "pending");
-  const draftStaged = linkedApprovals.length > 0;
+  const pendingDraft = linkedApprovals.find(
+    (a: any) =>
+      a.status === "pending" &&
+      a.entityType === "client_communication" &&
+      a.draftPayload?.kind === "email_reply",
+  );
+  const handledApproval = linkedApprovals.find((a: any) => a.status !== "pending");
 
-  // Intents that need a human-drafted response (vs lost/OOO which don't)
-  const needsResponseIntents = new Set(["book_meeting", "info_question", "unknown", "defer_long_term"]);
-  const needsResponse = needsResponseIntents.has(reply.classifiedIntent ?? "unknown");
-  const showOperatorActionHint = needsResponse && !draftStaged;
+  const approve = useMutation(api.approvals.approve as any);
+  const reject = useMutation(api.approvals.reject as any);
+  const clearFlag = useMutation(api.clients.clearNeedsActionFlag as any);
+  const resolveReply = useMutation(api.replyEvents.resolve as any);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Received email collapsed by default — verdict + drafted reply lead; the raw
+  // inbound (often a long quoted thread) is one click away.
+  const [showReceived, setShowReceived] = useState(false);
+  // Drafting happens in Claude Code (the harness), not via the app's API — the
+  // button opens a copy/run prompt rather than calling an LLM route.
+  const [launch, setLaunch] = useState<ActionPrompt | null>(null);
 
-  const [copied, setCopied] = useState(false);
-  function copyPrompt() {
-    const prompt = `Run qualify-and-draft on reply ${reply._id} for client ${reply.linkedClientId}`;
-    navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  const launchDraft = () => {
+    const wantsMeeting = reply.classifiedIntent === "book_meeting";
+    setLaunch(
+      buildActionPrompt(wantsMeeting ? "book_meeting" : "draft_reply", {
+        clientId: String(reply.linkedClientId),
+        clientName: prospectName,
+        replyEventId: String(reply._id),
+        note: reply.classifiedIntent,
+      }),
+    );
+  };
+
+  // Whether a reply can be drafted on demand (linked + not a terminal opt-out).
+  const canDraft =
+    !!reply.linkedClientId &&
+    reply.classifiedIntent !== "not_interested" &&
+    reply.classifiedIntent !== "out_of_office";
+
+  const acceptSend = async () => {
+    if (busy || !pendingDraft) return;
+    setBusy(true);
+    try {
+      await approve({ approvalId: pendingDraft._id });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rejectDraft = async () => {
+    if (busy || !pendingDraft) return;
+    setBusy(true);
+    try {
+      await reject({ approvalId: pendingDraft._id });
+      if (reply.linkedClientId) {
+        await clearFlag({
+          clientId: reply.linkedClientId,
+          kind: "reply_received",
+          sourceReplyEventId: reply._id,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -156,6 +214,21 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
               manual paste
             </Pill>
           )}
+          {reply.resolvedAt && (
+            // Multi-operator attribution: who marked this handled (via the app
+            // button below or Claude Code's reply.resolveBatch) and why.
+            <span
+              title={reply.resolutionNote ?? undefined}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+            >
+              <Pill bg={`${colors.accent.green}15`} fg={colors.accent.green} border={`${colors.accent.green}40`}>
+                handled
+              </Pill>
+              <span style={{ fontSize: 10, color: colors.text.muted }}>
+                by {reply.resolvedByName ?? "unknown"} · {reply.resolvedAt.slice(0, 10)}
+              </span>
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "ui-monospace, monospace", fontSize: 10, color: colors.text.muted }}>
           <Clock size={10} />
@@ -163,37 +236,8 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — verdict leads; the raw received email is collapsed below it. */}
       <div style={{ padding: 16 }}>
-        {reply.replyBodyText ? (
-          <div
-            style={{
-              fontSize: 13,
-              color: colors.text.primary,
-              lineHeight: 1.65,
-              marginBottom: 14,
-              whiteSpace: "pre-wrap" as const,
-              fontFamily: "system-ui, sans-serif",
-            }}
-          >
-            {reply.replyBodyText}
-          </div>
-        ) : (
-          <div
-            style={{
-              fontSize: 11,
-              color: colors.text.muted,
-              fontStyle: "italic",
-              marginBottom: 14,
-              padding: "8px 12px",
-              background: colors.bg.cardAlt,
-              borderRadius: 3,
-            }}
-          >
-            Body not captured (HubSpot-sweep path — open source via rawMessageRef below)
-          </div>
-        )}
-
         {/* Classification block */}
         <div
           style={{
@@ -239,6 +283,38 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
             <span>Routed:</span>
             <strong style={{ color: colors.text.primary }}>{dispatchLabel}</strong>
           </div>
+          {!reply.resolvedAt && (
+            <button
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                try {
+                  await resolveReply({
+                    replyEventId: reply._id,
+                    resolutionNote: "handled in app",
+                  });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+              title="Mark this reply as handled — it leaves every triage queue but stays here for history"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "none",
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 3,
+                padding: "2px 8px",
+                fontSize: 10,
+                color: colors.text.muted,
+                cursor: busy ? "default" : "pointer",
+              }}
+            >
+              Mark handled
+            </button>
+          )}
           {cancelledCount > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <MessageSquare size={11} />
@@ -267,12 +343,157 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
           )}
         </div>
 
-        {/* v1.3 Sprint B — operator action hint OR draft-pending badge */}
-        {draftStaged ? (
+        {/* Received email — collapsed by default (verdict + reply lead). */}
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => setShowReceived((s) => !s)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "transparent", border: "none", cursor: "pointer",
+              padding: "4px 0", fontSize: 11, color: colors.text.secondary,
+              fontFamily: "ui-monospace, monospace", letterSpacing: "0.04em",
+            }}
+          >
+            {showReceived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {showReceived ? "Hide received email" : "Show received email"}
+          </button>
+          {showReceived && (
+            reply.replyBodyText ? (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: colors.text.primary,
+                  lineHeight: 1.65,
+                  marginTop: 8,
+                  padding: "10px 12px",
+                  background: colors.bg.cardAlt,
+                  borderRadius: 4,
+                  border: `1px solid ${colors.border.light}`,
+                  whiteSpace: "pre-wrap" as const,
+                  fontFamily: "system-ui, sans-serif",
+                  maxHeight: 320,
+                  overflow: "auto",
+                }}
+              >
+                {reply.replyBodyText}
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: colors.text.muted,
+                  fontStyle: "italic",
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  background: colors.bg.cardAlt,
+                  borderRadius: 3,
+                }}
+              >
+                Body not captured — this reply came via the HubSpot 6h sweep, not the
+                Gmail inbox poller (so no body was available). Open it via the Source
+                link above. Replies to mail sent from the connected Gmail account are
+                captured in full.
+              </div>
+            )
+          )}
+        </div>
+
+        {/* Reply lifecycle — inline drafted-reply actions */}
+        {pendingDraft ? (
+          editing ? (
+            <div style={{ marginTop: 12 }}>
+              <InlineDraftEditor
+                approvalId={pendingDraft._id as Id<"approvals">}
+                initialSubject={pendingDraft.draftPayload?.subject ?? ""}
+                initialBodyText={pendingDraft.draftPayload?.bodyText ?? ""}
+                initialBodyHtml={pendingDraft.draftPayload?.bodyHtml || undefined}
+                onDone={() => setEditing(false)}
+                onCancel={() => setEditing(false)}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                marginTop: 12,
+                border: `1px solid ${colors.accent.green}40`,
+                borderRadius: 4,
+                background: `${colors.accent.green}08`,
+                padding: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <Mail size={12} color={colors.accent.green} />
+                <strong style={{ fontSize: 11, color: colors.text.primary }}>
+                  Drafted reply awaiting your accept
+                </strong>
+                <span style={{ color: colors.text.muted, fontSize: 10 }}>
+                  · {pendingDraft.requestSourceName ?? "reply-lifecycle"}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: colors.text.primary, marginBottom: 4 }}>
+                {pendingDraft.draftPayload?.subject || "(no subject)"}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: colors.text.secondary,
+                  lineHeight: 1.55,
+                  whiteSpace: "pre-wrap" as const,
+                  maxHeight: 160,
+                  overflow: "auto",
+                  marginBottom: 10,
+                }}
+              >
+                {pendingDraft.draftPayload?.bodyText}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={acceptSend}
+                  disabled={busy}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "6px 12px", fontSize: 11, fontWeight: 500,
+                    border: `1px solid ${colors.accent.green}`, borderRadius: 4,
+                    background: colors.accent.green, color: "#fff",
+                    cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1,
+                  }}
+                >
+                  <Send size={11} /> Accept &amp; send
+                </button>
+                <button
+                  onClick={() => setEditing(true)}
+                  disabled={busy}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "6px 12px", fontSize: 11,
+                    border: `1px solid ${colors.border.default}`, borderRadius: 4,
+                    background: colors.bg.card, color: colors.text.secondary,
+                    cursor: busy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <Pencil size={11} /> Edit
+                </button>
+                <button
+                  onClick={rejectDraft}
+                  disabled={busy}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "6px 12px", fontSize: 11,
+                    border: `1px solid ${colors.border.default}`, borderRadius: 4,
+                    background: colors.bg.card, color: colors.text.muted,
+                    cursor: busy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <X size={11} /> Reject
+                </button>
+              </div>
+            </div>
+          )
+        ) : handledApproval ? (
           <div
             style={{
               marginTop: 10,
-              padding: "10px 12px",
+              padding: "8px 12px",
               background: `${colors.accent.green}10`,
               border: `1px solid ${colors.accent.green}40`,
               borderRadius: 4,
@@ -280,72 +501,33 @@ function ReplyCard({ reply, colors }: { reply: any; colors: any }) {
               color: colors.text.primary,
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              flexWrap: "wrap",
+              gap: 6,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Mail size={12} color={colors.accent.green} />
-              <strong>{hasPendingDraft ? "Draft pending operator review" : "Draft handled"}</strong>
-              {linkedApprovals.length > 0 && (
-                <span style={{ color: colors.text.muted, fontSize: 10 }}>
-                  · {linkedApprovals[0].requestSourceName ?? "skill"}
-                </span>
-              )}
-            </div>
-            {linkedApprovals.length > 0 && (
-              <a
-                href={`/approvals/${linkedApprovals[0]._id}`}
-                style={{ color: colors.accent.blue, fontSize: 10, textDecoration: "underline" }}
-              >
-                Open approval →
-              </a>
-            )}
+            <Mail size={12} color={colors.accent.green} />
+            <strong>Draft {handledApproval.status}</strong>
+            <span style={{ color: colors.text.muted, fontSize: 10 }}>
+              · {handledApproval.requestSourceName ?? "reply-lifecycle"}
+            </span>
           </div>
-        ) : showOperatorActionHint ? (
-          <div
-            style={{
-              marginTop: 10,
-              padding: "10px 12px",
-              background: "#fef3c7",
-              border: `1px solid ${colors.accent.yellow}`,
-              borderRadius: 4,
-              fontSize: 11,
-              color: "#78350f",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <AlertCircle size={12} />
-              <strong>Operator action needed.</strong> No draft staged yet for this reply.
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 10 }}>In Claude Code:</span>
-              <code style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, background: "#fbf4d4", padding: "2px 6px", borderRadius: 2, border: "1px solid #fcd34d" }}>
-                Run qualify-and-draft on reply {reply._id.slice(-8)}…
-              </code>
-              <button
-                onClick={copyPrompt}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 8px",
-                  background: "#78350f",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 2,
-                  fontSize: 9,
-                  cursor: "pointer",
-                  fontFamily: "ui-monospace, monospace",
-                }}
-              >
-                {copied ? <Check size={9} /> : <Copy size={9} />}
-                {copied ? "copied" : "copy prompt"}
-              </button>
-            </div>
+        ) : canDraft ? (
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={launchDraft}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 12px", fontSize: 11, fontWeight: 500,
+                border: `1px solid ${colors.accent.blue}`, borderRadius: 4,
+                background: `${colors.accent.blue}12`, color: colors.accent.blue,
+                cursor: "pointer",
+              }}
+            >
+              <Sparkles size={12} /> {reply.classifiedIntent === "book_meeting" ? "Book the meeting →" : "Draft a reply →"}
+            </button>
           </div>
         ) : null}
+
+        {launch && <PromptLauncherModal action={launch} onClose={() => setLaunch(null)} />}
 
         {/* Errors if any */}
         {reply.errors && reply.errors.length > 0 && (

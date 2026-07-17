@@ -84,6 +84,25 @@ These signals are valuable for operator-readable context + may be added to match
 | `red_flags.zones` | `array` | `["high_flood_risk", "ex_local_authority_flats"]` | Things they won't fund regardless of headline criteria |
 | `notes.bdm` | `string` | `"James the BDM is moving to Allica next quarter; relationship transferring to Sarah"` | Relationship continuity notes |
 
+## Market-footprint signals (observed from the charges register)
+
+Recorded by the enrich gauntlet (SKILL.md enrich mode) from the external charges
+database (`sourcing.searchLenders`) — the lender's OBSERVED UK security footprint,
+as opposed to their stated appetite. Always `sourceType: "deal_behaviour"`,
+`asOfDate` = the charges dataset's `dataAsOf` date, confidence `1.0` (public
+register, mechanical count). Re-running enrich supersedes the prior values, so the
+footprint self-refreshes with each pass.
+
+| fieldPath | valueType | Example | Operational use |
+|---|---|---|---|
+| `footprint.activeCharges` | `number` | `412` | Outstanding (unsatisfied) charges the lender holds as chargeholder — live security book size |
+| `footprint.totalCharges` | `number` | `1893` | All-time charges registered — overall market history |
+| `footprint.chargedCompanies` | `number` | `655` | Distinct companies they've taken security from — breadth of the book |
+| `footprint.canonicalName` | `string` | `"PARAGON DEVELOPMENT FINANCE LIMITED"` | The charges-register canonical lender name that matched — the join key for later `sourcing.fromLender` runs |
+
+A big active book with a thin appetite record means the lender is very fundable
+but we're uninformed — that gap is exactly what the enrich brief should surface.
+
 ## How to phrase the value field
 
 The `value` field accepts any JSON-compatible type. Match `valueType`:

@@ -43,7 +43,7 @@ type PhaseTransition = {
 
 - At least one `lenderApproaches` row is at `status: "submitted_for_credit"` or beyond.
 - All `indicative_terms`-phase `required` checklist items have `status: "fulfilled"`.
-- A client decision record exists (`knowledgeBankEntries` with `entryType: "deal_update"` capturing the lender selection).
+- A client decision record exists — check the graph first (`atoms.search` for the lender-selection decision atom); fall back to `knowledgeBankEntries` with `entryType: "deal_update"` capturing the lender selection (not-yet-atomized deals).
 
 ### Transition to `post_credit`
 
@@ -55,7 +55,7 @@ type PhaseTransition = {
 
 - The `Drawdown` document exists OR all `post_credit` required items are `fulfilled`.
 - The selected `lenderApproaches` is at `status: "closed_won"`.
-- A case study exists in `knowledgeBankEntries` (or a TODO marker indicating one is queued).
+- A case study exists — check the graph first (`atoms.search`); fall back to `knowledgeBankEntries` for not-yet-atomized deals (or a TODO marker indicating one is queued).
 
 4. For each precondition, return whether it's met with a one-sentence detail.
 5. `shouldTransition` is true only if all preconditions are met. Even one unmet precondition holds the deal at its current phase.
@@ -72,7 +72,7 @@ CONVENTIONS apply. One that matters: skill never advances the phase. It only com
 - `lenderApproach.listByProject`
 - `knowledge.getChecklistByProject`
 - `documents.getByProject` (for facility-letter, drawdown-doc detection)
-- `knowledge.queryIntelligence` (for decision records)
+- `atoms.search` (for decision records; `knowledge.queryIntelligence` fallback only, when the deal's graph is empty — not yet atomized)
 - `milestone.listByProject` (for case-study detection on completion)
 
 ## What goes wrong

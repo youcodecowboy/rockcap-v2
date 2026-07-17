@@ -107,6 +107,16 @@ export default defineSchema({
     )),
     dealSizeRange: v.optional(v.string()),
 
+    // ── Operator-entered deal value (2026-06-18) ──
+    // The pipeline-value metric sums ONLY this field. It is set by the operator
+    // (after a conversation / later in the deal flow), never derived or guessed
+    // from dealSizeRange — that AI estimate is an indicative hint, not a number
+    // we put a £ total behind. Stored in GBP. Unset = not counted in pipeline value.
+    dealValueGBP: v.optional(v.number()),
+    dealValueNote: v.optional(v.string()),     // operator's basis ("£7.5m senior, confirmed on call")
+    dealValueSetAt: v.optional(v.string()),
+    dealValueSetBy: v.optional(v.id("users")),
+
     // ── Outreach-ready gate (2026-05-30) ──
     // Lightweight internal "operator has accepted the intel; this prospect may
     // now be drafted for outreach" flag. NOT a prospectState (the state machine
@@ -116,13 +126,107 @@ export default defineSchema({
     // ready-but-not-yet-drafted prospects via clients.listOutreachReady.
     outreachReadyAt: v.optional(v.string()), // ISO timestamp of the accept
     outreachReadyBy: v.optional(v.id("users")), // operator who accepted
+
+    // ── Pipeline stage (v2 — stage-by-stage dashboards, 2026-06-14) ──
+    // The operator's MANUAL 5-stage pipeline position, a separate axis from
+    // prospectState (which the outreach engine moves automatically). Drives the
+    // stage-by-stage prospecting dashboards. When unset, the dashboards derive a
+    // stage from prospectState (see src/lib/prospects/stages.ts → derivePipelineStage),
+    // so existing prospects appear with no migration. Operators promote between
+    // stages via prospectStages.promoteStage. Prospects sit in "qualified" until
+    // manually promoted to a client (clients.activate).
+    pipelineStage: v.optional(v.union(
+      v.literal("cold_outreach"),
+      v.literal("warm_pre_meeting"),
+      v.literal("warm_post_meeting"),
+      v.literal("pre_qualification"),
+      v.literal("qualified"),
+    )),
+    pipelineStageChangedAt: v.optional(v.string()),
+    pipelineStageChangedBy: v.optional(v.id("users")),
+    // Sub-stage ladder WITHIN pre-qualification / qualified. A prospect sits at
+    // exactly one step and advances forward. The pre-qual ladder (modelling →
+    // feedback discussed) and the qualified ladder (terms requested → credit
+    // approved) share this field; which ladder applies is gated by pipelineStage.
+    // KEEP IN SYNC with PRE_QUAL_STEPS + QUALIFIED_STEPS in
+    // src/lib/prospects/stages.ts. Rolling "entered-this-month" counts come from
+    // the prospectStageEvents log, not this single current-value field.
+    qualSubStage: v.optional(v.union(
+      // pre-qualification ladder
+      v.literal("modelling_required"),
+      v.literal("modelling_review_required"),
+      v.literal("qualitative_feedback_required"),
+      v.literal("feedback_given"),
+      v.literal("feedback_discussed"),
+      // qualified ladder
+      v.literal("terms_requested"),
+      v.literal("terms_presented"),
+      v.literal("progression_to_credit"),
+      v.literal("formal_dd"),
+      v.literal("credit_approved"),
+    )),
+    qualSubStageChangedAt: v.optional(v.string()),
+    qualSubStageChangedBy: v.optional(v.id("users")),
+
+    // ── Prospecting v3 — needs-action lane (2026-06-26) ──
+    // Canonical "this prospect is waiting on the operator" surface, written by
+    // raiseNeedsActionFlagInternal / clearNeedsActionFlagInternal. One entry per
+    // distinct `kind` (e.g. reply_received, intel_refresh, manual_move). The
+    // requires-attention table + the pipeline "Requires action" counts read
+    // needsActionAt (set to the earliest open flag's time, cleared when the last
+    // flag clears). Replaces the per-axis ad-hoc flags.
+    needsActionFlags: v.optional(v.array(v.object({
+      kind: v.string(),
+      reason: v.string(),
+      sourceReplyEventId: v.optional(v.id("replyEvents")),
+      sourceApprovalId: v.optional(v.id("approvals")),
+      raisedAt: v.string(),
+    }))),
+    needsActionAt: v.optional(v.string()),
+
+    // ── Prospecting v3 — intel freshness lane (2026-06-26) ──
+    // Two-mode intel tracking. lastFullIntelAt = last full prospect-intel run;
+    // lastIntelRevalidateAt / lastIntelResult = last cheap intel-revalidate pass.
+    // lastOutreachSendAt feeds Trigger B (30-day cadence gap). intelAttentionAt /
+    // intelAttentionReason raise the "refresh intel" flag (Trigger A meeting +
+    // >7d stale, or revalidate materially_changed); cleared via intelAttentionClearedAt.
+    lastFullIntelAt: v.optional(v.string()),
+    lastIntelRevalidateAt: v.optional(v.string()),
+    lastIntelResult: v.optional(v.union(
+      v.literal("still_valid"),
+      v.literal("materially_changed"),
+    )),
+    lastOutreachSendAt: v.optional(v.string()),
+    intelAttentionAt: v.optional(v.string()),
+    intelAttentionReason: v.optional(v.union(
+      v.literal("meeting_booked_stale"),
+      v.literal("revalidate_materially_changed"),
+    )),
+    intelAttentionClearedAt: v.optional(v.string()),
+
+    // ── Lender DB hardening (2026-07) ──
+    // Alternate names this client is known by — registered-company variants,
+    // brand names, historical names, and the `name`/`companyName` of any
+    // duplicate rows merged into this one via lender.merge. Read by the
+    // knowledge-layer lender matcher (loadRosteredLenders → matchRosteredLenders)
+    // alongside `name`/`companyName`, and by lender.create's dedup upsert to
+    // recognise a lender that arrives under a variant name. Conservative,
+    // normalized-equality matching only (never fuzzy).
+    aliases: v.optional(v.array(v.string())),
+    // Provenance pointer: source documents that evidenced this lender row.
+    // Written by lender.create (naked create + dedup upsert) and unioned on
+    // lender.merge so the merged row keeps every duplicate's evidence.
+    sourceDocumentIds: v.optional(v.array(v.id("documents"))),
   })
     .index("by_status", ["status"])
+    .index("by_needs_action_at", ["needsActionAt"])
+    .index("by_intel_attention", ["intelAttentionAt"])
     .index("by_type", ["type"])
     .index("by_name", ["name"])
     .index("by_hubspot_id", ["hubspotCompanyId"])
     .index("by_last_accessed", ["lastAccessedAt"])
     .index("by_prospect_state", ["prospectState"])
+    .index("by_pipeline_stage", ["pipelineStage"])
     .index("by_companies_house_number", ["companiesHouseNumber"]),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
@@ -351,11 +455,33 @@ export default defineSchema({
     noteCount: v.optional(v.number()),
     // Intelligence integration - flag to track if document analysis was added to client/project intelligence
     addedToIntelligence: v.optional(v.boolean()),
+    // Origin of the document (drive ingestion vs direct upload vs generated).
+    // Absent = legacy upload. Set by the Drive ingestion pipeline (phase 3)
+    // and by future upload/generation writers.
+    source: v.optional(v.union(
+      v.literal("upload"),
+      v.literal("drive"),
+      v.literal("generated")
+    )),
+    // Drive provenance (only when source === "drive"): the mirrored file this
+    // document was extracted from, plus a deep link back into Drive.
+    driveFileId: v.optional(v.string()),
+    driveWebViewLink: v.optional(v.string()),
+    // Checksum of the source bytes at extraction time (md5 from Drive) —
+    // lets re-extraction detect content drift without refetching bytes.
+    contentChecksum: v.optional(v.string()),
     // Soft delete
     isDeleted: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
     deletedBy: v.optional(v.id("users")),
     deletedReason: v.optional(v.string()),
+    // Duplicate consolidation breadcrumb (knowledge/docDedupe.ts): set when
+    // this row was soft-archived because it duplicated the canonical document
+    // it points at. Reversal: clear this + the soft-delete trio, then re-run
+    // knowledge/chunks.chunkDocument on this row (its chunks were deleted as
+    // disposable derivatives; atom observations moved to the canonical are
+    // listed in the consolidation's auditLog row).
+    duplicateOf: v.optional(v.id("documents")),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
@@ -366,7 +492,8 @@ export default defineSchema({
     .index("by_has_notes", ["hasNotes"])
     .index("by_scope", ["scope"])
     .index("by_owner", ["ownerId"])
-    .index("by_scope_owner", ["scope", "ownerId"]),
+    .index("by_scope_owner", ["scope", "ownerId"])
+    .index("by_duplicate_of", ["duplicateOf"]),
 
   // Document Notes - User annotations on specific documents (for document reader)
   documentNotes: defineTable({
@@ -1185,6 +1312,8 @@ export default defineSchema({
     name: v.string(), // Display name
     description: v.optional(v.string()), // Optional description for the folder
     parentFolderId: v.optional(v.id("clientFolders")), // For nested folders
+    depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
+    order: v.optional(v.number()), // Display order among siblings (lower first; unset sorts last)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
@@ -1201,6 +1330,7 @@ export default defineSchema({
     description: v.optional(v.string()), // Optional description for the folder
     parentFolderId: v.optional(v.id("projectFolders")), // For nested subfolders
     depth: v.optional(v.number()), // 0 = top-level, 1-4 = nested; 5 levels total (depth 0-4)
+    order: v.optional(v.number()), // Display order among siblings (lower first; unset sorts last)
     isCustom: v.optional(v.boolean()), // True if user-created, false/undefined if from template
     createdAt: v.string(),
   })
@@ -1231,8 +1361,12 @@ export default defineSchema({
     .index("by_client_type_level", ["clientType", "level"])
     .index("by_client_type", ["clientType"]),
 
-  // Document Placement Rules - Define where document types should be filed
-  // Per client type mapping of document types to target folders
+  // Document Placement Rules - DEPRECATED (2026-07-07 taxonomy rebuild).
+  // Placement is now fully deterministic in code (src/v4/lib/placement-rules.ts,
+  // Dark Mills taxonomy) — the DB-rules lane (convex/placementRules.ts,
+  // /api/bulk-analyze, PlacementRulesTable UI) was deleted. The table
+  // definition stays because removing a non-empty table breaks Convex schema
+  // push; data cleanup happens in a later phase. Do not add new writers.
   documentPlacementRules: defineTable({
     clientType: v.string(), // "borrower" | "lender" | etc.
     documentType: v.string(), // e.g., "Red Book Valuation", "Term Sheet"
@@ -3484,6 +3618,9 @@ export default defineSchema({
     createdBy: v.optional(v.id("users")),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
+    // Knowledge lane — stamped when this meeting's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeMeeting); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
     // Fireflies integration (BL-3.x). Set when meeting originated from
@@ -3509,13 +3646,34 @@ export default defineSchema({
       v.literal("confirmed_keep"),
       v.literal("confirmed_remove")
     )),
+    // ── Prospecting v3 — meeting lifecycle (2026-06-26) ──
+    // Completion concept that drives the pre-meeting → post-meeting stage move.
+    // `status` undefined is treated as "scheduled" for legacy rows. A meeting is
+    // auto-marked completed when its Fireflies transcript arrives OR meetingDate
+    // has passed (hourly cron), with a manual override. On completion the meeting
+    // workstream writes pipelineStage=warm_post_meeting and appends the transcript
+    // to intel. preMeetingNotesDraftedAt stamps the pre-meeting note draft.
+    status: v.optional(v.union(
+      v.literal("scheduled"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+    )),
+    completedAt: v.optional(v.string()),
+    completionSource: v.optional(v.union(
+      v.literal("transcript"),
+      v.literal("date_passed"),
+      v.literal("manual"),
+    )),
+    preMeetingNotesDraftedAt: v.optional(v.string()),
   })
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_client_date", ["clientId", "meetingDate"])
     .index("by_source_document", ["sourceDocumentId"])
     .index("by_fireflies_id", ["firefliesId"])
-    .index("by_review_state", ["reviewState"]),
+    .index("by_review_state", ["reviewState"])
+    .index("by_status", ["status"])
+    .index("by_status_date", ["status", "meetingDate"]),
 
   // Meeting Extraction Jobs - async queue for extracting meetings from documents
   meetingExtractionJobs: defineTable({
@@ -3959,6 +4117,17 @@ export default defineSchema({
       subject: v.string(),
       bodyText: v.string(),
       bodyHtml: v.string(),
+      // Free-form; the drafting skills stamp {templateKey, hookRung} here
+      // (Phase 2 metrics substrate) alongside any composer variables.
+      dynamicVars: v.optional(v.any()),
+    })),
+    // Snapshot of preDraftedTouch taken on the FIRST operator content edit
+    // (Phase 2, 2026-07-15) — the drafted-as-templated side of the
+    // draft-vs-sent diff. Absent = never edited.
+    originalPreDraftedTouch: v.optional(v.object({
+      subject: v.string(),
+      bodyText: v.string(),
+      bodyHtml: v.string(),
       dynamicVars: v.optional(v.any()),
     })),
 
@@ -4004,6 +4173,14 @@ export default defineSchema({
     revisionNote: v.optional(v.string()),
     revisionRequestedBy: v.optional(v.id("users")),
     revisionRequestedAt: v.optional(v.string()),
+
+    // ── Prospecting v3 — intel-revalidate hold (2026-06-26) ──
+    // Trigger B: before firing a touch whose gap since the last send exceeds
+    // 30 days, the dispatcher runs the intel-revalidate pass. On
+    // materially_changed the touch is parked (isActive=false) with these stamps
+    // instead of sending a stale email; nextDueAt is preserved so it can resume.
+    intelHoldAt: v.optional(v.string()),
+    intelHoldReason: v.optional(v.string()),
   })
     .index("by_contact", ["contactId"])
     .index("by_next_due", ["nextDueAt"])
@@ -4012,6 +4189,10 @@ export default defineSchema({
     .index("by_related_client", ["relatedClientId"])
     .index("by_package", ["packageId"])
     .index("by_package_approval_status", ["packageId", "packageApprovalStatus"])
+    // Global lookup of every package in a given approval state (across all
+    // packages) — powers the prospecting action queue. The compound index
+    // above leads with packageId so it can't serve a bare-status query.
+    .index("by_approval_status", ["packageApprovalStatus"])
     .index("by_contact_active", ["contactId", "isActive"])
     .index("by_created_by", ["createdBy"]),
 
@@ -4067,6 +4248,7 @@ export default defineSchema({
       v.literal("client_communication"),
       v.literal("skill_action"),
       v.literal("cadence_fire"),
+      v.literal("drive_write"),
       v.literal("other")
     ),
     entityRefId: v.optional(v.string()),         // id of the entity this approval acts on, if any
@@ -4109,6 +4291,16 @@ export default defineSchema({
     // v1.3 — link to the skillRun that produced this approval (audit trail
     // + lets gaps/errors flow into the approvals UI).
     relatedSkillRunId: v.optional(v.id("skillRuns")),
+    // ── Prospecting v3 — inline draft edit audit (2026-06-26) ──
+    // Set by approvals.updateDraft when an operator edits a drafted email
+    // (cadence touch or reply draft) in place before approving.
+    draftEditedAt: v.optional(v.string()),
+    draftEditedBy: v.optional(v.id("users")),
+    // ── Metrics/learning substrate (Phase 2, 2026-07-15) ──
+    // Snapshot of draftPayload taken on the FIRST operator edit — the
+    // "what did the template say before I changed it" side of the
+    // draft-vs-sent diff. Absent = never edited (sent as drafted).
+    originalDraftPayload: v.optional(v.any()),
   })
     .index("by_status", ["status"])
     .index("by_requested_by", ["requestedBy"])
@@ -4205,10 +4397,136 @@ export default defineSchema({
   })
     .index("by_user", ["userId"]),
 
+  // googleDriveTokens - single-row table (one org-wide Drive connection;
+  // NOT per-user like Gmail). Independent OAuth client from Gmail/Calendar.
+  // The row records which app user connected it (userId), but at most one
+  // active connection exists app-wide. saveTokens PATCHes the existing row
+  // on reconnect and preserves the sync watermark (startPageToken) + root
+  // folder, so a reconnect never resets the mirror.
+  googleDriveTokens: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.string(),
+    scope: v.string(),
+    connectedEmail: v.string(),
+    needsReconnect: v.optional(v.boolean()),
+    lastSyncAt: v.optional(v.string()),
+    lastPollStartedAt: v.optional(v.number()),
+    startPageToken: v.optional(v.string()),   // Drive changes.list watermark
+    rootFolderId: v.optional(v.string()),
+    rootFolderName: v.optional(v.string()),
+    connectedAt: v.string(),
+  })
+    .index("by_user", ["userId"]),
+
+  // driveFolders - metadata mirror of Drive folders under the org root.
+  // Drive is a one-way feed; this mirror is a disposable cache rebuilt by
+  // driveSync.backfillWalk at any time. There is NO stored sync mode: the
+  // effective hydration scope of any folder/file is the nearest ancestor
+  // folder (walking parentFolderId up to the root) with clientId set —
+  // see driveSync.resolveFolderScope. projectId narrows the scope further:
+  // the nearest ancestor with projectId set (must sit inside a client-mapped
+  // subtree) makes imports from that subtree file at PROJECT level.
+  driveFolders: defineTable({
+    driveFolderId: v.string(),
+    name: v.string(),
+    parentFolderId: v.optional(v.string()),   // absent = the root folder itself
+    path: v.string(),                          // materialized, e.g. "/ClientCo/Deals/2026" ("/" for root)
+    clientId: v.optional(v.id("clients")),     // operator mapping — set ONLY on explicitly mapped folders
+    projectId: v.optional(v.id("projects")),   // operator mapping — project-level scope inside a client subtree
+    // Wide-net auto-import (operator decision 2026-07-07): standing
+    // authorization — NEW files arriving in this subtree auto-import on the
+    // poll tick that mirrors them. Inherits like projectId (nearest
+    // ancestor-or-self with the flag EXPLICITLY set wins, so false carves a
+    // subfolder out of a flagged parent); inert outside a client-mapped
+    // scope. See driveSync.autoImportFromPoll.
+    autoImport: v.optional(v.boolean()),
+    // ms epoch — stamped when the 20/day auto-import cap first trips that
+    // day under this (flag-anchor) folder; the settings tree badges it.
+    // Stale values are ignored once the day rolls over.
+    autoImportCapHit: v.optional(v.number()),
+    trashed: v.optional(v.boolean()),
+    lastSyncedAt: v.string(),
+  })
+    .index("by_drive_id", ["driveFolderId"])
+    .index("by_parent", ["parentFolderId"])
+    .index("by_client", ["clientId"]),
+
+  // driveFiles - metadata mirror of Drive files under the org root.
+  // Extraction fields are stamped here by the changes poller (settling
+  // debounce, dirty tracking) for the phase-3 hydration worker to consume;
+  // nothing in this phase fetches bytes.
+  driveFiles: defineTable({
+    driveFileId: v.string(),
+    name: v.string(),
+    mimeType: v.string(),
+    parentFolderId: v.optional(v.string()),
+    size: v.optional(v.number()),
+    modifiedTime: v.string(),
+    md5Checksum: v.optional(v.string()),       // absent on Google-native files
+    headRevisionId: v.optional(v.string()),
+    webViewLink: v.optional(v.string()),
+    trashed: v.optional(v.boolean()),
+    // Hydration/extraction state (consumed by phase 3).
+    cachedStorageId: v.optional(v.id("_storage")),
+    extractedChecksum: v.optional(v.string()),
+    extractionStatus: v.union(
+      v.literal("none"),
+      v.literal("settling"),
+      v.literal("processing"),
+      v.literal("complete"),
+      v.literal("error")
+    ),
+    extractionError: v.optional(v.string()),
+    settleAfter: v.optional(v.number()),       // ms epoch — pushed forward on every change (debounce)
+    firstDirtyAt: v.optional(v.number()),      // ms epoch — starvation guard, never pushed out
+    processingStartedAt: v.optional(v.number()),
+    documentId: v.optional(v.id("documents")),
+    // ms epoch — set when the poll's wide-net lane auto-imported this file
+    // (driveSync.autoImportFromPoll). Daily-cap accounting only; explicit
+    // operator/MCP imports never stamp it.
+    autoImportedAt: v.optional(v.number()),
+    lastSyncedAt: v.string(),
+  })
+    .index("by_drive_id", ["driveFileId"])
+    .index("by_parent", ["parentFolderId"])
+    .index("by_extraction_status", ["extractionStatus"])
+    .index("by_document", ["documentId"])
+    .index("by_auto_imported_at", ["autoImportedAt"]),
+
+  // ingestionEvents - durable post-extraction feed (Spec 2's hook). Every
+  // document that enters the corpus (Drive extraction, direct upload, ...)
+  // appends a row here; downstream consumers tail by_at. Phase 3 writes it.
+  ingestionEvents: defineTable({
+    documentId: v.id("documents"),
+    driveFileId: v.optional(v.string()),
+    source: v.string(),                        // "drive" | "upload" | ...
+    checksum: v.optional(v.string()),
+    kind: v.union(v.literal("created"), v.literal("reextracted")),
+    at: v.string(),
+  })
+    .index("by_at", ["at"])
+    .index("by_document", ["documentId"]),
+
   // gmailSendConfig (BL-4.x) - global send kill switch.
   // Singleton row. isEnabled gates outbound for the whole org; per-user
   // sendEnabled on googleGmailTokens layers on top. Both must be true.
   gmailSendConfig: defineTable({
+    isEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["isEnabled"]),
+
+  // driveWriteConfig (Drive phase 6) - global write-back kill switch.
+  // Singleton row; no row = disabled. Gates the ONLY writes the app ever
+  // makes to Google Drive: organizational operations (create folder, move
+  // file, rename) staged through driveWriteback.requestWrite. File CONTENTS
+  // are never written — Drive stays the source of truth for bytes. Every
+  // operation additionally routes through an approvals row; this switch
+  // layers on top (checked at queue time AND re-checked at execute time).
+  driveWriteConfig: defineTable({
     isEnabled: v.boolean(),
     updatedAt: v.string(),
     updatedBy: v.optional(v.id("users")),
@@ -4265,6 +4583,45 @@ export default defineSchema({
     .index("by_occurred_at", ["occurredAt"])
     .index("by_thread", ["threadId"]),
 
+  // ProspectStageEvents — append-only transition log for the operator pipeline.
+  // One row per pipeline-stage promotion OR qual sub-stage advance. The clients
+  // row only stores the CURRENT stage/sub-stage; this log is what makes rolling
+  // "entered terms_requested this month" / "feedback given this month" counts
+  // faithful (current-value alone loses the history once they move on).
+  prospectStageEvents: defineTable({
+    clientId: v.id("clients"),
+    kind: v.union(
+      v.literal("pipeline_stage"),   // toValue is a PipelineStage key
+      v.literal("qual_substage"),    // toValue is a qualSubStage key
+    ),
+    fromValue: v.optional(v.string()),
+    toValue: v.string(),
+    at: v.string(),                  // ISO timestamp of the transition
+    byUserId: v.optional(v.id("users")),
+    // ── Prospecting v3 — transition provenance (2026-06-26) ──
+    // What drove a pipeline_stage move: manual | meeting_booked |
+    // meeting_completed | cadence_approved | reply | sourcing_promote |
+    // legacy_migration. Written by applyPipelineStage so the Activity tab and
+    // "why here" chip can explain stage moves and we can audit that events write
+    // the stage explicitly rather than relying on derivation.
+    reason: v.optional(v.string()),
+  })
+    .index("by_client", ["clientId"])
+    .index("by_kind", ["kind"])
+    .index("by_kind_at", ["kind", "at"]),
+
+  // PipelineTargets — singleton (one row) holding the house weekly/monthly
+  // targets for the "out of N" prospecting KPIs. Editable from the dashboard
+  // targets modal; the aggregation falls back to defaults when no row exists.
+  pipelineTargets: defineTable({
+    weeklyReachOut: v.number(),
+    weeklyFollowUp: v.number(),
+    monthlyMeetings: v.number(),
+    monthlyTermsRequested: v.number(),
+    updatedAt: v.string(),
+    updatedBy: v.optional(v.id("users")),
+  }),
+
   // mcpTokens (BL-5.9) - per-user MCP tokens for Claude Code authentication.
   // Tokens are minted via a settings UI; the plaintext is shown to the user
   // once and never persisted. The server stores only a SHA-256 hash plus a
@@ -4297,6 +4654,9 @@ export default defineSchema({
       v.literal("defer_long_term"),
       v.literal("not_interested"),
       v.literal("info_question"),
+      // Prospecting v3: explicit positive intent (interested, wants to engage)
+      // that isn't yet a meeting request — still auto-drafts a reply.
+      v.literal("positive"),
       v.literal("out_of_office"),
       v.literal("unknown"),
     )),
@@ -4311,6 +4671,16 @@ export default defineSchema({
       v.literal("operator_review"),
       v.literal("restored_cadences"),
       v.literal("no_contact_match"),
+      // Contact matched but is not tied to a client/prospect — recorded but
+      // not classified or reviewed (suppresses non-prospect review noise).
+      v.literal("unlinked_no_review"),
+      // Prospecting v3: a reply draft was auto-composed for operator
+      // accept/edit (book_meeting/info_question/positive). Surfaced in the
+      // requires-attention table; not double-counted as a generic approval.
+      v.literal("reply_drafted"),
+      // Prospecting v3: flag-only intents (not_interested/out_of_office) — the
+      // prospect is flagged needs-action for review but no reply is drafted.
+      v.literal("flag_only"),
     )),
     dispatchedSkillRunId: v.optional(v.id("skillRuns")),
     processed: v.boolean(),
@@ -4324,6 +4694,18 @@ export default defineSchema({
     // doesn't always carry the body content.
     replyBodyText: v.optional(v.string()),
     replySubject: v.optional(v.string()),
+    // Knowledge lane — stamped when this reply's content has been atomized
+    // (knowledge/sourceAtomizer.atomizeReply); absent = not yet processed.
+    atomizedAt: v.optional(v.string()),
+
+    // Triage resolution (2026-07-14) — the operator (via /outreach or the UI)
+    // marked this reply handled: answered manually, acknowledged, or not
+    // actionable. Resolved rows drop out of listUnrouted / the triage queue /
+    // the session digest but keep their dispatchedTo for history. Without
+    // this the operator_review queue could never reach zero.
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    resolutionNote: v.optional(v.string()),
 
     // v1.3 — direct link to the clients row when the contact resolves to
     // one. Speeds up reply.listByClient + the operator-review queue's
@@ -4343,6 +4725,26 @@ export default defineSchema({
     // gmailMessageId (the RFC822 Message-ID header) → In-Reply-To/References.
     gmailThreadId: v.optional(v.string()),
     gmailMessageId: v.optional(v.string()),
+    // Gmail REST message id (NOT the RFC822 Message-ID above) — the handle
+    // for re-fetching the message later (attachment listing/filing). Rows
+    // ingested before attachment capture lack it; gmailAttachments falls
+    // back to an rfc822msgid: search.
+    gmailApiId: v.optional(v.string()),
+    // Attachment METADATA captured at ingest — bytes stay in Gmail until an
+    // operator-approved drive.saveEmailAttachment copies one into Drive.
+    // partId (not attachmentId) is stored because Gmail attachmentIds are
+    // ephemeral; inline=true flags signature images / embedded logos.
+    attachments: v.optional(
+      v.array(
+        v.object({
+          filename: v.string(),
+          mimeType: v.string(),
+          sizeBytes: v.optional(v.number()),
+          partId: v.optional(v.string()),
+          inline: v.optional(v.boolean()),
+        }),
+      ),
+    ),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
     // Raw HTML body (when the message had a text/html part). Rendered
@@ -4436,10 +4838,310 @@ export default defineSchema({
     revisionRequestedAt: v.optional(v.string()),
     revisionNote: v.optional(v.string()),
     revisionRequestedBy: v.optional(v.id("users")),
+
+    // ── Prospecting v3 — intel-revalidate result (2026-06-26) ──
+    // Set on `intel-revalidate` runs (skillName stays a free string, so no enum
+    // change). The cheap diff-focused pass records whether the prior intel still
+    // holds. completeInternal denormalises this onto clients.lastIntelResult.
+    revalidateResult: v.optional(v.union(
+      v.literal("still_valid"),
+      v.literal("materially_changed"),
+    )),
   })
     .index("by_user", ["userId"])
     .index("by_skill_and_dedup_key", ["skillName", "dedupKey"])
     .index("by_status", ["status"])
-    .index("by_skill_and_user", ["skillName", "userId"]),
+    .index("by_skill_and_user", ["skillName", "userId"])
+    // Scope failed / gappy runs to a single skill so the prospecting action
+    // queue reads only prospect-intel runs (not every skill's history) —
+    // skillRun docs carry heavy brief / intelMarkdown / structureGraph fields,
+    // so reading them all blows the per-query byte limit.
+    .index("by_skill_and_status", ["skillName", "status"]),
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Knowledge Layer (Spec 2, Phase 2a.1) — docs/spec-2-knowledge-layer.md §3
+  //
+  // Five additive tables. `atoms` holds ONE row per fact identity
+  // (subjectType, subjectId, predicate, qualifier, object-kind); every
+  // source occurrence lives in `atomObservations` (separate table because
+  // Convex can't index into arrays and re-extraction needs by_document).
+  // `facilities` is the deterministic n-ary hub minted from atoms;
+  // `documentChunks` is the narrative dual index; `entityCandidates` holds
+  // provisional entities so facts about unresolved mentions are never lost.
+  //
+  // Deviation from spec §3.1/§3.4 (deliberate): `embedding` is OPTIONAL —
+  // atoms/chunks must be writable before the embeddings lane (Phase 2a.2)
+  // exists. Convex vector indexes only include documents that contain a
+  // vector in the indexed field, so rows without embeddings are simply
+  // absent from vector search until 2a.2 backfills them.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // Canonical facts — spec §3.1. Predicates validate in code against
+  // convex/knowledge/vocabulary.ts (never a schema union: the vocabulary
+  // must grow without schema pushes, and dev IS prod).
+  atoms: defineTable({
+    // ── Fact ──
+    statement: v.string(), // one self-contained sentence; the embedded + searched text
+    subjectType: v.union(
+      v.literal("client"),
+      v.literal("project"),
+      v.literal("contact"),
+      v.literal("company"),
+      v.literal("facility"),
+      v.literal("candidate"),
+    ),
+    subjectId: v.string(), // stringified Convex id (table per subjectType)
+    predicate: v.string(), // validated in code against the vocabulary module (spec §5)
+    objectEntityType: v.optional(
+      v.union(
+        v.literal("client"),
+        v.literal("project"),
+        v.literal("contact"),
+        v.literal("company"),
+        v.literal("facility"),
+        v.literal("candidate"),
+      ),
+    ),
+    objectEntityId: v.optional(v.string()), // set ⇒ EDGE
+    objectLiteral: v.optional(
+      v.object({
+        // set ⇒ ATTRIBUTE (exactly one of the two, enforced in atomsCore)
+        value: v.any(), // canonicalized (ISO dates, raw numbers)
+        valueType: v.union(
+          v.literal("currency"),
+          v.literal("number"),
+          v.literal("percentage"),
+          v.literal("date"),
+          v.literal("string"),
+          v.literal("range"),
+        ),
+        currency: v.optional(v.string()),
+        unit: v.optional(v.string()),
+      }),
+    ),
+    qualifier: v.optional(v.string()), // multi-instance disambiguation ("Senior" vs "Mezzanine"); part of identity
+    // ── Scope (denormalized for filtered retrieval) ──
+    clientId: v.optional(v.id("clients")), // owning scope; null = company-wide
+    projectId: v.optional(v.id("projects")),
+    // ── Time & lifecycle ──
+    asOf: v.optional(v.string()), // when true in the world (from doc content/date)
+    observedAt: v.string(), // latest observation time
+    status: v.union(
+      v.literal("active"),
+      v.literal("contested"),
+      v.literal("superseded"),
+      v.literal("retired"),
+    ),
+    supersededBy: v.optional(v.id("atoms")),
+    supersessionReason: v.optional(
+      v.union(
+        v.literal("revised"),
+        v.literal("removed_from_source"),
+        v.literal("document_trashed"),
+        v.literal("operator"),
+        v.literal("version_precedence"), // auto-resolved: newer version of the same document series won (knowledge/versionPrecedence.ts)
+        v.literal("dangling_entity"), // nightly integrity sweep retired an atom whose subject/object entity row no longer resolves (knowledge/integritySweep.ts)
+      ),
+    ),
+    confidence: v.number(), // corroboration-adjusted (spec §7)
+    salience: v.optional(v.number()), // IDF-informed ranking weight (spec §6.2, Phase 2c)
+    // Set by the nightly integrity sweep when a contested atom has outlived the
+    // stale-contest window (default 14d) without version precedence resolving
+    // it — the marker operators filter on to triage aged contests. Cleared
+    // implicitly when the atom leaves "contested" (resolved / superseded).
+    contestFlaggedAt: v.optional(v.string()),
+    primarySourceType: v.string(), // most-authoritative observation's sourceType (display convenience)
+    embedding: v.optional(v.array(v.float64())), // 1024-dim (spec §13); optional until 2a.2 embeds
+  })
+    .index("by_subject", ["subjectType", "subjectId", "status"])
+    .index("by_object", ["objectEntityType", "objectEntityId", "status"])
+    .index("by_client_status", ["clientId", "status"])
+    // Owning-project scope — lets mergeEntities re-scope a project's atoms with a
+    // bounded index scan instead of a full-table .collect() (Convex per-txn read cap).
+    .index("by_project", ["projectId"])
+    .index("by_predicate", ["predicate", "status"])
+    .searchIndex("search_statement", {
+      searchField: "statement",
+      filterFields: ["clientId", "subjectType", "status"],
+    })
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1024,
+      filterFields: ["clientId", "subjectType", "status"],
+    }),
+
+  // Per-source provenance — spec §3.2. One row per (atom, source occurrence).
+  // v1 locator caveat: parsed xlsx is `Row N: cell | cell` lines, so
+  // spreadsheet locators are {sheet, row} until deep extraction lands;
+  // sourceText is the dependable audit anchor either way.
+  atomObservations: defineTable({
+    atomId: v.id("atoms"),
+    sourceType: v.union(
+      v.literal("document"),
+      v.literal("note"),
+      v.literal("meeting"), // externalRef `meeting:<meetingId>`; one-shot (meetings are immutable once captured)
+      v.literal("email"),   // externalRef `reply:<replyEventId>`; one-shot inbound replies
+      v.literal("companies_house"),
+      v.literal("apollo"),
+      v.literal("operator"),
+      v.literal("skill"),
+      v.literal("migration"),
+    ),
+    documentId: v.optional(v.id("documents")),
+    noteId: v.optional(v.id("notes")), // note-lane anchor (sourceType "note"); reatomizeNoteDiff keys the same-lineage diff on it
+    contentChecksum: v.optional(v.string()), // WHICH revision asserted this
+    locator: v.optional(
+      v.object({
+        page: v.optional(v.number()),
+        sheet: v.optional(v.string()),
+        row: v.optional(v.number()),
+        cellRange: v.optional(v.string()),
+        section: v.optional(v.string()),
+      }),
+    ),
+    sourceText: v.optional(v.string()), // verbatim snippet — the reliable audit anchor
+    externalRef: v.optional(v.string()), // CH charge/filing ID, Apollo ID, skillRunId, userId
+    extractedValue: v.optional(v.any()), // what THIS source said (may differ from canonical)
+    observedAt: v.string(),
+    authorityTier: v.number(), // spec §7 document-type authority (higher = more authoritative)
+    superseded: v.optional(v.boolean()), // same-lineage replacement marker
+  })
+    .index("by_atom", ["atomId"])
+    .index("by_document", ["documentId"])
+    .index("by_note", ["noteId"]),
+
+  // The n-ary hub — spec §3.3. Minted deterministically from atoms when
+  // facility-shaped predicates arrive; columns are mirrors of winning atoms,
+  // rebuildable at any time. NOTE: spec text reads `v.id("companies")` for
+  // lenderCompanyId but the comment says "CH company when known" — the
+  // `companies` table here is HubSpot prospects, so the CH intent maps to
+  // `companiesHouseCompanies` (matches the atom "company" entity type).
+  facilities: defineTable({
+    projectId: v.id("projects"),
+    lenderClientId: v.optional(v.id("clients")), // clients row, type="lender"; optional (external lender)
+    lenderCompanyId: v.optional(v.id("companiesHouseCompanies")), // CH company when known
+    borrowerClientId: v.optional(v.id("clients")),
+    tranche: v.optional(v.string()), // "senior" | "mezzanine" | "bridge" | "equity"
+    // Materialized terms — mirrors of winning atoms, rebuildable at any time
+    amountGBP: v.optional(v.number()),
+    interestRate: v.optional(v.number()),
+    maturityDate: v.optional(v.string()),
+    securitySummary: v.optional(v.string()),
+    status: v.optional(v.string()), // "indicative" | "live" | "repaid" | "defaulted"
+    dedupeKey: v.string(), // `${projectId}:${lenderKey}:${tranche ?? "single"}`
+    createdFrom: v.union(
+      v.literal("atomizer"),
+      v.literal("operator"),
+      v.literal("migration"),
+    ),
+    lastRebuiltAt: v.string(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_lender", ["lenderClientId"])
+    .index("by_lender_company", ["lenderCompanyId"])
+    // Borrower scope — lets mergeEntities re-scope a client's borrower facilities
+    // with a bounded index scan instead of a full-table .collect().
+    .index("by_borrower", ["borrowerClientId"])
+    .index("by_dedupe", ["dedupeKey"]),
+
+  // The narrative dual index — spec §3.4. Chunks are disposable derivatives
+  // of ONE revision: on re-extraction, delete the document's chunks and
+  // recreate (unlike atoms, chunks carry no identity worth preserving).
+  documentChunks: defineTable({
+    documentId: v.id("documents"),
+    contentChecksum: v.string(),
+    chunkIndex: v.number(),
+    text: v.string(),
+    tokenCount: v.optional(v.number()),
+    locator: v.optional(
+      v.object({
+        page: v.optional(v.number()),
+        sheet: v.optional(v.string()),
+        section: v.optional(v.string()),
+      }),
+    ),
+    clientId: v.optional(v.id("clients")),
+    projectId: v.optional(v.id("projects")),
+    embedding: v.optional(v.array(v.float64())), // optional until 2a.2 embeds
+  })
+    .index("by_document", ["documentId"])
+    // Scope indexes — let mergeEntities re-scope a client's / project's chunks with
+    // a bounded index scan instead of a full-table .collect() (search/vector filter
+    // fields cannot serve a plain equality read inside a mutation).
+    .index("by_client", ["clientId"])
+    .index("by_project", ["projectId"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["clientId"] })
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1024,
+      filterFields: ["clientId"],
+    }),
+
+  // Provisional entities — spec §3.5. Atoms MAY reference a candidate so
+  // the fact is never dropped; the enrichment worker (Phase 2b) resolves
+  // people → Apollo → contacts, companies → CH → companiesHouseCompanies,
+  // then re-points referencing atoms. resolvedTo* stays as a tombstone so
+  // re-extraction resolves instantly.
+  entityCandidates: defineTable({
+    mentionText: v.string(),
+    normalizedName: v.string(),
+    guessedType: v.union(v.literal("person"), v.literal("company")),
+    contextSnippet: v.optional(v.string()),
+    sourceDocumentId: v.optional(v.id("documents")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("resolved"),
+      v.literal("dismissed"),
+    ),
+    resolvedToType: v.optional(v.string()),
+    resolvedToId: v.optional(v.string()),
+    enrichmentAttempts: v.number(),
+  })
+    .index("by_normalized_name", ["normalizedName"])
+    .index("by_status", ["status"]),
+
+  // Retrieval instrumentation — spec §10, Phase 2c. One thin row per (atom
+  // OR chunk, retrieval occurrence): which atoms/chunks a search / graph
+  // expansion actually surfaced. Written fire-and-forget from the MCP action
+  // layer (queries cannot write), so retrieval latency is unaffected. Feeds:
+  // (1) the usage component of atoms.salience (refreshSalience reads by_atom
+  // counts — chunk rows have no atomId and never match), (2) the utilization
+  // / dead-weight health metrics; chunk rows are reserved for future chunk-
+  // level stats + pruning. Pruned by age via by_retrievedAt (covers BOTH row
+  // kinds) — this is disposable telemetry, not provenance.
+  retrievalLog: defineTable({
+    // Exactly ONE of atomId / chunkId is set per row. Convex validators can't
+    // express XOR, so the invariant is enforced in knowledge/salience
+    // logRetrieval (the only writer).
+    atomId: v.optional(v.id("atoms")),
+    chunkId: v.optional(v.id("documentChunks")),
+    source: v.union(v.literal("search"), v.literal("expand")),
+    queryText: v.optional(v.string()), // the search query (truncated); absent for expands
+    clientId: v.optional(v.id("clients")), // scope the retrieval ran under, when known
+    subjectType: v.optional(v.string()), // entity type of the expand center, when source="expand"
+    subjectId: v.optional(v.string()), // entity id of the expand center, when source="expand"
+    retrievedAt: v.number(), // Date.now() at log time
+  })
+    .index("by_atom", ["atomId"])
+    .index("by_retrievedAt", ["retrievedAt"]),
+
+  // Cached org-wide atlas snapshot — knowledge/graphOverview.ts. The overview
+  // walk (atoms + native structural lanes) outgrew Convex's 16MiB single-
+  // execution read limit, so an internalAction assembles it from paged
+  // internalQuery lanes and stores the result JSON here, chunked under the
+  // 1MiB document cap. ONE meta row (kind "meta") points at the live buildId
+  // and carries the builder lock; chunk rows (kind "chunk") hold the JSON
+  // slices. Readers (atlas board query + MCP graph.overview) load meta →
+  // chunks; a rebuild swaps the meta buildId atomically in the same mutation
+  // that inserts the new chunks and sweeps the old ones.
+  graphOverviewCache: defineTable({
+    kind: v.union(v.literal("meta"), v.literal("chunk")),
+    buildId: v.string(), // meta: the live build; chunk: its owning build
+    seq: v.optional(v.number()), // chunk order within a build
+    payload: v.optional(v.string()), // JSON slice (chunks only)
+    builtAt: v.optional(v.number()), // meta: last successful build
+    buildStartedAt: v.optional(v.number()), // meta: build lock (stale after 2 min)
+    chunkCount: v.optional(v.number()), // meta
+  }).index("by_kind_build", ["kind", "buildId"]),
 });
 

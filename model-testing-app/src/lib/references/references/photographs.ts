@@ -23,6 +23,7 @@ export const PHOTOGRAPH_REFERENCES: DocumentReference[] = [
       targetFolder: 'Photographs',
       targetLevel: 'project',
     },
+    targetFolderKey: 'modelling_info',
 
     description:
       'Site Photographs are visual records of a property development site captured at various stages ' +

@@ -19,6 +19,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Financial',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
     description:
       'A loan statement is a periodic financial document issued by a lender — typically a bridging, development, or mezzanine finance provider — that presents the current position of a borrower\'s loan account. In UK property development finance, loan statements serve as the primary record of the ongoing financial relationship between lender and borrower throughout the life of a facility.\n\n' +
       'The statement details the original loan advance, any subsequent drawdowns made against a facility (common in development finance where funds are released in tranches against completed works), and the cumulative interest that has accrued. In most bridging and development loans, interest is rolled up rather than serviced monthly, meaning it compounds and is added to the outstanding balance. The statement therefore shows both the principal balance and the total debt including rolled-up interest, giving the borrower a clear picture of their exposure at a point in time.\n\n' +
@@ -131,6 +132,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Financial',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
     description:
       'A redemption statement is a formal document issued by a lender setting out the exact amount required to fully repay and discharge a loan on a specified date. In UK property development and bridging finance, the redemption statement is a critical document in the exit process — it is the definitive figure that the borrower (or their solicitor) must pay to close the facility and trigger the release of the lender\'s security.\n\n' +
       'The statement breaks down the total redemption figure into its component parts: the outstanding principal, all rolled-up interest accrued to the redemption date, any exit fees due under the facility agreement, administration or discharge fees, and any other sums owed such as unpaid extension fees or legal costs incurred by the lender. Because interest accrues daily on most bridging facilities, the redemption figure is only valid for a specific date or short window (often stated as "valid until" a particular date), after which a fresh statement must be requested.\n\n' +
@@ -242,6 +244,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Financial',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
     description:
       'A completion statement is a final financial reconciliation document produced at the conclusion of a property finance transaction. In the context of UK development and bridging lending, the completion statement represents the definitive accounting of all financial flows between lender and borrower over the life of the facility, produced once the loan has been fully redeemed and all outstanding matters settled.\n\n' +
       'The statement typically covers the full lifecycle of the loan: the original net advance, all drawdowns released, total interest charged (including any rolled-up interest and any default or penalty interest), all fees levied (arrangement fee, exit fee, extension fees, monitoring fees), any legal costs recharged to the borrower, and the total redemption payment received. The net position — confirming that the loan is fully discharged with no further sums owed by either party — is the key output of the document.\n\n' +
@@ -354,6 +357,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Financial',
       targetLevel: 'project',
     },
+    targetFolderKey: 'post_completion',
     description:
       'An invoice is a commercial document issued by a supplier or service provider requesting payment for goods delivered or services rendered. In UK property development finance, invoices are encountered across virtually every aspect of a project — from construction contractors and subcontractors billing for completed works, to solicitors, surveyors, architects, engineers, project monitors, and other professional advisors billing for their fees.\n\n' +
       'Each invoice must contain specific information under UK tax law: the supplier\'s name, address, and VAT registration number (if VAT-registered), a unique invoice number, the date of issue, a description of the goods or services, the net amount, the VAT amount (typically at 20% standard rate), and the gross total payable. Construction industry invoices are subject to additional requirements under the Construction Industry Scheme (CIS), where the contractor must deduct tax at source from payments to subcontractors and account for this to HMRC. CIS invoices will show the gross amount, the CIS deduction (typically 20% or 30%), and the net payment due.\n\n' +
@@ -470,6 +474,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'Financial',
       targetLevel: 'project',
     },
+    targetFolderKey: 'background_docs',
     description:
       'A receipt is a document that provides proof of payment, confirming that funds have been received by a payee in settlement of an obligation. In UK property development finance, receipts serve as evidence that project expenditure has actually been paid, distinguishing committed costs from invoiced-but-unpaid amounts. Lenders and monitoring surveyors routinely require receipts alongside invoices to verify that drawdown funds have been properly applied to project costs.\n\n' +
       'Receipts can take various forms depending on the payee and the nature of the transaction. A formal receipt may be issued by a supplier acknowledging payment of a specific invoice, marked with a "PAID" stamp or annotation. Bank transfer confirmations showing a payment to a named beneficiary also function as receipts. In the construction industry, a payment and withholding notice under the Housing Grants, Construction and Regeneration Act 1996 (as amended) confirms the amount paid to a contractor. Professional firms such as solicitors and surveyors may issue receipts on their headed paper confirming settlement of their fees.\n\n' +
@@ -582,6 +587,7 @@ export const FINANCIAL_REFERENCES: DocumentReference[] = [
       targetFolder: 'KYC',
       targetLevel: 'client',
     },
+    targetFolderKey: 'kyc',
     description:
       'A tax return in the context of UK property finance lending refers to the HMRC self-assessment tax return filed by an individual borrower, guarantor, or director. The primary forms encountered are the SA100 (the main self-assessment tax return) and the SA302 (the tax calculation summary produced by HMRC based on the return). These documents are used extensively in know-your-customer (KYC) and affordability assessments as they provide an independently verified picture of an individual\'s income, tax liability, and financial position.\n\n' +
       'The SA100 is the full self-assessment form comprising a main return and supplementary pages. Supplementary pages relevant to property finance include the SA105 (UK property income), SA108 (capital gains), and SA103 (self-employment). The return shows total income from all sources — employment, self-employment, rental property, dividends, interest, and capital gains — along with allowable deductions, reliefs claimed, and the resulting tax liability. For lenders, the tax return provides a comprehensive and officially declared picture of the borrower\'s earnings that can be cross-referenced against bank statements and accountant\'s references.\n\n' +

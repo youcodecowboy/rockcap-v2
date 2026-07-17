@@ -125,3 +125,37 @@ export function wordCount(markdown: string): number {
   const words = (markdown ?? "").trim().split(/\s+/).filter(Boolean);
   return words.length;
 }
+
+// The inverse bridge: TipTap doc JSON → plain text, for consumers that need
+// the note's prose (the knowledge note-atomization lane). Total like the
+// forward direction — unknown node shapes contribute whatever text their
+// descendants carry, and malformed input yields "".
+export function tipTapDocToPlainText(doc: unknown): string {
+  const blocks: string[] = [];
+  const walk = (node: unknown, inline: string[]): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as TipTapNode;
+    if (typeof n.text === "string") {
+      inline.push(n.text);
+      return;
+    }
+    const children = Array.isArray(n.content) ? n.content : [];
+    // Block-level nodes flush their inline text as one line; everything else
+    // (marks, unknown wrappers) passes the inline buffer through.
+    const isBlock =
+      typeof n.type === "string" &&
+      n.type !== "doc" &&
+      !["text", "hardBreak"].includes(n.type) &&
+      ["paragraph", "heading", "blockquote", "codeBlock", "listItem", "taskItem", "tableCell", "tableHeader"].includes(n.type);
+    if (isBlock) {
+      const own: string[] = [];
+      for (const c of children) walk(c, own);
+      const line = own.join("").trim();
+      if (line) blocks.push(line);
+    } else {
+      for (const c of children) walk(c, inline);
+    }
+  };
+  walk(doc, []);
+  return blocks.join("\n");
+}

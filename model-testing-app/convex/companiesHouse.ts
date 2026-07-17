@@ -166,6 +166,71 @@ export const getCompany = query({
 });
 
 /**
+ * Officers + PSCs for a synced company, by CH number. The MCP-friendly read
+ * surface for the people behind a company: companies.syncCompaniesHouse
+ * persists officers/PSCs but only returns counts, and until this query there
+ * was no way to READ the names back over MCP — which blocked contact
+ * discovery (you can't feed apollo.findEmail without names). Used by the
+ * lender-intel enrich gauntlet and available to prospect-intel step 8.
+ */
+export const getOfficersByCompanyNumber = query({
+  args: { companyNumber: v.string() },
+  handler: async (ctx, args) => {
+    const num = args.companyNumber.trim().toUpperCase();
+    const company = await ctx.db
+      .query("companiesHouseCompanies")
+      .withIndex("by_company_number", (q: any) => q.eq("companyNumber", num))
+      .first();
+    if (!company) {
+      return {
+        ok: false as const,
+        error: "company_not_synced",
+        message: `No companiesHouseCompanies row for ${num}. Call companies.syncCompaniesHouse({chNumber: "${num}"}) first.`,
+      };
+    }
+
+    const officers = await ctx.db
+      .query("companiesHouseOfficers")
+      .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+      .collect();
+    const psc = await ctx.db
+      .query("companiesHousePSC")
+      .withIndex("by_company", (q: any) => q.eq("companyId", company._id))
+      .collect();
+
+    return {
+      ok: true as const,
+      companyNumber: num,
+      companyName: company.companyName,
+      officers: officers
+        .map((o) => ({
+          name: o.name,
+          officerRole: o.officerRole,
+          appointedOn: o.appointedOn,
+          resignedOn: o.resignedOn,
+          isActive: !o.resignedOn,
+          occupation: o.occupation,
+          nationality: o.nationality,
+          appointmentsLink: o.appointmentsLink,
+        }))
+        // Active first, then most recently appointed.
+        .sort((a, b) =>
+          a.isActive !== b.isActive
+            ? (a.isActive ? -1 : 1)
+            : (b.appointedOn ?? "").localeCompare(a.appointedOn ?? ""),
+        ),
+      psc: psc.map((p) => ({
+        name: p.name,
+        pscType: p.pscType,
+        naturesOfControl: p.naturesOfControl,
+        ceasedOn: (p as any).ceasedOn,
+      })),
+      activeOfficerCount: officers.filter((o) => !o.resignedOn).length,
+    };
+  },
+});
+
+/**
  * Get company by company number
  */
 export const getCompanyByNumber = query({

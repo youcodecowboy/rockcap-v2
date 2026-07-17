@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -22,6 +22,7 @@ import { KnowledgeTab } from "@/components/prospects/tabs/KnowledgeTab";
 import { TrackRecordTab } from "@/components/prospects/tabs/TrackRecordTab";
 import { StickyApprovalFooter } from "@/components/prospects/StickyApprovalFooter";
 import { RevisionRequestModal } from "@/components/prospects/RevisionRequestModal";
+import KnowledgeGraphDrawer from "@/components/knowledge/KnowledgeGraphDrawer";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 export default function ProspectDetailPage() {
@@ -32,6 +33,9 @@ export default function ProspectDetailPage() {
 
   const [activeTab, setActiveTab] = useState<"overview" | "intel" | "people" | "ch" | "track-record" | "outreach" | "replies" | "meetings" | "files" | "notes" | "threads" | "knowledge" | "activity">("overview");
   const [showRevisionModal, setShowRevisionModal] = useState(false);
+  // Knowledge Graph drawer — prospects are clients rows, so the entry entity
+  // is type "client"; entryIsProspect keeps the view unfiltered (§14b.6a).
+  const [graphOpen, setGraphOpen] = useState(false);
 
   const prospect = useQuery(api.prospects.getById, { clientId: prospectId });
   const cadencesRaw = useQuery(
@@ -111,10 +115,10 @@ export default function ProspectDetailPage() {
     prospect ? { clientId: prospectId } : "skip",
   );
 
-  // Knowledge tab: structured facts captured against this prospect (for the
-  // nav count). The tab itself reads contextMarkdown + the facts list directly.
-  const knowledgeFacts = useQuery(
-    api.knowledgeLibrary.getKnowledgeItemsByClient,
+  // Knowledge tab nav count — live atoms on this prospect (the tab renders
+  // the atoms list + the operator contextMarkdown lane).
+  const atomTotals = useQuery(
+    api.knowledge.graphQueries.clientAtomTotals,
     prospect ? { clientId: prospectId } : "skip",
   );
 
@@ -122,8 +126,18 @@ export default function ProspectDetailPage() {
   const denyPackage = useMutation(api.cadences.denyPackage);
   const requestRevisionMut = useMutation(api.cadences.requestRevision);
   const upsertScheme = useMutation(api.companies.upsertProspectScheme);
-  const markOutreachReady = useMutation(api.clients.markOutreachReady);
-  const clearOutreachReady = useMutation(api.clients.clearOutreachReady);
+
+  // Single-gate outreach: the cadence package is the approval surface. When a
+  // pending package exists, land the operator on the Outreach tab (the approval
+  // screen) automatically — but only once, so manual tab changes stick.
+  const autoSwitchedRef = useRef(false);
+  const pendingPackage = cadences[0]?.packageApprovalStatus === "pending";
+  useEffect(() => {
+    if (pendingPackage && !autoSwitchedRef.current) {
+      autoSwitchedRef.current = true;
+      setActiveTab("outreach");
+    }
+  }, [pendingPackage]);
 
   if (prospect === undefined) {
     return <div style={{ padding: 24, color: colors.text.muted }}>Loading…</div>;
@@ -133,13 +147,18 @@ export default function ProspectDetailPage() {
   }
 
   const packageId = cadences[0]?.packageId;
+  const packageApprovalStatus = cadences[0]?.packageApprovalStatus as string | undefined;
 
-  // Accept gate: you can mark ready only once a completed intel run exists.
-  // Mirrors the clients.markOutreachReady guard so the button never offers an
-  // action the mutation would reject.
-  const intelStatus = (intelRun as any)?.status;
-  const canMarkReady =
-    intelStatus === "complete" || intelStatus === "complete_with_gaps";
+  // No-contact guard surface (mirrors the backend applyPackageApproval guard +
+  // the dispatcher's fire-time check): Touch 1 is the lowest-order unfired
+  // touch (falling back to Touch 1), and it must resolve to a contact with an
+  // email for the package to be sendable. Drives the footer's disabled state.
+  const sortedCadences = [...cadences].sort((a, b) => (a.packageOrder ?? 0) - (b.packageOrder ?? 0));
+  const touchOneContactId =
+    sortedCadences.find((c) => !c.lastFiredAt)?.contactId ?? sortedCadences[0]?.contactId;
+  const touchOneContact = ((contacts as any[]) ?? []).find((ct) => ct._id === touchOneContactId);
+  const hasSendableContact = !!touchOneContact?.email;
+  const touchCount = cadences.length;
 
   return (
     <>
@@ -155,8 +174,9 @@ export default function ProspectDetailPage() {
         meetingsCount={meetings?.length ?? 0}
         schemesCount={((schemes as any)?.live?.length ?? 0) + ((schemes as any)?.past?.length ?? 0)}
         threadsCount={(threads as any[])?.length ?? 0}
-        knowledgeCount={(knowledgeFacts as any[])?.length ?? 0}
+        knowledgeCount={((atomTotals as any)?.active ?? 0) + ((atomTotals as any)?.contested ?? 0)}
         lenderTierConflict={lenderTierConflict as any}
+        onOpenGraph={() => setGraphOpen(true)}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, background: colors.border.default, paddingBottom: 80 }}>
@@ -186,7 +206,7 @@ export default function ProspectDetailPage() {
               }
             />
           )}
-          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} />}
+          {activeTab === "outreach" && <OutreachTab cadences={cadences} contacts={(contacts as any[]) ?? []} clientId={prospectId} />}
           {activeTab === "replies" && <RepliesTab prospect={prospect} />}
           {activeTab === "meetings" && <MeetingsTab prospect={prospect} />}
           {activeTab === "files" && <FilesTab prospect={prospect} />}
@@ -209,13 +229,25 @@ export default function ProspectDetailPage() {
         stateLabel={(prospect as any)?.prospectState ?? "drafted"}
         onApprove={async () => {
           if (!packageId) { alert("No package to approve"); return; }
-          await approvePackage({ packageId });
-          // Approving the package is gate 3 of 4: it activates the cadence.
-          // The dispatcher stages each touch as a gmail_send approval at its
-          // send date — the email only leaves after that final approve in
-          // /approvals. Without this note operators read "approved" as "sent".
+          try {
+            // Single gate (2026-06): approvePackage now ALSO writes Cold and
+            // fires Touch 1 server-side (the old "mark outreach ready" accept
+            // is backfilled). The dispatcher sends the first touch within
+            // seconds and auto-sends later touches on their scheduled dates —
+            // no second approval in /approvals. (Kill switches at
+            // /settings/gmail still gate execution; failed sends retry there.)
+            await approvePackage({ packageId });
+          } catch (e: any) {
+            const msg = String(e?.message ?? e);
+            alert(
+              msg.includes("no_sendable_contact")
+                ? "Can't begin outreach: Touch 1 has no sendable email. Pick a recipient with an email on the Outreach tab, then approve again."
+                : `Could not begin outreach: ${msg}`,
+            );
+            return;
+          }
           alert(
-            "Cadence approved. Each email will appear in Approvals at its send date for final send sign-off — it is not sent yet.",
+            "Outreach begun. The first email sends now and the rest send automatically on their scheduled dates — no further approval needed. Track them in Approvals.",
           );
           router.push("/prospects");
         }}
@@ -228,18 +260,23 @@ export default function ProspectDetailPage() {
         onSkip={() => router.push("/prospects")}
         onPrev={() => { /* arrow nav v1.2.1 */ }}
         onNext={() => { /* arrow nav v1.2.1 */ }}
-        canMarkReady={canMarkReady}
-        onMarkReady={async () => {
-          try {
-            await markOutreachReady({ clientId: prospectId });
-          } catch (e: any) {
-            alert(e?.message ?? "Could not mark ready");
-          }
-        }}
-        onUnmarkReady={async () => {
-          await clearOutreachReady({ clientId: prospectId });
-        }}
+        packageId={packageId}
+        packageApprovalStatus={packageApprovalStatus}
+        hasSendableContact={hasSendableContact}
+        touchCount={touchCount}
       />
+
+      {/* Knowledge Graph drawer — prospect entry: always unfiltered, no
+          "Prospect intel" toggle (spec §14b.6a). */}
+      {graphOpen && (
+        <KnowledgeGraphDrawer
+          entryEntityType="client"
+          entryEntityId={prospectId}
+          entryName={prospect.name ?? "Prospect"}
+          entryIsProspect
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
 
       {showRevisionModal && (
         <RevisionRequestModal

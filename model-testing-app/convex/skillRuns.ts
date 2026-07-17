@@ -94,6 +94,11 @@ export const completeInternal = internalMutation({
     linkedClientId: v.optional(v.id("clients")),
     linkedProjectId: v.optional(v.id("projects")),
     linkedApprovalIds: v.optional(v.array(v.id("approvals"))),
+    // intel-revalidate verdict — persisted on the run row and denormalized onto
+    // the linked client (clients.lastIntelResult) for the requires-attention surface.
+    revalidateResult: v.optional(
+      v.union(v.literal("still_valid"), v.literal("materially_changed")),
+    ),
     gaps: v.optional(v.array(v.object({
       kind: v.string(),
       description: v.string(),
@@ -110,8 +115,9 @@ export const completeInternal = internalMutation({
     if (run.userId !== args.userId) {
       throw new Error(`skillRun ${args.runId} does not belong to caller`);
     }
-    const completedAtIso = new Date().toISOString();
-    const durationMs = Date.now() - run._creationTime;
+    const now = Date.now();
+    const completedAtIso = new Date(now).toISOString();
+    const durationMs = now - run._creationTime;
     await ctx.db.patch(args.runId, {
       status: args.status,
       brief: args.brief,
@@ -120,11 +126,27 @@ export const completeInternal = internalMutation({
       linkedClientId: args.linkedClientId,
       linkedProjectId: args.linkedProjectId,
       linkedApprovalIds: args.linkedApprovalIds,
+      revalidateResult: args.revalidateResult,
       gaps: args.gaps,
       errors: args.errors,
       completedAt: completedAtIso,
       durationMs,
     });
+
+    // Denormalize intel freshness onto the linked client so the
+    // requires-attention surface can read it without walking skillRuns.
+    if (args.linkedClientId) {
+      if (run.skillName === "prospect-intel") {
+        // Any complete status stamps the full-intel timestamp.
+        await ctx.db.patch(args.linkedClientId, { lastFullIntelAt: completedAtIso });
+      } else if (run.skillName === "intel-revalidate") {
+        await ctx.db.patch(args.linkedClientId, {
+          lastIntelRevalidateAt: completedAtIso,
+          lastIntelResult: args.revalidateResult,
+        });
+      }
+    }
+
     return { ok: true, durationMs };
   },
 });

@@ -1,129 +1,174 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../../../convex/_generated/api';
-import type { Id } from '../../../../../../convex/_generated/dataModel';
 import { ChevronDown } from 'lucide-react';
+
+// Atoms-backed mobile Knowledge tab (knowledge cutover Phase 2) — replaces the
+// legacy knowledgeItems list. Renders the same expandEntity payload the
+// desktop KnowledgeAtomsTab and the graph drawer use: the client's attribute
+// facts + relationship edges + each ring member's attribute atoms, grouped by
+// predicate family, contested flagged. Read-only on mobile — adjudication
+// lives in the desktop drawer.
 
 interface ClientIntelligenceTabProps {
   clientId: string;
 }
 
-export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTabProps) {
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+interface Row {
+  id: string;
+  family: string;
+  predicate: string;
+  line: string;
+  qualifier?: string;
+  status: 'active' | 'contested';
+  hostName?: string; // set when the fact hangs off a ring member, not the client
+  provenance: string;
+}
 
-  const toggleCategory = (cat: string) => {
-    setExpandedCategories(prev => {
+const FAMILY_ORDER = ['financing', 'people', 'structure', 'property', 'other'];
+
+function familyFor(predicate: string): string {
+  if (/lend|charge|fund|refinanc|loan|interest|matur|guarantee|facility/.test(predicate)) return 'financing';
+  if (/advis|introduc|formerly|officer|director|person/.test(predicate)) return 'people';
+  if (/parent|renamed|owns|acquired|registration|registered|psc/.test(predicate)) return 'structure';
+  if (/gdv|unit|planning|valuation|construction|price|site|scheme/.test(predicate)) return 'property';
+  return 'other';
+}
+
+function fmt(value: unknown, currency?: string): string {
+  if (typeof value === 'number') {
+    return currency ? `£${value.toLocaleString('en-GB')}` : value.toLocaleString('en-GB');
+  }
+  if (value === null || value === undefined) return '—';
+  return String(value);
+}
+
+export default function ClientIntelligenceTab({ clientId }: ClientIntelligenceTabProps) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(FAMILY_ORDER));
+  const toggle = (fam: string) => {
+    setExpanded(prev => {
       const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
+      if (next.has(fam)) next.delete(fam);
+      else next.add(fam);
       return next;
     });
   };
 
-  const items = useQuery(api.knowledgeLibrary.getKnowledgeItemsByClient, {
-    clientId: clientId as Id<'clients'>,
+  const data = useQuery(api.knowledge.graphQueries.expandEntity, {
+    entityType: 'client',
+    entityId: clientId,
+    includeRingAttributes: true,
   });
 
-  if (items === undefined) {
-    return (
-      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
-        Loading intelligence...
-      </div>
-    );
-  }
-
-  if (!items || items.length === 0) {
-    return (
-      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
-        No intelligence items yet
-      </div>
-    );
-  }
-
-  // Group items by category
-  const grouped: Record<string, typeof items> = {};
-  const uncategorized: typeof items = [];
-
-  for (const item of items) {
-    const cat = (item as Record<string, unknown>)?.category as string | undefined;
-    if (cat) {
-      if (!grouped[cat]) grouped[cat] = [];
-      grouped[cat].push(item);
-    } else {
-      uncategorized.push(item);
+  const rows = useMemo<Row[]>(() => {
+    if (!data) return [];
+    const entity = data.entity as { id: string; name: string };
+    const out: Row[] = [];
+    [...(data.edges as any[]), ...(data.nativeEdges as any[])].forEach((e, i) => {
+      if (e.other.id === entity.id) return;
+      out.push({
+        id: `e${i}`,
+        family: familyFor(e.predicate),
+        predicate: e.predicate,
+        line: e.direction === 'out' ? `→ ${e.other.name}` : `← ${e.other.name}`,
+        qualifier: e.qualifier,
+        status: e.status,
+        provenance: e.provenance.sourceType === 'native' ? 'native' : `${e.provenance.sourceType} · ${e.provenance.observationCount ?? 1} obs`,
+      });
+    });
+    (data.attributes as any[]).forEach((a, i) => {
+      out.push({
+        id: `a${i}`,
+        family: familyFor(a.predicate),
+        predicate: a.predicate,
+        line: fmt(a.value, a.currency),
+        qualifier: a.qualifier,
+        status: a.status,
+        provenance: a.native ? 'native' : a.asOf ? `atom · ${a.asOf}` : 'atom',
+      });
+    });
+    const ring = (data.ringAttributes ?? {}) as Record<string, any[]>;
+    for (const rows_ of Object.values(ring)) {
+      rows_.forEach((a) => {
+        out.push({
+          id: a.atomId,
+          family: familyFor(a.predicate),
+          predicate: a.predicate,
+          line: fmt(a.value, a.currency),
+          qualifier: a.qualifier,
+          status: a.status,
+          hostName: a.subject.name,
+          provenance: a.asOf ? `atom · ${a.asOf}` : 'atom',
+        });
+      });
     }
-  }
+    return out;
+  }, [data]);
 
-  const sortedCategories = Object.keys(grouped).sort();
-
-  const renderItem = (item: (typeof items)[number], idx: number) => {
-    const rec = item as Record<string, unknown>;
-    // Knowledge items use `label` for the human-readable title and `fieldPath`
-    // for the canonical ID (e.g. "company.registrationNumber"). `value` holds
-    // the actual data. See convex/schema.ts knowledgeItems table definition.
-    const label = (rec?.label as string) || (rec?.fieldPath as string) || 'Untitled';
-    const value = rec?.value != null ? String(rec.value) : undefined;
-    const sourceDocName = rec?.sourceDocumentName as string | undefined;
-    const category = rec?.category as string | undefined;
-    const qualifier = rec?.qualifier as string | undefined;
-
+  if (data === undefined) {
     return (
-      <div
-        key={rec?._id as string ?? idx}
-        className="px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)]"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-[var(--m-text-primary)] truncate">
-              {label}{qualifier ? ` (${qualifier})` : ''}
-            </div>
-            {value && (
-              <div className="text-[12px] text-[var(--m-text-secondary)] mt-0.5 line-clamp-3">
-                {value}
-              </div>
-            )}
-            {sourceDocName && (
-              <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5 truncate">
-                {sourceDocName}
-              </div>
-            )}
-          </div>
-          {category && (
-            <span className="shrink-0 text-[10px] bg-[var(--m-bg-inset)] text-[var(--m-text-secondary)] rounded px-1.5 py-0.5 mt-0.5">
-              {category}
-            </span>
-          )}
-        </div>
+      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
+        Loading knowledge...
       </div>
     );
-  };
+  }
 
-  const allCategories = [
-    ...sortedCategories.map(cat => ({ key: cat, label: cat, items: grouped[cat] })),
-    ...(uncategorized.length > 0 ? [{ key: '__other', label: 'Other', items: uncategorized }] : []),
-  ];
+  if (rows.length === 0) {
+    return (
+      <div className="px-[var(--m-page-px)] py-8 text-center text-[12px] text-[var(--m-text-tertiary)]">
+        No knowledge yet — facts appear as documents, notes and meetings are atomized
+      </div>
+    );
+  }
+
+  const groups = FAMILY_ORDER
+    .map(fam => ({ key: fam, items: rows.filter(r => r.family === fam) }))
+    .filter(g => g.items.length > 0);
 
   return (
     <div>
-      {allCategories.map(({ key, label, items: catItems }) => {
-        const isOpen = expandedCategories.has(key);
+      {groups.map(({ key, items }) => {
+        const isOpen = expanded.has(key);
         return (
           <div key={key}>
             <button
-              onClick={() => toggleCategory(key)}
+              onClick={() => toggle(key)}
               className="flex items-center justify-between w-full py-2.5 px-[var(--m-page-px)] bg-[var(--m-bg-subtle)] border-b border-[var(--m-border)] text-left"
             >
               <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--m-text-secondary)]">
-                {label}
-                <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({catItems.length})</span>
+                {key}
+                <span className="text-[var(--m-text-tertiary)] font-normal ml-1.5">({items.length})</span>
               </span>
               <ChevronDown
-                className={`w-3.5 h-3.5 text-[var(--m-text-tertiary)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                className={`w-3.5 h-3.5 text-[var(--m-text-tertiary)] transition-transform ${isOpen ? '' : '-rotate-90'}`}
               />
             </button>
-            {isOpen && catItems.map((item, idx) => renderItem(item, idx))}
+            {isOpen && items.map((r) => (
+              <div key={r.id} className="px-[var(--m-page-px)] py-3 border-b border-[var(--m-border-subtle)]">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium text-[var(--m-text-primary)]">
+                      {r.hostName && <span>{r.hostName} · </span>}
+                      <span className="font-mono text-[12px]">{r.predicate}</span>
+                      {r.qualifier ? ` (${r.qualifier})` : ''}
+                    </div>
+                    <div className="text-[12px] text-[var(--m-text-secondary)] mt-0.5 break-words">
+                      {r.line}
+                    </div>
+                    <div className="text-[11px] text-[var(--m-text-tertiary)] mt-0.5 truncate">
+                      {r.provenance}
+                    </div>
+                  </div>
+                  {r.status === 'contested' && (
+                    <span className="shrink-0 text-[10px] bg-[var(--m-bg-inset)] text-red-500 rounded px-1.5 py-0.5 mt-0.5">
+                      contested
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         );
       })}

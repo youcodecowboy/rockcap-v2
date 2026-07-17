@@ -6,19 +6,79 @@ const pdfParse = require('pdf-parse');
 const XLSX = require('xlsx');
 import mammoth from 'mammoth';
 
-export async function extractTextFromFile(file: File): Promise<string> {
+// A parse that produced no usable text but whose bytes CAN be read by a
+// vision model (image, or a scanned/image-only PDF). The extract-text route
+// switches on this to run the multimodal fallback instead of failing. `pages`
+// is carried through for the PDF page-count cap when known.
+//
+// `no_text` (kind 'media') is terminal: video/audio bytes have no text layer
+// AND must not be fed to vision — the extract-text route 422s with a clear
+// "media file" message instead. Added after a 2026-07 live-wave .mp4 fell
+// through to the read-as-text default and came back as ~900K chars of raw
+// container bytes.
+export type TextExtractionResult =
+  | { status: 'text'; text: string }
+  | { status: 'needs_vision'; kind: 'image' | 'pdf'; reason: string; pages?: number }
+  | { status: 'no_text'; kind: 'media'; reason: string };
+
+// ── Spreadsheet extraction budgets (2026-07 Wave A fix) ──
+// Multi-sheet workbooks (RockCap appraisal models: 30+ tabs, ~12MB) used to
+// render only their first 10 sheets under one shared 50K cap that sheet 1
+// could exhaust alone — most of the workbook was silently unread. Every
+// sheet now gets its own slice of a much larger total, and high-signal
+// sheets render first so the 120K-per-page agent window sees them.
+const SPREADSHEET_SHEET_ROWS = 400; // rows parsed per sheet (decompression bound)
+const SPREADSHEET_TOTAL_BUDGET = 400_000; // target chars across all sheets
+const SPREADSHEET_HARD_MAX = 600_000; // absolute output ceiling (documents row budget is 900K)
+
+/** Sheets whose names suggest deal facts — rendered before the rest. */
+export const SHEET_PRIORITY_RE =
+  /control|summary|input|assumption|lender|terms|funding|finance|appraisal|cash ?flow|cost|dashboard|output|scenario|sensitivit/i;
+
+/** Priority sheets first (original order within each group preserved). */
+export function orderSheetsByPriority(names: string[]): string[] {
+  const prioritized: string[] = [];
+  const rest: string[] = [];
+  for (const n of names) (SHEET_PRIORITY_RE.test(n) ? prioritized : rest).push(n);
+  return [...prioritized, ...rest];
+}
+
+/** Per-sheet char budget: fair share of the total, clamped so a 3-sheet
+ * workbook still gets depth (≤40K each) and a 100-sheet one still gets a
+ * readable floor (≥3K each). */
+export function perSheetBudget(
+  sheetCount: number,
+  total: number = SPREADSHEET_TOTAL_BUDGET,
+): number {
+  if (sheetCount <= 0) return total;
+  return Math.max(3_000, Math.min(40_000, Math.floor(total / sheetCount)));
+}
+
+/**
+ * Extract text with a typed signal for the images / textless-PDF cases.
+ *
+ * Returns `{ status: 'text' }` for anything the server-side parsers can read,
+ * and `{ status: 'needs_vision' }` — instead of returning empty (images) or
+ * throwing (scanned PDFs) — when the bytes have no text layer but a vision
+ * model could transcribe them. A genuinely broken/encrypted PDF still throws.
+ *
+ * `extractTextFromFile` wraps this to preserve its historical string contract
+ * for the many existing callers; only the extract-text route consumes the
+ * typed result directly.
+ */
+export async function extractTextFromFileEx(file: File): Promise<TextExtractionResult> {
   const fileType = file.type;
   const fileName = file.name.toLowerCase();
 
   // Handle text files
   if (fileType.startsWith('text/') || fileName.endsWith('.txt') || fileName.endsWith('.md')) {
-    return await file.text();
+    return { status: 'text', text: await file.text() };
   }
 
   // Handle EML (email) files — extract body only for classification (no headers)
   if (fileType === 'message/rfc822' || fileName.endsWith('.eml')) {
     const raw = await file.text();
-    return extractEmailBody(raw);
+    return { status: 'text', text: extractEmailBody(raw) };
   }
 
   // Handle PDF files
@@ -26,36 +86,44 @@ export async function extractTextFromFile(file: File): Promise<string> {
     // Convert ArrayBuffer to Buffer for pdf-parse (primary parser)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
+
     // Ensure data is valid and not empty
     if (!buffer || buffer.length === 0) {
       throw new Error('PDF file appears to be empty or invalid');
     }
-    
+
     // Verify it's a valid PDF by checking for %PDF within the first 1024 bytes
     // (PDF spec allows leading whitespace, BOM, or other bytes before the header)
     const headerSearchRange = buffer.slice(0, Math.min(1024, buffer.length)).toString('ascii');
     if (!headerSearchRange.includes('%PDF')) {
       throw new Error('File does not appear to be a valid PDF');
     }
-    
+
     // pdf-parse v1.1.1 — serverless-safe, no canvas/DOM dependencies
+    let pdfData: any;
     try {
       console.log('Attempting PDF parsing with pdf-parse v1...');
-      const pdfData = await pdfParse(buffer);
-      const extractedText = pdfData.text || '';
-      if (extractedText.trim().length > 0) {
-        console.log('Successfully parsed PDF using pdf-parse');
-        return extractedText.trim();
-      } else {
-        console.warn('pdf-parse returned empty text...');
-        throw new Error('PDF parsed but no text content found');
-      }
+      pdfData = await pdfParse(buffer);
     } catch (pdfParseError) {
       const pdfParseErrorMessage = pdfParseError instanceof Error ? pdfParseError.message : String(pdfParseError);
       console.error('pdf-parse failed:', pdfParseError);
       throw new Error(`PDF parsing failed: ${pdfParseErrorMessage}. The file may be corrupted, password-protected, or in an unsupported format.`);
     }
+    const extractedText = (pdfData?.text || '').trim();
+    if (extractedText.length > 0) {
+      console.log('Successfully parsed PDF using pdf-parse');
+      return { status: 'text', text: extractedText };
+    }
+    // Parsed cleanly but the PDF has no text layer (scanned / image-only) —
+    // signal a vision fallback rather than throwing. numpages lets the route
+    // enforce the API's page-count cap before sending it to the model.
+    console.warn('pdf-parse returned empty text — flagging PDF for vision fallback');
+    return {
+      status: 'needs_vision',
+      kind: 'pdf',
+      reason: 'PDF parsed but no text content found',
+      ...(typeof pdfData?.numpages === 'number' ? { pages: pdfData.numpages } : {}),
+    };
   }
 
   // Handle DOCX files
@@ -66,7 +134,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    return { status: 'text', text: result.value };
   }
 
   // Handle DOC files (legacy format - limited support)
@@ -77,7 +145,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
     // DOC files are binary and require specialized parsing not available in serverless.
     // Return a descriptive placeholder instead of throwing, so the file can still be filed
     // with limited metadata rather than blocking the entire upload.
-    return `[Legacy .doc format — limited text extraction]\n\nThis document "${file.name}" is in the legacy Microsoft Word .doc format. Full text extraction is not available for this format in the current pipeline. Please convert to .docx or PDF for complete analysis.\n\nThe document has been accepted for filing with limited metadata.`;
+    return {
+      status: 'text',
+      text: `[Legacy .doc format — limited text extraction]\n\nThis document "${file.name}" is in the legacy Microsoft Word .doc format. Full text extraction is not available for this format in the current pipeline. Please convert to .docx or PDF for complete analysis.\n\nThe document has been accepted for filing with limited metadata.`,
+    };
   }
 
   // Handle CSV files
@@ -90,16 +161,16 @@ export async function extractTextFromFile(file: File): Promise<string> {
       // Parse CSV and format it nicely for analysis
       const lines = csvText.split('\n').filter(line => line.trim());
       if (lines.length === 0) {
-        return 'Empty CSV file';
+        return { status: 'text', text: 'Empty CSV file' };
       }
-      
+
       // Format CSV as readable text with headers
       const formattedLines = lines.map((line, index) => {
         const cells = line.split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
         return `Row ${index + 1}: ${cells.join(' | ')}`;
       });
-      
-      return formattedLines.join('\n');
+
+      return { status: 'text', text: formattedLines.join('\n') };
     } catch (error) {
       throw new Error(`Failed to parse CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -116,69 +187,129 @@ export async function extractTextFromFile(file: File): Promise<string> {
   ) {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      // Limit parsing: only read first 200 rows per sheet to avoid slow decompression
-      // of massive XLSM files (30+ tabs × 1000s rows). Classification only needs
-      // enough content to identify the document type.
-      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: 200 });
+      // Row cap bounds decompression of massive XLSM files (30+ tabs ×
+      // 1000s of rows); 400 rows covers real appraisal/sensitivity tables.
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: SPREADSHEET_SHEET_ROWS });
 
-      // Extract text from up to 10 sheets, capped at 50K chars
-      const MAX_EXTRACT_LENGTH = 50_000;
-      const MAX_SHEETS = 10;
-      let fullText = '';
-      const sheetNames = workbook.SheetNames.slice(0, MAX_SHEETS);
+      // 2026-07 Wave A fix: the previous walk (first 10 sheets, one global
+      // 50K cap that sheet 1 could exhaust alone) left 30-sheet RockCap
+      // models 90% unread on every client. Now EVERY sheet renders under a
+      // per-sheet budget (early sheets can't starve later ones), ordered so
+      // fact-bearing sheets (control/summary/lender/terms/…) come FIRST —
+      // the downstream extractText return pages 120K chars at a time, so
+      // output order decides what an agent sees on page one. A manifest
+      // header lists every sheet with its rendered size, so truncation is
+      // visible instead of silent.
+      const allSheetNames: string[] = workbook.SheetNames;
+      const ordered = orderSheetsByPriority(allSheetNames);
+      const budget = perSheetBudget(ordered.length);
 
-      // Include a summary of all sheet names for classification context
-      if (workbook.SheetNames.length > MAX_SHEETS) {
-        fullText += `[Workbook has ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(', ')}]\n`;
-        fullText += `[Showing first ${MAX_SHEETS} sheets]\n`;
+      const rendered: Array<{ name: string; text: string; note: string }> = [];
+      for (const sheetName of ordered) {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = worksheet
+          ? XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+          : [];
+        let sheetText = '';
+        let renderedRows = 0;
+        let nonEmptyRows = 0;
+        let capped = false;
+        for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
+          const row = jsonData[rowIndex] as any[];
+          if (!Array.isArray(row) || !row.some(cell => cell !== '')) continue;
+          nonEmptyRows++;
+          if (capped) continue; // keep counting rows for the manifest
+          const rowText = row
+            .map(cell => (cell === null || cell === undefined ? '' : String(cell).trim()))
+            .filter(cell => cell !== '')
+            .join(' | ');
+          if (!rowText) continue;
+          const line = `Row ${rowIndex + 1}: ${rowText}\n`;
+          if (sheetText.length + line.length > budget) {
+            capped = true;
+            continue;
+          }
+          sheetText += line;
+          renderedRows++;
+        }
+        const note = capped
+          ? `${renderedRows}/${nonEmptyRows} rows (sheet capped at ${budget} chars)`
+          : nonEmptyRows === 0
+            ? 'empty'
+            : `${renderedRows} rows`;
+        rendered.push({ name: sheetName, text: sheetText, note });
       }
 
-      for (const sheetName of sheetNames) {
-        if (fullText.length >= MAX_EXTRACT_LENGTH) break;
+      const manifest =
+        `[Workbook: ${allSheetNames.length} sheets, ALL rendered below in priority order ` +
+        `(per-sheet cap ${budget} chars). Sheets: ` +
+        rendered.map(s => `${s.name} (${s.note})`).join('; ') +
+        `]\n`;
 
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-
-        fullText += `\n=== Sheet: ${sheetName} ===\n`;
-
-        for (let rowIndex = 0; rowIndex < jsonData.length; rowIndex++) {
-          if (fullText.length >= MAX_EXTRACT_LENGTH) break;
-
-          const row = jsonData[rowIndex] as any[];
-          if (Array.isArray(row) && row.some(cell => cell !== '')) {
-            const rowText = row
-              .map(cell => {
-                if (cell === null || cell === undefined) return '';
-                return String(cell).trim();
-              })
-              .filter(cell => cell !== '')
-              .join(' | ');
-
-            if (rowText) {
-              fullText += `Row ${rowIndex + 1}: ${rowText}\n`;
-            }
-          }
+      let fullText = manifest;
+      for (const s of rendered) {
+        if (fullText.length >= SPREADSHEET_HARD_MAX) {
+          fullText += `\n[Output hard cap ${SPREADSHEET_HARD_MAX} chars reached — remaining sheets listed in the manifest were rendered but dropped]\n`;
+          break;
+        }
+        fullText += `\n=== Sheet: ${s.name} ===\n`;
+        fullText += s.text.length > 0 ? s.text : '(no non-empty rows)\n';
+        if (s.note.includes('capped')) {
+          fullText += `[Sheet "${s.name}" truncated: ${s.note}]\n`;
         }
       }
-      
-      return fullText.trim();
+
+      return { status: 'text', text: fullText.trim() };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to parse Excel file: ${errorMessage}`);
     }
   }
 
-  // Images: no text to extract — pipeline uses vision (base64 ImageBlock)
+  // Images: no text layer — signal a vision fallback (the extract-text route
+  // transcribes them). Callers via extractTextFromFile still receive '' for
+  // backward compatibility.
   if (fileType.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?)$/i.test(fileName)) {
-    return '';
+    return { status: 'needs_vision', kind: 'image', reason: 'image file has no text layer' };
+  }
+
+  // Video / audio: no text layer AND no vision path — return a terminal
+  // no_text signal so the extract-text route 422s with a clear "media file"
+  // message. Without this guard a .mp4 falls through to the read-as-text
+  // default below and returns ~900K chars of raw container bytes (2026-07
+  // live wave). Matched by MIME prefix or by a known media extension.
+  if (
+    fileType.startsWith('video/') ||
+    fileType.startsWith('audio/') ||
+    /\.(mp4|m4v|mov|avi|mkv|webm|wmv|flv|mpe?g|3gp|mp3|wav|m4a|aac|flac|ogg|oga|opus|aiff?)$/i.test(fileName)
+  ) {
+    return {
+      status: 'no_text',
+      kind: 'media',
+      reason: `media file (${fileType || fileName}) has no text layer and cannot be transcribed by vision`,
+    };
   }
 
   // Default: try to read as text
   try {
-    return await file.text();
+    return { status: 'text', text: await file.text() };
   } catch (error) {
     throw new Error(`Unsupported file type: ${fileType}. Supported types: .txt, .md, .pdf, .docx, .csv, .xlsx, .xls`);
   }
+}
+
+/**
+ * Legacy string-returning wrapper around {@link extractTextFromFileEx}. Kept so
+ * the many existing callers (drive/ingest, v4-analyze, meeting/intelligence
+ * queues, …) are unchanged: images resolve to '' (their prior behavior), and a
+ * textless PDF throws the same "no text content" error the v4 pipeline already
+ * catches to trigger its own raw-file multimodal fallback.
+ */
+export async function extractTextFromFile(file: File): Promise<string> {
+  const result = await extractTextFromFileEx(file);
+  if (result.status === 'text') return result.text;
+  if (result.status === 'needs_vision' && result.kind === 'image') return '';
+  throw new Error(result.reason);
 }
 
 export async function convertSpreadsheetToMarkdown(file: File): Promise<string> {

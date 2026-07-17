@@ -59,6 +59,23 @@ export interface ReferenceTag {
 }
 
 /**
+ * Producer axis — who authored this document type (content-derived,
+ * never from Drive metadata). Mirrors ProducerAxis in src/v4/types.ts.
+ */
+export type ReferenceProducer =
+  | 'client'
+  | 'rockcap'
+  | 'lender'
+  | 'third_party_professional'
+  | 'statutory_authority';
+
+/**
+ * Audience axis — who the document is for (body stamp + register beat
+ * filename tokens). Mirrors AudienceAxis in src/v4/types.ts.
+ */
+export type ReferenceAudience = 'internal' | 'external' | 'neutral';
+
+/**
  * Structured "IF signal THEN action" decision rule.
  * These tell the resolver WHEN to include this reference.
  */
@@ -93,6 +110,38 @@ export interface DocumentReference {
     targetFolder: string;
     targetLevel: 'client' | 'project';
   };
+
+  // === PLACEMENT AXES (Dark Mills taxonomy, 2026-07-07) ===
+
+  /**
+   * Canonical folder key in the new hierarchical taxonomy — may be a
+   * SUBFOLDER key (e.g. "client_appraisals", "comps_appendix"). Must match a
+   * key in FOLDER_DEFINITIONS (src/v4/lib/placement-rules.ts). The
+   * deterministic placement engine has final authority; this field keeps the
+   * prompt text in agreement with it.
+   */
+  targetFolderKey?: string;
+
+  /**
+   * Typical producer for this docType ('varies' when the type spans
+   * producers and the classifier must detect per-document).
+   */
+  producer?: ReferenceProducer | 'varies';
+
+  /** Typical audience for this docType ('varies' when per-document). */
+  audience?: ReferenceAudience | 'varies';
+
+  /**
+   * Filename grammar with tolerance notes (weak prior — filenames lie;
+   * see the exemplar pack §4). Human-readable, shown in prompts.
+   */
+  filenameGrammar?: string;
+
+  /**
+   * Version semantics: how versions of this docType evolve and which
+   * version is operative.
+   */
+  versionSemantics?: string;
 
   // === RICH CONTENT ===
 
@@ -130,7 +179,11 @@ export interface DocumentReference {
   /** Keywords for text-based matching (15-25 per type) */
   keywords: string[];
 
-  /** Filename patterns (regex strings) for deterministic matching */
+  /**
+   * Filename patterns (regex strings). WEAK PRIOR ONLY (pack §4 — filenames
+   * lie): used by the resolver to pull candidate references into context,
+   * never to decide a classification. Body content always wins.
+   */
   filenamePatterns: string[];
 
   /** Patterns to exclude (prevent false positives) */

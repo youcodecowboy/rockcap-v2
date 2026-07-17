@@ -80,8 +80,11 @@ packaged sequence.
 1. `skillRun.start({ skillName: "client-decision-capture", input, dedupKey, dedupWindowDays: 30 })`.
    Honour a `duplicate_found` response.
 2. `project.getDeepContext({ projectId })` — load the deal, its linked lenders
-   (clientRoles), projectIntelligence, and recent touchpoints in one call. If the
-   decision came from a touchpoint, confirm it via `touchpoint.getByProject`.
+   (clientRoles), the knowledge-graph `graph` section (atoms, top edges,
+   facilities; the projectIntelligence payload is the fallback when the graph
+   section is empty — project not yet atomized), and recent touchpoints in one
+   call. If the decision came from a touchpoint, confirm it via
+   `touchpoint.getByProject`.
 3. Classify the decision into one kind (see `references/decision-kinds-catalogue.md`):
    `lender_selected` · `loop_back_for_better_terms` · `pause` · `dropped`.
    If ambiguous (e.g. "let's keep talking to lenders" with no name), STOP and ask
@@ -125,7 +128,7 @@ All `../../CONVENTIONS.md` apply. Two that matter most here:
 Real, MCP-exposed tools this skill uses:
 
 - `skillRun.start`, `skillRun.complete` — the execution envelope.
-- `project.getDeepContext` — deal + lenders + intelligence + touchpoints in one read.
+- `project.getDeepContext` — deal + lenders + graph section (intelligence fallback for not-yet-atomized projects) + touchpoints in one read.
 - `touchpoint.getByProject` — confirm the decision's source touchpoint.
 - `note.create` — the verbatim decision record.
 - `intelligence.addKnowledgeItem` — structured decision facts.

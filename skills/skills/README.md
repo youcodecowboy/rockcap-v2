@@ -14,11 +14,12 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 |---|---|---|
 | `prospect-intel/` | **v3 hardened** | v1.3 Sprint A predecessor + Sprint E refinement; v3.1 People-tab contract 2026-05-30; **v3.2 intel-only + Definition-of-Done manifest** (outreach split out behind the accept gate) 2026-05-30; **v3.3 clientIntelligence doc enrichment** (Output #2 wired via the now-exposed `intelligence.updateClientIntelligence`) 2026-05-31 |
 | `outreach-draft/` | **v2 hardened** | **NEW 2026-05-30** — composes the cold-outreach cadence package for prospects the operator has marked ready (lifecycle step 1.5; the old prospect-intel step 11) |
+| `intel-revalidate/` | **v1** | **NEW 2026-06-26** — cheap, diff-focused intel-freshness pass (mode 2; full `prospect-intel` is mode 1). Autonomous Trigger B (cadenceDispatcher runs it before a touch fires after a >30-day gap; materially-changed → hold the send) + operator-driven via the `intel.revalidate` MCP tool. |
 | `client-context-capture/` | **v2 hardened** | **NEW 2026-05-31** — operator-input lane: turns a freeform brain-dump (meetings, calls, personal knowledge) into structured intel + a running `contextMarkdown` reference. Parallel system, not a lifecycle step |
 | `qualify-and-draft/` | **v2 hardened** | v1.3 Sprint B |
 | `meeting-prep/` | **v2 hardened** | v1.3 Sprint C |
 | `meeting-capture/` | **v2 hardened** | v1.3 Sprint E |
-| `lender-intel/` | **v2 hardened** | v1.3 Sprint F |
+| `lender-intel/` | **v2.1 hardened** | v1.3 Sprint F; enrich gauntlet 2026-07-11 |
 | `cadence-fire/` | **v1.1** | substrate / runtime contract — not a Claude-invokable skill |
 | `deal-intake/` | **v2 hardened** | v1.4 Sprint I |
 | `deal-triage/` | skeleton | — |
@@ -33,6 +34,7 @@ All skills follow the shape and rules in `../CONVENTIONS.md`.
 | `document-author/` | **v1** | docgen substrate v1 (2026-05-29) |
 | `corporate-structure/` | skeleton (spec + libs landed) | — |
 | `deal-appraisal-extraction/` | **v1** | **NEW 2026-06-01** — Claude-side extraction of appraisal figures (GDV/TDC/units/peak debt/LTGDV) from spreadsheets via `document.getSheetData` → reason → `document.saveIntelligence` (templateTags + provenance). Front half of appraisal-template automation. |
+| `atomize-document/` | **v1** | **NEW 2026-07-06** — the Knowledge Layer harness lane (Spec 2 §11 / §14b.1). Claude Code reads a client's documents and writes atomic facts to the graph via the `atoms.*` MCP tools at subscription cost (bulk/backfill/onboarding; the API-lane cron owns incremental single-doc re-atomization). Three server-side gates (anchored/discriminating/material); >60-doc passes need operator confirmation. |
 | `skill-forge/` | **v1 (meta)** | **NEW 2026-06-01** — the skill that edits skills. Safe self-service editing/hardening for non-technical operators: sync → refresh tool manifest (`meta.listTools`) → edit → hard-gate validate (`tools/validate-skills.mjs`) → push to main. Not a deal-lifecycle skill; a repo-maintenance skill. |
 
 **v2 hardened** means: workflow retargeted at v1.3 MCP tool surface, `## Dedup` section present, `## Cadence package` section present (or explicit "doesn't produce one"), reference files authored, failure modes enumerated, multiple invocation paths documented. Skeleton skills predate this template; usable as intent statements but not operationally hardened.
@@ -63,7 +65,7 @@ The brief's deal lifecycle maps to skills below. Some steps share a skill; some 
 | 15 | (reserved) | | |
 
 **Parallel systems** (not deal-lifecycle steps):
-- [`lender-intel/`](./lender-intel/) — v2 hardened. Lender appetite capture + matching. Used by terms-package-build (step 8) to shortlist lenders.
+- [`lender-intel/`](./lender-intel/) — v2.1 hardened. Lender appetite capture + matching, plus the ENRICH gauntlet (2026-07-11): the miniature prospecting run for thin lender rows — CH identity link, officers→contacts via Apollo, charges-register footprint at the `footprint.*` fieldPaths. Used by terms-package-build (step 8) to shortlist lenders.
 - [`classification-critic/`](./classification-critic/) — skeleton. V4 document-pipeline critic.
 - [`document-author/`](./document-author/) — **v1**. Document-generation substrate: composes a document under prose guardrails and stages a `document_publish` approval (renders via `/api/documents/generate`, files to the client on approval). The deal-doc skills (terms-package-build, ic-paper-drafter, case-study-author) will build on it.
 - [`corporate-structure/`](./corporate-structure/) — skeleton (spec + libs landed). Discover, stress-test, and chart a prospect/borrower's corporate structure; produces a StructureGraph + SVG for the Intel tab and lender briefs. Invoked by prospect-intel step 8b and directly by operator.
@@ -79,7 +81,7 @@ The cookbook patterns in `../CATALOGUE.md` cover the common workflows. The 9 v2-
 - **qualify-and-draft**: classifier-routed (reply intent = `info_question`) OR operator says "draft a response to {prospect}'s reply" OR operator says "draft a follow-up for {client} mentioning X"
 - **meeting-prep**: classifier-routed (reply intent = `book_meeting` → `/api/meeting-prep-respond` route) OR operator says "prep me for the {meeting}"
 - **meeting-capture**: operator says "capture the {meeting}: {pasted notes}" OR Fireflies auto-sync (when Pub/Sub provisioned)
-- **lender-intel**: capture mode (operator after BDM call) OR matching mode (auto-triggered by terms-package-build OR operator says "which lenders for this deal?")
+- **lender-intel**: capture mode (operator after BDM call) OR matching mode (auto-triggered by terms-package-build OR operator says "which lenders for this deal?") OR enrich mode (operator says "backfill / enrich the lenders")
 
 ## Skill-side conventions (every v2-hardened SKILL.md has these sections)
 

@@ -71,12 +71,12 @@ export default function RenameDocumentDialog({
   }, [document._id]);
 
   // Assemble auto code from pattern + field values
-  const builtInValues = getBuiltInTokenValues(
-    clientCode || namingConfig.code,
-    document.category || "",
-    projectCode,
-    undefined
-  );
+  // e.g. DarkMills_CreditChecklist_V1.0_20260707
+  const builtInValues = getBuiltInTokenValues({
+    clientName: clientCode || namingConfig.code,
+    projectShortcode: projectCode || undefined,
+    fileType: document.category || "",
+  });
   const allTokenValues = { ...builtInValues, ...fieldValues };
   const autoCode = assembleDocumentCode(namingConfig, allTokenValues);
 

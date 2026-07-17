@@ -109,6 +109,12 @@ interface Document {
   addedToIntelligence?: boolean;
   scope?: 'client' | 'internal' | 'personal';
   textContent?: string;
+  displayName?: string;
+  status?: string;
+  // Drive provenance (source: "drive" rows mirror a Google Drive file).
+  source?: 'upload' | 'drive' | 'generated';
+  driveFileId?: string;
+  driveWebViewLink?: string;
 }
 
 interface FileDetailPanelProps {
@@ -145,6 +151,7 @@ export default function FileDetailPanel({
   const xlsxZoomReset = () => setXlsxZoom(1);
   const updateDocument = useMutation(api.documents.update);
   const saveDocumentIntelligence = useMutation(api.documents.saveDocumentIntelligence);
+  const requestKnowledgeIngestion = useMutation(api.documents.requestKnowledgeIngestion);
 
   // Query document by ID to get reactive updates (e.g., after analysis)
   const liveDocument = useQuery(
@@ -167,9 +174,10 @@ export default function FileDetailPanel({
     document?._id ? { documentId: document._id } : "skip"
   );
 
-  // Query intelligence items extracted from this document
-  const intelligenceItems = useQuery(
-    api.documents.getDocumentIntelligence,
+  // Atoms this document asserted — the knowledge-graph view of the doc
+  // (replaced the retired per-document knowledgeItems query).
+  const documentAtoms = useQuery(
+    api.knowledge.graphQueries.atomsForDocument,
     document?._id ? { documentId: document._id } : "skip"
   );
 
@@ -252,36 +260,13 @@ export default function FileDetailPanel({
       }
 
       if (!text) {
-        throw new Error('No text content available for intelligence extraction');
+        throw new Error('No text content available for analysis');
       }
 
-      // 2. Call lightweight intelligence extraction route
-      const res = await fetch('/api/intelligence-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentId: document._id,
-          documentContent: text,
-          documentName: document.fileName,
-          documentType: document.fileTypeDetected || 'Unknown',
-          documentCategory: document.category || 'Miscellaneous',
-          clientId: document.clientId,
-          projectId: document.projectId,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Intelligence extraction failed');
-      }
-
-      const extractionResult = await res.json();
-      console.log('[FileDetailPanel] Intelligence extraction result:', extractionResult);
-
-      // Mark document as having intelligence
-      if (!document.addedToIntelligence) {
-        await updateDocument({ id: document._id, addedToIntelligence: true } as any);
-      }
+      // 2. Re-enter the knowledge feed: ingestionEvents row + chunking now,
+      // atomization on the next sweep tick. (Replaced the retired
+      // /api/intelligence-extract knowledgeItems pipeline.)
+      await requestKnowledgeIngestion({ id: document._id });
 
       // Trigger refresh callback
       onAnalysisComplete?.();
@@ -380,10 +365,22 @@ export default function FileDetailPanel({
                      document.fileType.toLowerCase().includes('image') ||
                      isXlsx;
 
+  // Drive-sourced rows have no Convex fileStorageId — they preview via Google's
+  // embedded viewer and open in Drive rather than downloading a stored blob.
+  const isDrive = document.source === 'drive' && !!document.driveFileId;
+  const driveEmbedUrl = document.driveFileId
+    ? `https://drive.google.com/file/d/${document.driveFileId}/preview`
+    : null;
+  const handleOpenInDrive = () => {
+    if (document.driveWebViewLink) {
+      window.open(document.driveWebViewLink, '_blank');
+    }
+  };
+
   const hasAnalysis = !!document.documentAnalysis;
   const hasSummary = hasAnalysis || !!document.summary;
   const hasChecklist = checklistLinks && checklistLinks.length > 0;
-  const hasIntelligence = intelligenceItems && intelligenceItems.length > 0;
+  const hasIntelligence = documentAtoms && documentAtoms.length > 0;
 
   // Derive set of checklist item IDs already linked to this document
   const linkedChecklistItemIds = new Set(
@@ -404,15 +401,6 @@ export default function FileDetailPanel({
     return acc;
   }, {} as Record<string, any[]>);
 
-  // Group intelligence items by category
-  const intelligenceByCategory = intelligenceItems
-    ? intelligenceItems.reduce((acc: Record<string, any[]>, item: any) => {
-        const cat = item.category || 'general';
-        if (!acc[cat]) acc[cat] = [];
-        acc[cat].push(item);
-        return acc;
-      }, {} as Record<string, any[]>)
-    : {};
 
   const tabTrigger = "text-xs px-2 py-1.5";
 
@@ -506,6 +494,19 @@ export default function FileDetailPanel({
                     )}
                     <Row label="File size" value={formatFileSize(document.fileSize)} />
                     <Row label="Uploaded" value={formatDate(document.uploadedAt)} />
+                    {isDrive && (
+                      <Row
+                        label="Source"
+                        value={
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            Google Drive
+                          </span>
+                        }
+                      />
+                    )}
+                    {document.savedAt && document.savedAt !== document.uploadedAt && (
+                      <Row label="Updated" value={formatDate(document.savedAt)} />
+                    )}
                     {document.version && (
                       <Row label="Version" value={document.version} mono />
                     )}
@@ -598,60 +599,49 @@ export default function FileDetailPanel({
                   {hasIntelligence ? (
                     <div className="space-y-4">
                       <div className="text-xs uppercase tracking-wide font-medium" style={{ color: colors.text.muted }}>
-                        Extracted Fields ({intelligenceItems.length})
+                        Knowledge atoms ({documentAtoms!.length})
                       </div>
-                      {Object.entries(intelligenceByCategory).map(([category, items]) => (
-                        <div key={category} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Brain className="w-4 h-4" style={{ color: colors.text.muted }} />
-                            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: colors.text.secondary }}>
-                              {category.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())}
-                            </span>
-                            <StatusPill label={String((items as any[]).length)} tone={colors.text.muted} />
-                          </div>
-                          <div className="space-y-1.5 pl-6">
-                            {(items as any[]).map((item: any) => {
-                              const level = getConfidenceLevel(item.normalizationConfidence ?? item.confidence ?? 0);
-                              return (
-                                <div
-                                  key={item._id}
-                                  className="flex items-start justify-between gap-2 p-2 rounded"
-                                  style={{ background: colors.bg.cardAlt, border: `1px solid ${colors.border.light}` }}
-                                >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-xs font-medium" style={{ color: colors.text.secondary }}>
-                                      {item.label || item.fieldPath}
-                                    </div>
-                                    <div className="text-sm mt-0.5 break-words" style={{ color: colors.text.primary }}>
-                                      {typeof item.value === 'object' ? JSON.stringify(item.value) : String(item.value)}
-                                    </div>
-                                    {item.sourceText && (
-                                      <div className="text-[10px] mt-0.5 truncate" style={{ color: colors.text.dim }} title={item.sourceText}>
-                                        {item.sourceText}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {item.isCanonical && (
-                                      <StatusPill label="Canonical" tone={colors.accent.blue} />
-                                    )}
-                                    <StatusPill
-                                      label={`${Math.round((item.normalizationConfidence ?? item.confidence ?? 0) * 100)}%`}
-                                      tone={confidenceTone(level)}
-                                    />
-                                  </div>
+                      <div className="space-y-1.5">
+                        {documentAtoms!.map((atom) => {
+                          const level = getConfidenceLevel(atom.confidence ?? 0);
+                          return (
+                            <div
+                              key={atom.atomId}
+                              className="flex items-start justify-between gap-2 p-2 rounded"
+                              style={{ background: colors.bg.cardAlt, border: `1px solid ${colors.border.light}` }}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-medium font-mono" style={{ color: colors.text.secondary }}>
+                                  {atom.predicate}{atom.qualifier ? ` · ${atom.qualifier}` : ''}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
+                                <div className="text-sm mt-0.5 break-words" style={{ color: colors.text.primary }}>
+                                  {atom.statement}
+                                </div>
+                                {atom.sourceText && (
+                                  <div className="text-[10px] mt-0.5 truncate" style={{ color: colors.text.dim }} title={atom.sourceText}>
+                                    {atom.sourceText}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {atom.status === 'contested' && (
+                                  <StatusPill label="Contested" tone={colors.accent.red} />
+                                )}
+                                <StatusPill
+                                  label={`${Math.round((atom.confidence ?? 0) * 100)}%`}
+                                  tone={confidenceTone(level)}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <EmptyState
                       icon={<Brain className="w-8 h-8" />}
-                      title="No intelligence extracted yet"
-                      body='Click "Analyze Document" to extract structured intelligence'
+                      title="No knowledge atoms yet"
+                      body='Facts appear here once the document is atomized into the knowledge graph — click "Analyze Document" to queue it'
                     />
                   )}
                 </TabsContent>
@@ -826,7 +816,17 @@ export default function FileDetailPanel({
           {/* Right Column - Document Preview */}
           <div className="flex-1 flex flex-col min-w-0" style={{ background: colors.bg.light }}>
             <div className="flex-1 p-4 flex flex-col">
-              {canPreview && fileUrl ? (
+              {isDrive && driveEmbedUrl ? (
+                <div className="w-full flex-1 min-h-0 relative">
+                  <iframe
+                    src={driveEmbedUrl}
+                    allow="autoplay"
+                    className="w-full h-full"
+                    style={{ minHeight: '600px', borderRadius: 4, border: `1px solid ${colors.border.default}`, background: colors.bg.card }}
+                    title="Google Drive Preview"
+                  />
+                </div>
+              ) : canPreview && fileUrl ? (
                 <div className="w-full flex-1 min-h-0 relative">
                   {document.fileType.toLowerCase().includes('pdf') ? (
                     // Browser's native PDF viewer. toolbar=1 exposes the
@@ -907,14 +907,37 @@ export default function FileDetailPanel({
         {/* Sticky Footer Actions */}
         <div className="p-4 flex-shrink-0" style={{ borderTop: `1px solid ${colors.border.default}`, background: colors.bg.card }}>
           <div className="flex items-center gap-3">
-            <Button variant="primary" onClick={handleOpenReader} style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}>
-              <BookOpen className="w-5 h-5" />
-              Open in Reader
-            </Button>
-            <Button variant="secondary" onClick={handleDownload} disabled={!fileUrl} style={{ padding: '10px 14px' }}>
-              <Download className="w-5 h-5" />
-              Download
-            </Button>
+            {isDrive ? (
+              <>
+                <Button
+                  variant="primary"
+                  onClick={handleOpenInDrive}
+                  disabled={!document.driveWebViewLink}
+                  style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}
+                >
+                  <ExternalLink className="w-5 h-5" />
+                  Open in Google Drive
+                </Button>
+                {/* Extracted Drive files keep the reader path (extracted text). */}
+                {document.status === 'completed' && (
+                  <Button variant="secondary" onClick={handleOpenReader} style={{ padding: '10px 14px' }}>
+                    <BookOpen className="w-5 h-5" />
+                    Reader
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="primary" onClick={handleOpenReader} style={{ flex: 1, justifyContent: 'center', padding: '10px 14px' }}>
+                  <BookOpen className="w-5 h-5" />
+                  Open in Reader
+                </Button>
+                <Button variant="secondary" onClick={handleDownload} disabled={!fileUrl} style={{ padding: '10px 14px' }}>
+                  <Download className="w-5 h-5" />
+                  Download
+                </Button>
+              </>
+            )}
             {onMove && (
               <Button variant="secondary" onClick={onMove} style={{ padding: '10px 14px' }}>
                 <FolderInput className="w-5 h-5" />

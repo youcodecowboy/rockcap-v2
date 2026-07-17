@@ -19,13 +19,13 @@ The composer respects the "evidence or skip" rule: if no fresh evidence is avail
 The composer can call these atomic tools at fire time:
 
 - `getContact`, `getClient`, `getProject` — entity reads
-- `queryIntelligence`, `getClientIntelligence`, `getProjectIntelligence` — historical intelligence reads (lender DNA, prior analysis, captured charge summaries)
+- `atoms.search` + the `getDeepContext` `graph` section — historical intelligence reads (lender DNA, prior analysis, captured charge summaries); `graph.expandEntity` when the touch needs relationship context. `queryIntelligence` / `getClientIntelligence` / `getProjectIntelligence` are fallback only, for when the graph section is empty (client not yet atomized)
 
 The composer does NOT yet have direct access to:
 
-- **Touchpoint history** (`touchpoint.getByContact` not exposed as a tool). Recent inbound/outbound is not directly queryable; the "did the contact reply since lastFiredAt?" check is handled at the dispatcher level via the existing skip rules, not via the composer. Until a `touchpoint` tool domain lands, the composer infers history from `getClientIntelligence` if relevant intel was captured.
+- **Touchpoint history** (`touchpoint.getByContact` not exposed as a tool). Recent inbound/outbound is not directly queryable; the "did the contact reply since lastFiredAt?" check is handled at the dispatcher level via the existing skip rules, not via the composer. Until a `touchpoint` tool domain lands, the composer infers history from the graph (`atoms.search`; `getClientIntelligence` as fallback if the client is not yet atomized) if relevant intel was captured.
 - **Live Companies House data** (`companies-house.getCharges` not exposed). Fresh charge filings are not directly fetchable by the composer; it must rely on whatever was already captured into `clientIntelligence` by prospect-intel or other workflows.
-- **Live appetite signals** (`appetite.getCurrentForLender` not exposed). `bdm_relationship` cadences cannot read live appetite data; the composer either uses historical signals from `getClientIntelligence` or skips with `reason: "no_fresh_appetite_signal"` until the tool lands.
+- **Live appetite signals** (`appetite.getCurrentForLender` not exposed). `bdm_relationship` cadences cannot read live appetite data; the composer either uses historical signals from the graph (`atoms.search`; `getClientIntelligence` as fallback for a not-yet-atomized lender) or skips with `reason: "no_fresh_appetite_signal"` until the tool lands.
 
 These gaps are tracked for v1.2 once the corresponding atomic tools are added to `src/lib/tools/domains/`. Until then, dynamic-compose cadences that depend on these data sources should produce skip decisions rather than fabricated content.
 
@@ -113,7 +113,7 @@ All voice and output rules from `../../CONVENTIONS.md` apply. Two that matter mo
 - `cadence.update` to patch `lastFiredAt`, `lastResult`, `nextDueAt`
 - `contact.get`, `client.get`, `project.get` for context
 - `touchpoint.getByContact` to check for recent inbound
-- `intelligence.getClientIntelligence` / `intelligence.getProjectIntelligence` for prior evidence and history
+- `atoms.search` + the `getDeepContext` `graph` section for prior evidence and history (fall back to `intelligence.getClientIntelligence` / `intelligence.getProjectIntelligence` only when the graph section is empty — client not yet atomized)
 - `companies.getGroupCharges` for fresh evidence when cadence type benefits from it
 - `approval.create` (`entityType: "gmail_send"`) to stage the approval
 - `holiday.isBankHoliday(date)` (sub-skill, see `../../sub-skills/`) to check business-day rules

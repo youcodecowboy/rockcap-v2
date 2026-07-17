@@ -337,7 +337,7 @@ function BatchTriage({
     setBusyId(r._id);
     try {
       await promote({ id: r._id });
-      toast.success(`Promoted ${r.companyName ?? r.companyNumber} to prospect`);
+      toast.success(`Added ${r.companyName ?? r.companyNumber} to the pipeline`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Promote failed");
     } finally {
@@ -366,6 +366,29 @@ function BatchTriage({
       setSelected(new Set());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bulk dismiss failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function promoteSelected() {
+    // Only promote rows not already in the pipeline (skip promoted + already-in-book)
+    // so a re-click or a mixed selection doesn't double-create prospects.
+    const eligible = [...selected].filter((id) => {
+      const r = rows.find((x) => x._id === id);
+      return r && r.sourcingState !== "promoted" && !r.alreadyInBook;
+    });
+    if (eligible.length === 0) {
+      toast.error("Nothing to add — selected rows are already promoted or in the book");
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      await Promise.all(eligible.map((id) => promote({ id: id as any })));
+      toast.success(`Added ${eligible.length} ${eligible.length === 1 ? "company" : "companies"} to the pipeline`);
+      setSelected(new Set());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bulk add to pipeline failed");
     } finally {
       setBulkBusy(false);
     }
@@ -405,9 +428,14 @@ function BatchTriage({
         </label>
         <div style={{ flex: 1 }} />
         {selected.size > 0 && (
-          <button onClick={dismissSelected} disabled={bulkBusy} style={btnStyle(colors.accent.red, bulkBusy)}>
-            <X size={12} /> {bulkBusy ? "Dismissing…" : `Dismiss selected (${selected.size})`}
-          </button>
+          <>
+            <button onClick={promoteSelected} disabled={bulkBusy} style={btnStyle(colors.accent.green, bulkBusy)}>
+              <UserPlus size={12} /> {bulkBusy ? "Adding…" : `Add to pipeline (${selected.size})`}
+            </button>
+            <button onClick={dismissSelected} disabled={bulkBusy} style={btnStyle(colors.accent.red, bulkBusy)}>
+              <X size={12} /> {bulkBusy ? "Dismissing…" : `Dismiss selected (${selected.size})`}
+            </button>
+          </>
         )}
       </div>
 
@@ -486,7 +514,7 @@ function BatchTriage({
                     ) : (
                       <>
                         <button onClick={() => doPromote(r)} disabled={busy} style={{ ...btnStyle(colors.accent.green, busy), marginRight: 6 }}>
-                          <UserPlus size={11} /> Promote
+                          <UserPlus size={11} /> Add to pipeline
                         </button>
                         <button onClick={() => doDismiss(r)} disabled={busy} style={btnStyle(colors.bg.cardAlt, busy, colors.text.muted)}>
                           <X size={11} />

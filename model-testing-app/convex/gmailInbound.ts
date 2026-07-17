@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { collectAttachments } from "./gmailAttachments";
 
 // Gmail inbound ingest (polling).
 //
@@ -262,6 +263,7 @@ export const pollUserInbound = internalAction({
       );
       const extracted = extractBody(msg?.payload);
       const body = extracted.text || (msg?.snippet ?? "");
+      const attachments = collectAttachments(msg?.payload);
 
       try {
         await ctx.runAction(internal.replyEventProcessor.ingestGmailMessage, {
@@ -276,6 +278,8 @@ export const pollUserInbound = internalAction({
           externalId: messageIdHeader,
           gmailThreadId: msg?.threadId,
           gmailMessageId: messageIdHeader,
+          gmailApiId: id,
+          attachments: attachments.length > 0 ? attachments : undefined,
           rawMessageRef: msg?.threadId
             ? `https://mail.google.com/mail/u/0/#inbox/${msg.threadId}`
             : undefined,

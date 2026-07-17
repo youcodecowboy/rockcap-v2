@@ -15,9 +15,16 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
     fileType: 'Indicative Terms',
     category: 'Loan Terms',
     filing: {
-      targetFolder: 'Loan Terms',
+      targetFolder: 'Terms Received',
       targetLevel: 'project',
     },
+    targetFolderKey: 'terms_received',
+    producer: 'lender',
+    audience: 'external',
+    filenameGrammar:
+      '"<LenderName>Terms_<Project>_<YYYYMMDD>" — lender prefix is the primary index key (needs a lender-alias table: HTB, QDF, UTB…). Tolerance: project-name typos ("DarkMils"); ad-hoc variant tokens welded to the prefix ("HTBTerms3Monthleadin" = scenario qualifier, never a different lender); filename date ≈ received/saved date and can trail the internal issue date by 1–3 days.',
+    versionSemantics:
+      'Same lender + same project + new date = a NEW VERSION on the same negotiation thread, not a new artifact class. Evolution modes: scenario re-run (pricing unchanged, structure tweaked) and genuine re-price (margin cut, facility trimmed). Latest date per lender is operative; earlier files are superseded-but-retained negotiation history. Cluster by (lender, project); order by date.',
     description:
       'Indicative Terms (also referred to as Heads of Terms, Indicative Offer, or Preliminary ' +
       'Terms) are the initial non-binding loan proposal issued by a lender to a prospective ' +
@@ -41,24 +48,22 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
       'ultimately by the formal Facility Agreement prepared by solicitors.',
 
     identificationRules: [
-      'PRIMARY: Document is titled "Indicative Terms", "Heads of Terms", "Indicative Offer", or "Preliminary Terms"',
-      'PRIMARY: Contains an explicit non-binding disclaimer such as "subject to credit approval", "indicative only", or "non-binding"',
-      'CRITICAL: Proposes loan facility parameters (amount, LTV, interest rate, fees) without referencing credit committee approval',
-      'Contains proposed loan amount, LTV/LTGDV ratio, and interest rate in a structured summary format',
-      'References arrangement fee and/or exit fee as proposed percentages',
-      'Outlines high-level security requirements (first legal charge, personal guarantee) without exhaustive detail',
-      'May include a validity period or expiry date for the indicative offer',
-      'Does not contain a formal credit committee approval stamp, reference number, or approval date',
-      'May reference preliminary conditions precedent without a full detailed CP schedule',
-      'Typically 2-5 pages in length with a commercial terms summary table or bullet-point structure',
-      'May include borrower and property details at a summary level alongside proposed terms',
+      'PRIMARY: hedge boilerplate — "INDICATIVE LOAN TERMS", "Indicative Terms - <Lender>", "Indicative Loan Summary (subject to credit review)", "WITHOUT COMMITMENT AND SUBJECT TO CREDIT APPROVAL", "Subject to our normal lending criteria"',
+      'PRIMARY: THE BROKER APPEARS AS A FEE LINE, NOT AN AUTHOR — "Broker Fee £…", "Introducer Fee £…", "£… towards RockCap\'s introductory fee", "1% broker fee to <broker>". A document charging FOR the broker cannot be BY the broker: it is lender-produced.',
+      'CRITICAL: lender first-person voice / self-reference — "the Bank", "our arrangement fee", "We will instruct our own professional team", "our maximum Term being 24 months"',
+      'CRITICAL: EXACTLY ONE lender\'s terms — no comparison grid. The moment two-plus lenders appear side-by-side it is RockCap-produced terms analysis.',
+      'Lender letterhead / regulatory footer (PRA/FCA FRN, company number, registered address) or proprietary rate construct ("HTB SVR", "Shawbrook Base Rate")',
+      'Heads-of-terms field set: facility amount + tranche availability, LTGDV/LTV/LTC, margin over a base, arrangement + exit fees, term, security package (debenture, first legal charge, PGs), conditions precedent',
+      'Media rule: PDF term sheets and PNG screenshots (terms-table attachment, branded proposal panel, prose email body) are the SAME class — identity comes from content signals, not mime; expect OCR noise in screenshots ("$106" for S106, "€" for £)',
+      'Borrower named as the JV/prospect entity or "SPV TBC" during the sourcing window (a resolved SPV name signals credit-stage terms instead)',
     ],
 
     disambiguation: [
-      'Indicative Terms are NON-BINDING proposals issued BEFORE credit approval. If the document references credit committee sign-off or contains a credit approval reference, it is Credit Backed Terms instead.',
+      'THE SINGLE-VS-MULTI-LENDER RULE: raw single-lender inputs in lender voice = Indicative Terms (terms_received); two-plus lenders side-by-side (comparison grid, ranking, recommendation, normalised columns) = RockCap-produced Lender Comparison (terms_analysis).',
+      'vs Credit Backed Terms (credit-stage): the lender\'s template heading may STILL say "Indicative Terms" at credit stage — the heading is not a reliable stage signal. Terms naming the resolved borrowing SPV, post-dating credit submission, with fully reconciled tranche/fee schedules are credit-stage; terms naming the JV/prospect entity during the sourcing window are indicative.',
       'Indicative Terms are issued BY THE LENDER. If the document is a borrower\'s request for funding with project details and a business plan, it is a Loan Application or Application Form, not Indicative Terms.',
-      'Indicative Terms present headline commercial parameters. If the document is a comprehensive multi-page legal agreement with extensive covenants, representations, and detailed drawdown mechanics, it is a Facility Agreement (Legal Documents category), not Indicative Terms.',
-      'Indicative Terms may resemble a Term Sheet, but a Term Sheet can be either indicative or credit-backed. If the document explicitly states it is non-binding and pre-credit, classify as Indicative Terms. If binding status is ambiguous, classify as Term Sheet.',
+      'If the document is a comprehensive multi-page legal agreement with extensive covenants, representations, and detailed drawdown mechanics, it is a Facility Agreement/Letter (Legal Documents category), not Indicative Terms.',
+      'A scenario-qualifier token welded to the lender prefix in the filename ("…Terms3Monthleadin") marks a re-run of the same lender\'s terms, never a different lender or type.',
     ],
 
     terminology: {
@@ -183,9 +188,16 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
     fileType: 'Credit Backed Terms',
     category: 'Loan Terms',
     filing: {
-      targetFolder: 'Loan Terms',
+      targetFolder: 'Credit',
       targetLevel: 'project',
     },
+    targetFolderKey: 'credit',
+    producer: 'lender',
+    audience: 'external',
+    filenameGrammar:
+      'Identical to indicative terms ("<LenderName>Terms_<Project>_<YYYYMMDD>") — the filename does NOT encode the lifecycle difference; the classifier must use content (resolved SPV + date + reconciliation).',
+    versionSemantics:
+      'Continuation of the same lender\'s negotiation thread into credit; latest is operative.',
     description:
       'Credit Backed Terms (also known as a Credit Approved Offer, Formal Offer, or Binding ' +
       'Terms) represent the definitive loan terms issued by a lender after the transaction has ' +
@@ -210,9 +222,12 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
       'change to terms requires a credit committee variation or amendment.',
 
     identificationRules: [
-      'PRIMARY: Document explicitly states "credit approved", "credit committee approved", or "binding terms"',
-      'PRIMARY: Contains a credit committee approval date, credit reference number, or approval stamp',
-      'CRITICAL: Presents finalised (not proposed) loan terms with confirmed facility amount, LTV, interest rate, and fees',
+      'PRIMARY: THE RESOLVED-SPV MARKER — the borrower is named as the confirmed borrowing SPV (a specific Ltd entity confirmed to the lender during credit), NOT the JV/prospect name or "SPV TBC". This is the strongest credit-stage signal even when the template heading still says "Indicative Terms".',
+      'PRIMARY: the document post-dates the credit submission / checklist cycle for the chosen lender',
+      'CRITICAL: fully tranched and reconciled numbers (multi-line availability breakdown incl. broker fee, S106/CIL, interest allowance) rather than headline-only figures',
+      'Document explicitly states "credit approved", "credit committee approved", or "binding terms"',
+      'Contains a credit committee approval date, credit reference number, or approval stamp',
+      'Presents finalised (not proposed) loan terms with confirmed facility amount, LTV, interest rate, and fees',
       'Contains a detailed conditions precedent (CP) schedule listing specific pre-drawdown requirements',
       'References the security package in detail: first legal charge, debenture, personal guarantee, assignment of insurances',
       'May include detailed tranche structure with drawdown mechanics and monitoring surveyor triggers',
@@ -224,7 +239,8 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
     ],
 
     disambiguation: [
-      'Credit Backed Terms have RECEIVED credit committee approval and are BINDING (subject to CPs). If the document contains "subject to credit approval" or "indicative only" disclaimers, it is Indicative Terms instead.',
+      'vs Indicative Terms: the lender\'s template heading is NOT a reliable stage signal — credit-stage terms are often issued on the same "Indicative Terms" template. Decide on entity + date + reconciliation: resolved borrowing SPV + post-credit-submission date + fully reconciled tranche schedule = Credit Backed Terms (files to credit); JV/prospect entity during the sourcing window = Indicative Terms (files to terms_received).',
+      'Credit Backed Terms have RECEIVED credit committee approval and are BINDING (subject to CPs). If the document contains "subject to credit approval" or "indicative only" disclaimers AND names the prospect/JV entity in the sourcing window, it is Indicative Terms instead.',
       'Credit Backed Terms are a COMMERCIAL document summarising approved parameters. If the document is a full legal agreement with extensive representations, warranties, boilerplate clauses, and execution pages, it is a Facility Agreement (Legal Documents category).',
       'Credit Backed Terms are issued BY THE LENDER after internal approval. If the document is a borrower submission seeking approval, it is a Credit Paper or Loan Application, not Credit Backed Terms.',
       'Credit Backed Terms differ from a generic Term Sheet in that they explicitly evidence credit committee approval. If the document summarises loan terms but does not reference credit approval, classify as Term Sheet.',
@@ -364,9 +380,12 @@ export const LOAN_TERMS_REFERENCES: DocumentReference[] = [
     fileType: 'Term Sheet',
     category: 'Loan Terms',
     filing: {
-      targetFolder: 'Loan Terms',
+      targetFolder: 'Terms Received',
       targetLevel: 'project',
     },
+    targetFolderKey: 'terms_received',
+    producer: 'lender',
+    audience: 'external',
     description:
       'A Term Sheet in UK property development finance is a concise document summarising the ' +
       'principal commercial terms of a proposed or approved loan facility. It serves as a ' +

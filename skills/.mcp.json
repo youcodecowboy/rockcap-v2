@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://incredible-kudu-562.convex.site/mcp",
       "headers": {
-        "Authorization": "Bearer ${ROCKCAP_MCP_TOKEN:-rcp_4FeRfBtL7P5mcrz_jl8MrndoB-l5u7RQznU-Hh7j9KQ}"
+        "Authorization": "Bearer YOUR_MCP_TOKEN_HERE"
       }
     }
   }

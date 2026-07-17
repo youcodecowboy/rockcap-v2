@@ -1,5 +1,6 @@
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { PREDICATES } from "./knowledge/vocabulary";
 
 // MCP server (BL-5.1).
 // HTTP endpoint that speaks the Model Context Protocol over JSON-RPC.
@@ -40,6 +41,47 @@ function asText(result: unknown): { content: Array<{ type: "text"; text: string 
       { type: "text", text: JSON.stringify(result, null, 2) },
     ],
   };
+}
+
+// Cap on how many atom ids a single retrievalLog batch records (spec §10).
+const RETRIEVAL_LOG_CAP = 100;
+
+// Chunk text cap in the atoms.search tool response — full text stays in the
+// documentChunks row; the tool trims to keep the response bounded and marks
+// the cut with `truncated: true`. 2,200 chars covers a full target-size chunk
+// (~320 words ≈ 2,000 chars, chunker.ts TARGET_WORDS) — the earlier 700-char
+// cap ate the operative clause in 5/12 prose eval questions where the right
+// chunk ranked #1. Worst case stays bounded: 20 chunks (CHUNK_LIMIT_MAX) ×
+// 2.2K = 44K chars.
+const CHUNK_TEXT_CAP = 2200;
+
+/** Gather the atom ids a graph.expandEntity result actually surfaced — edge
+ * provenance refs (atom-lane only; native refs are table names and are
+ * dropped downstream by normalizeId anyway) plus attribute / ring-attribute
+ * atom ids. Used to feed retrievalLog fire-and-forget. */
+function collectExpandAtomIds(result: unknown): string[] {
+  const ids = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = result as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addEdge = (e: any) => {
+    if (e?.provenance?.sourceType !== "native" && typeof e?.provenance?.ref === "string") {
+      ids.add(e.provenance.ref);
+    }
+  };
+  (r?.edges ?? []).forEach(addEdge);
+  (r?.interEdges ?? []).forEach(addEdge);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (r?.attributes ?? []).forEach((a: any) => {
+    if (typeof a?.atomId === "string") ids.add(a.atomId);
+  });
+  for (const rows of Object.values(r?.ringAttributes ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of (rows as any[]) ?? []) {
+      if (typeof a?.atomId === "string") ids.add(a.atomId);
+    }
+  }
+  return [...ids].slice(0, RETRIEVAL_LOG_CAP);
 }
 
 // ── Tool catalogue ───────────────────────────────────────────
@@ -609,6 +651,10 @@ const TOOLS: McpTool[] = [
         linkedClientId: { type: "string" },
         linkedProjectId: { type: "string" },
         linkedApprovalIds: { type: "array", items: { type: "string" } },
+        revalidateResult: {
+          type: "string",
+          description: "intel-revalidate verdict: 'still_valid' | 'materially_changed'. Only for intel-revalidate runs; denormalized onto clients.lastIntelResult.",
+        },
         gaps: {
           type: "array",
           items: {
@@ -646,6 +692,7 @@ const TOOLS: McpTool[] = [
         linkedClientId: args.linkedClientId,
         linkedProjectId: args.linkedProjectId,
         linkedApprovalIds: args.linkedApprovalIds,
+        revalidateResult: args.revalidateResult,
         gaps: args.gaps,
         errors: args.errors,
       });
@@ -910,16 +957,20 @@ const TOOLS: McpTool[] = [
       required: ["lenderClientId", "fieldPath", "value", "valueType", "sourceType"],
     },
     handler: async (ctx, userId, args) => {
-      const result = await ctx.runMutation(api.appetiteSignals.record, {
+      // MCP handlers have no Clerk session — use the internal variant with the
+      // bearer-resolved userId (bug: was wired to the Clerk-authed public
+      // mutation and threw "Unauthenticated" on every MCP call).
+      const result = await ctx.runMutation(internal.appetiteSignals.recordInternal, {
         lenderClientId: args.lenderClientId,
         fieldPath: args.fieldPath,
         value: args.value,
         valueType: args.valueType,
         sourceType: args.sourceType,
         sourceRef: args.sourceRef,
-        asOfDate: args.asOfDate,
+        asOfDate: args.asOfDate ?? new Date().toISOString().slice(0, 10),
         confidence: args.confidence,
         notes: args.notes,
+        userId,
       });
       return asText(result);
     },
@@ -1004,7 +1055,7 @@ const TOOLS: McpTool[] = [
   {
     name: "lender.create",
     description:
-      "Create a new lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation — escape hatch for genuine net-new lenders never seen in HubSpot. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add a new lender you're starting to track → mode 3.",
+      "Create OR UPSERT a lender record (a clients row with type='lender'). Three input modes (in priority order): (1) Pass `promoteFromCompanyId` (Convex id) to promote an existing companies-table row into a lender — auto-inherits name/website/etc. + marks the company as promoted + links any HubSpot-synced contacts to the new lender. (2) Pass `hubspotCompanyId` (string) when you only know the HubSpot id (e.g., reading off a contact's `hubspotCompanyIds[0]`) — skill resolves to Convex companies row + promotes. (3) Pass just `name` for naked creation. Mode 3 is now an UPSERT: before inserting it runs a conservative normalized-name match (lowercase, strip punctuation, drop trailing legal suffixes — equality only, never fuzzy) across every existing lender's name/companyName/aliases. On a match it patches that row instead of inserting (unions `aliases` + `sourceDocumentIds`, appends a dated note line, fills missing website/companyName/country) and returns `deduped:true` with the EXISTING `lenderClientId` — so a document-ingestion wave that re-encounters 'Funding 365' / 'Downing LLP' collapses onto the first row rather than duplicating it. Pass `aliases` (known alternate names) and `sourceDocumentIds` (evidence) so the roster self-heals. After create, call `lender.recordAppetite` repeatedly + `lender.setSubmissionRequirements` to populate substrate. Common patterns: (A) after BDM meeting on a known HubSpot lender → mode 2 + `lender.recordAppetite × N`; (B) lender with rich HubSpot doc evidence → mode 1; (C) cold-add / roster a lender from a document → mode 3 with aliases + sourceDocumentIds. To collapse EXISTING duplicate lender rows, use `lender.merge`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1017,6 +1068,8 @@ const TOOLS: McpTool[] = [
         email: { type: "string", description: "General contact email if known" },
         phone: { type: "string" },
         country: { type: "string", description: "Default 'United Kingdom'" },
+        aliases: { type: "array", items: { type: "string" }, description: "Mode 3 only: alternate names this lender is known by (registered-company variants, brand names). Feeds the dedup match here AND the knowledge-layer lender matcher. Unioned onto an existing row on dedup." },
+        sourceDocumentIds: { type: "array", items: { type: "string" }, description: "Mode 3 only: Convex document ids that evidenced this lender (provenance). Unioned onto an existing row on dedup." },
       },
       required: [],
     },
@@ -1064,27 +1117,223 @@ const TOOLS: McpTool[] = [
         });
       }
 
-      // Mode 3: naked creation (no HubSpot link)
+      // Mode 3: naked upsert (no HubSpot link) — dedups against existing
+      // lenders by normalized name before inserting (see clients.upsertLender).
       if (!args.name) {
         return asText({ error: "name_required_for_mode_3", note: "Mode 3 (naked creation) requires `name`. For modes 1/2 (HubSpot promotion), pass promoteFromCompanyId or hubspotCompanyId instead." });
       }
-      const id = await ctx.runMutation(api.clients.create, {
+      const upsert = await ctx.runMutation(api.clients.upsertLender, {
         name: args.name,
-        type: "lender",
-        status: "active" as const,
         companyName: args.companyName,
         notes: args.notes,
         website: args.website,
         email: args.email,
         phone: args.phone,
         country: args.country ?? "United Kingdom",
-        source: "manual" as const,
+        aliases: args.aliases,
+        sourceDocumentIds: args.sourceDocumentIds as any,
       });
+      return asText(
+        upsert.deduped
+          ? {
+              status: "deduped",
+              deduped: true,
+              lenderClientId: upsert.lenderClientId,
+              matchedName: upsert.matchedName,
+              note: `Matched an existing lender ("${upsert.matchedName}") by normalized name — patched that row (unioned aliases + sourceDocumentIds, appended a note) instead of creating a duplicate. Use this lenderClientId.`,
+            }
+          : {
+              status: "created",
+              deduped: false,
+              lenderClientId: upsert.lenderClientId,
+              note: "Lender created via naked path (no HubSpot link). Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+            },
+      );
+    },
+  },
+
+  {
+    name: "lender.merge",
+    description:
+      "Collapse a DUPLICATE lender row into a canonical one — the operator-hygiene fix for the duplicate lenders lender.create's dedup could not catch automatically (e.g. 'Funding 365' vs 'Funding 365 Property Finance', 'Downing' vs 'Downing LLP', 'Paragon' vs 'Paragon Bank'). Both ids must be clients rows with type='lender' and distinct. Repoints EVERYTHING from the from-row to the to-row: knowledge atoms + facilities + appetite signals + document chunks (via atoms.mergeEntities), then the flat CRM references (contacts, documents, tasks, notes, meetings, cadences/approvals-derived, …) and projects.clientRoles (via the client CRM merge), then unions the lender row fields (aliases — incl. the from-row's name/companyName as aliases so future mentions resolve — sourceDocumentIds, notes with a merge marker, and any missing scalars). Finally soft-deletes the from-row (deletedReason=merged_into_<toId>), so the roster reads clean. Pass `dryRun:true` (recommended first) to preview validation + the would-be repoint counts + field merge WITHOUT writing. The to-row is the survivor — pick the richer/canonical one as `toClientId`. The merge runs as three sequential transactions (knowledge → CRM → field union), so a mid-sequence failure can leave a partial merge; recovery is simple — re-run with the SAME arguments, the steps are idempotent and skip work already done.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromClientId: { type: "string", description: "Convex id of the DUPLICATE lender to collapse and soft-delete." },
+        toClientId: { type: "string", description: "Convex id of the CANONICAL lender that survives and absorbs the duplicate." },
+        dryRun: { type: "boolean", description: "Preview only — validate + count would-be repoints and field merge without writing. Default false." },
+      },
+      required: ["fromClientId", "toClientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      // Pre-flight validation + plan (also the dryRun payload). Runs before any
+      // write so an invalid pair never half-merges.
+      const plan = await ctx.runQuery(api.clients.mergeLendersPlan, {
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+      });
+      if (!plan.ok) {
+        return asText({ error: "invalid_merge_pair", detail: plan.error });
+      }
+      if (args.dryRun) {
+        return asText({ status: "dry_run", ...plan });
+      }
+
+      // 1. Knowledge side — atoms + facilities + appetite + chunks.
+      const atomMerge = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: "client" as const,
+        fromId: args.fromClientId,
+        toId: args.toClientId,
+        reason: `lender.merge ${args.fromClientId} → ${args.toClientId}`,
+      });
+      // 2. CRM side — flat FKs + clientRoles + soft-delete the from-row.
+      const crmMerge = await ctx.runMutation(internal.migrations.mergeDuplicateClients.mergeTwo, {
+        sourceId: args.fromClientId,
+        targetId: args.toClientId,
+      });
+      // 3. Lender row-field union onto the survivor.
+      const fields = await ctx.runMutation(api.clients.mergeLenderFields, {
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+      });
+
       return asText({
-        status: "created",
-        lenderClientId: id,
-        note: "Lender created via naked path (no HubSpot link). Now record appetite signals via lender.recordAppetite + author submission requirements via lender.setSubmissionRequirements.",
+        status: "merged",
+        fromClientId: args.fromClientId,
+        toClientId: args.toClientId,
+        survivor: plan.toName,
+        collapsed: plan.fromName,
+        knowledge: {
+          atomsRepointed: atomMerge.repointed,
+          atomsMerged: atomMerge.merged,
+          atomsContested: atomMerge.contested,
+          scope: atomMerge.scope,
+        },
+        crmCounts: crmMerge.counts,
+        fieldMerge: fields,
+        note: "Duplicate lender collapsed and soft-deleted (deletedReason=merged_into_target). All atoms, facilities, appetite, CRM refs and clientRoles now point at the survivor.",
       });
+    },
+  },
+
+  {
+    name: "facilities.create",
+    description:
+      "Manually add a facility to a lender's book — the operator lane for a facility the documents haven't evidenced (market intel, a call, a deal RockCap wasn't on). Args: lenderClientId (clients row, type=lender), projectId (required — facilities are project-anchored), optional borrowerClientId, tranche (senior/mezzanine/bridge/equity; anything else collapses to the whole-facility 'single' bucket), amountGBP, interestRate, maturityDate (ISO date), status (indicative/live/repaid/defaulted). Flagged createdFrom:'operator' — the Lenders tab shows it as manually added (orange provenance dot). Uses the SAME dedupeKey scheme as the pipeline minter, so a later document-evidenced mint for the same (project, lender, tranche) lands on this row instead of duplicating; returns {ok:false, error:'facility_exists', facilityId} if the row already exists. NOT for facilities a document evidences — atomize the document instead (atomize-document skill) so provenance is real.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender's clients row" },
+        projectId: { type: "string", description: "Convex id of the project the facility funds/quotes" },
+        borrowerClientId: { type: "string", description: "Optional Convex id of the borrower's clients row" },
+        tranche: { type: "string", description: "senior | mezzanine | bridge | equity (omit for a whole facility)" },
+        amountGBP: { type: "number" },
+        interestRate: { type: "number", description: "Percent, e.g. 9.5" },
+        maturityDate: { type: "string", description: "ISO date, e.g. 2027-03-31" },
+        status: { type: "string", description: "indicative | live | repaid | defaulted (default unset)" },
+      },
+      required: ["lenderClientId", "projectId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorCreateInternal, {
+        lenderClientId: args.lenderClientId,
+        projectId: args.projectId,
+        borrowerClientId: args.borrowerClientId,
+        tranche: args.tranche,
+        amountGBP: args.amountGBP,
+        interestRate: args.interestRate,
+        maturityDate: args.maturityDate,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "facilities.updateTerms",
+    description:
+      "Update a facility's terms — amountGBP, interestRate (percent, e.g. 9.5), maturityDate (ISO date). Pass only the fields to change. Semantics: on pipeline-minted rows these columns are atom mirrors, so an operator value holds until NEWER document evidence rematerializes the row (operator number = current truth, later executed doc = newer truth); operator-created rows are never rebuilt, so edits are final. For document-evidenced term changes prefer atomizing the document (facility-anchored atoms) so provenance is real. Returns {ok, updated:[fields]} or nothing_to_update.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        facilityId: { type: "string", description: "Convex id of the facilities row" },
+        amountGBP: { type: "number" },
+        interestRate: { type: "number", description: "Percent, e.g. 9.5" },
+        maturityDate: { type: "string", description: "ISO date, e.g. 2027-03-31" },
+      },
+      required: ["facilityId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorUpdateTermsInternal, {
+        facilityId: args.facilityId,
+        amountGBP: args.amountGBP,
+        interestRate: args.interestRate,
+        maturityDate: args.maturityDate,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "facilities.setStatus",
+    description:
+      "Set a facility's lifecycle status — the operator override. The pipeline stamps status from document class and never downgrades; this tool permits ANY transition (a facility the paper says is live may have repaid; a stale indicative quote may be dead). Args: facilityId + status (indicative/live/repaid/defaulted). Status is not an atom mirror, so rematerialisation never clobbers the edit; later pipeline stamps still only upgrade. Get facilityIds from facilities.audit, lender.getDeepContext's graph section, or the atoms.createBatch facilities return.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        facilityId: { type: "string", description: "Convex id of the facilities row" },
+        status: { type: "string", description: "indicative | live | repaid | defaulted" },
+      },
+      required: ["facilityId", "status"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.operatorSetStatusInternal, {
+        facilityId: args.facilityId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "lender.getDocuments",
+    description:
+      "The lender's DOCUMENT EVIDENCE TRAIL: every document that evidences this lender, federated from four lanes — the lender row's sourceDocumentIds (lender.create evidence), atoms where the lender is subject/object (via observations), the facility book's atoms (term sheets, facility agreements, the later-stage deal paper), and appetite signals sourced from documents. Each document returns {documentId, fileName, fileTypeDetected, category, summary, uploadedAt, clientId/clientName, projectId/projectName, atomCount (knowledge pulled from it for this lender), via[] (which lanes cited it)}. Newest first, default 60 / cap 100 (totalFound carries the pre-cap count). Use to answer 'which documents did this lender's terms come from?', to group a lender's paper by project, or to pick the right documentId for document.get / document.extractText follow-ups. Powers the Lenders-tab Documents view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lenderClientId: { type: "string", description: "Convex id of the lender's clients row" },
+        limit: { type: "number", description: "Max documents (default 60, cap 100)" },
+      },
+      required: ["lenderClientId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.appetiteSignals.lenderDocuments, {
+        lenderClientId: args.lenderClientId,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "facilities.audit",
+    description:
+      "Find (and optionally fix) FRAGMENTED facilities — the multiple facility rows that free-text tranche descriptors used to mint for one negotiation (e.g. Allica Bank: 8 rows on one project from successive quote revisions). Groups facilities by project + lender + normalized tranche (senior/mezzanine/bridge/equity/single); any group with >1 row is a fragment cluster of what should be ONE facility. Dry-run (default) reports each cluster with its rows (id/tranche/amount/status/atomCount) and the suggested canonical row (most attached atoms, then richest mirror columns). Pass `execute:true` to collapse each fragment into the canonical via the completed facility merge path (fills mirrors, recomputes dedupeKey under the enum scheme, deletes the fragment, rematerializes) and return the merge count. Scope to one project with `projectId`, or omit to audit the whole corpus. External/unrostered facilities (no lender id) are excluded — two such rows can't be confirmed duplicates.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Optional: limit the audit to one project's facilities. Omit to audit the whole corpus." },
+        execute: { type: "boolean", description: "Perform the merges (fragments → canonical). Default false = dry-run report only." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.facilities.auditFragmentation, {
+        projectId: args.projectId as any,
+        execute: args.execute ?? false,
+      });
+      return asText(result);
     },
   },
 
@@ -1914,7 +2163,7 @@ const TOOLS: McpTool[] = [
   {
     name: "reply.get",
     description:
-      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply.",
+      "Get one reply event by id with all fields (body, subject, classification, dispatch destination, cancelledCadences). Use when prospect.getDeepContext returned the summary list and you need the full body of a specific reply. Gmail-ingested rows also carry attachments:[{filename, mimeType, sizeBytes, partId, inline}] when the email had any (captured at ingest since 2026-07-16 + backfilled onto historical rows; a row with the field ABSENT was unreachable at backfill time — reply.listAttachments lists any row live); to file one into Drive, use drive.saveEmailAttachment.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1927,6 +2176,35 @@ const TOOLS: McpTool[] = [
         replyEventId: args.replyEventId,
       });
       if (!result) return asText({ error: "reply_event_not_found", replyEventId: args.replyEventId });
+      return asText(result);
+    },
+  },
+
+  {
+    name: "reply.listAttachments",
+    description:
+      "List the file attachments on an inbound email, LIVE from Gmail — works for reply rows ingested before attachment capture existed (no stored metadata needed) and for raw Gmail references that never became reply rows. Pass replyEventId (preferred — any row from reply.listByClient / the inbox feed) OR gmailMessageId (a Gmail REST message id or an RFC822 Message-ID header, resolved via Gmail search). Returns {gmailApiId, subject, fromEmail, attachments:[{filename, mimeType, sizeBytes, partId, inline}]}. inline:true marks embedded images (signature logos etc.) — usually not worth filing. Reads the mailbox of the reply's OWNING user (Gmail tokens are per-user; a raw gmailMessageId reads the CALLING user's mailbox) — errors with gmail_not_connected if that mailbox has no live connection. To file an attachment into Google Drive, follow with drive.saveEmailAttachment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id (preferred). The email's Gmail reference + owning mailbox resolve from the row.",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed. Read from the calling user's mailbox.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.gmailAttachments.listForReply, {
+        userId,
+        replyEventId: args.replyEventId,
+        gmailMessageId: args.gmailMessageId,
+      });
       return asText(result);
     },
   },
@@ -1979,6 +2257,61 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.prospects.transitionStateInternal, {
         clientId: args.clientId,
         newState: args.newState,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+
+  // Prospecting v3 — manual pipeline-stage promotion (the operator axis)
+  {
+    name: "prospect.promoteStage",
+    description:
+      "Move a prospect between the operator's 5 MANUAL pipeline stages (cold_outreach / warm_pre_meeting / warm_post_meeting / pre_qualification / qualified) — the axis behind the stage-by-stage /prospects dashboards. Any direction (force move), exact parity with the UI's promote control: patches pipelineStage and logs a prospectStageEvents row (kind 'pipeline_stage', reason 'manual') so rolling entered-this-month KPIs stay exact. This is a SEPARATE axis from prospectState (the 9-state position the outreach engine moves — use prospect.transitionState for that; promoting the stage does NOT touch prospectState or fire any outreach). Does NOT change clients.status either — graduating OUT of the pipeline to an active client is client.activate. Only meaningful for status='prospect' rows. Typical use: the operator says 'move Acme to pre-qual' / a stage-workspace chat graduates a company after a held meeting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        toStage: {
+          type: "string",
+          description: "cold_outreach | warm_pre_meeting | warm_post_meeting | pre_qualification | qualified",
+        },
+      },
+      required: ["clientId", "toStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setPipelineStageInternal, {
+        clientId: args.clientId,
+        toStage: args.toStage,
+        reason: "manual",
+        userId,
+        mode: "force",
+      });
+      return asText(result);
+    },
+  },
+
+  // Prospecting v3 — sub-stage ladder step (pre-qualification / qualified)
+  {
+    name: "prospect.setQualSubStage",
+    description:
+      "Set a prospect's current SUB-STAGE ladder step. Two ladders share this field, gated by pipelineStage: the pre_qualification ladder (modelling_required → modelling_review_required → qualitative_feedback_required → feedback_given → feedback_discussed) and the qualified ladder (terms_requested → terms_presented → progression_to_credit → formal_dd → credit_approved). Set the stage first (prospect.promoteStage) if the prospect isn't in the matching stage — this tool does not validate the pairing (parity with the UI mutation). Logs a prospectStageEvents row (kind 'qual_substage') for exact rolling KPIs. Typical use: 'Acme's model is built, mark it for review' → modelling_review_required; 'terms came back from two lenders' → terms_presented.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex id of the prospect's clients row" },
+        subStage: {
+          type: "string",
+          description:
+            "Pre-qual ladder: modelling_required | modelling_review_required | qualitative_feedback_required | feedback_given | feedback_discussed. Qualified ladder: terms_requested | terms_presented | progression_to_credit | formal_dd | credit_approved.",
+        },
+      },
+      required: ["clientId", "subStage"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.prospectStages.setQualSubStageInternal, {
+        clientId: args.clientId,
+        subStage: args.subStage,
         userId,
       });
       return asText(result);
@@ -2177,6 +2510,32 @@ const TOOLS: McpTool[] = [
     handler: async (ctx, userId, args) => {
       const result = await ctx.runAction(internal.companiesHouse.syncOneCompanyFromCHInternal, {
         companyNumber: args.chNumber,
+      });
+      return asText(result);
+    },
+  },
+
+  // The people behind a synced company. companies.syncCompaniesHouse persists
+  // officers/PSCs but returns only counts — this reads the names back, which
+  // is the seed for contact discovery (apollo.findEmail needs a name; there
+  // is no company-wide people search).
+  {
+    name: "companies.getOfficers",
+    description:
+      "Officers + PSCs of a Companies House company ALREADY SYNCED into RockCap's mirror tables, by CH number. Read-only. Call companies.syncCompaniesHouse({chNumber}) first if not yet synced (this returns error company_not_synced otherwise). Returns { ok, companyNumber, companyName, activeOfficerCount, officers: [{name, officerRole, appointedOn, resignedOn, isActive, occupation, nationality, appointmentsLink}] (active first, newest appointment first), psc: [{name, pscType, naturesOfControl, ceasedOn}] }. This is the name-seed for contact discovery: apollo.findEmail can only enrich a NAMED person (no company-wide people search exists), so lender-intel's enrich gauntlet and prospect-intel's director step read names here, then enrich each via apollo.findEmail and persist keepers via contact.create. appointmentsLink feeds companies.getOfficerAppointments for cross-company group walks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        companyNumber: {
+          type: "string",
+          description: "Companies House number (normalised to uppercase + trimmed).",
+        },
+      },
+      required: ["companyNumber"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.companiesHouse.getOfficersByCompanyNumber, {
+        companyNumber: args.companyNumber,
       });
       return asText(result);
     },
@@ -3158,7 +3517,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.generate",
     description:
-      "Generate a formatted document (PDF + DOCX) from composed HTML and stage it for operator approval; on approval it is filed to the client's Documents library. YOU compose the body as semantic HTML (h1/h2/p/table; NO <html>/<head>/<style> wrappers — house styling is applied automatically). Ground every figure in real data; never fabricate. Use for ad-hoc requests like a company one-pager. See the document-author skill + the document-house-style reference for voice and structure.",
+      "Generate a formatted document (PDF + DOCX) from composed HTML and stage it for operator approval; on approval it is filed to the client's Documents library. YOU compose the body as semantic HTML (h1/h2/p/table; NO <html>/<head>/<style> wrappers — house styling is applied automatically). GATHER BEFORE COMPOSING: run the knowledge multi-hop first — atoms.search for the subject's key facts, graph.expandEntity on the client/project/lender for relationships, graph.findPaths where a cross-entity claim needs provenance — then ground every figure in that evidence plus the deal's documents; never fabricate. Use for ad-hoc requests like a company one-pager. See the document-author skill + the document-house-style reference for voice and structure.",
     inputSchema: {
       type: "object",
       properties: {
@@ -3193,7 +3552,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.generateBrief",
     description:
-      "Generate a branded RockCap multi-page BRIEF (PDF + DOCX) and stage it for operator approval; on approval it is filed to the client's Documents library. Two layouts: 'lender-brief' sells a borrower's deal TO a lender (track-record depth from Companies House charges); 'client-brief' advises the BORROWER on the indicative lender landscape, leverage scenarios and expected pricing BEFORE going to market. YOU compose the structured briefData (title, key facts, numbered sections whose bodies are semantic HTML, sign-off), grounded in real data — read the deal's documents + intel first; never fabricate. Section bodyHtml is semantic HTML only (no <html>/<head>/<style> wrappers; <table> with class=\"num\" on numeric cells, class=\"caption\" for source/footnote lines). Follow the doc-type-lender-brief / doc-type-client-brief references for the section set.",
+      "Generate a branded RockCap multi-page BRIEF (PDF + DOCX) and stage it for operator approval; on approval it is filed to the client's Documents library. Two layouts: 'lender-brief' sells a borrower's deal TO a lender (track-record depth from Companies House charges); 'client-brief' advises the BORROWER on the indicative lender landscape, leverage scenarios and expected pricing BEFORE going to market. YOU compose the structured briefData (title, key facts, numbered sections whose bodies are semantic HTML, sign-off), grounded in real data — GATHER BEFORE COMPOSING: read the deal's documents AND run the knowledge multi-hop (atoms.search on the borrower/scheme/lender, graph.expandEntity for track record and cross-entity control facts, graph.findPaths to evidence borrower↔lender history); never fabricate. Section bodyHtml is semantic HTML only (no <html>/<head>/<style> wrappers; <table> with class=\"num\" on numeric cells, class=\"caption\" for source/footnote lines). Follow the doc-type-lender-brief / doc-type-client-brief references for the section set.",
     inputSchema: {
       type: "object",
       properties: {
@@ -3291,7 +3650,7 @@ const TOOLS: McpTool[] = [
   {
     name: "document.generateComps",
     description:
-      "Generate a RockCap 'Appendix A — Master Comparable Schedule' (comps) as a spreadsheet (XLSX, default) or Word table (DOCX), and stage it for operator approval; on approval it is filed to the client's Documents library. A comps appendix is the comparable-evidence table attached to a lender credit pack / client brief that justifies a scheme's GDV pricing. YOU compose the structured compsData: one or more sheets (tabs), each with configurable columns and tier/section groups of comparable rows (address, scheme, date, price, sqft, £psf, type, beds, notes, evidence). Set column roles ('price','sqft','psf') and leave £psf blank to auto-compute it (price ÷ sqft); a tier can carry an auto-average row. Ground every comp in real evidence (Land Registry / agent listings); never fabricate prices or sqft. See the doc-type-comps-appendix reference for structure.",
+      "Generate a RockCap 'Appendix A — Master Comparable Schedule' (comps) as a spreadsheet (XLSX, default) or Word table (DOCX), and stage it for operator approval; on approval it is filed to the client's Documents library. A comps appendix is the comparable-evidence table attached to a lender credit pack / client brief that justifies a scheme's GDV pricing. YOU compose the structured compsData: one or more sheets (tabs), each with configurable columns and tier/section groups of comparable rows (address, scheme, date, price, sqft, £psf, type, beds, notes, evidence). Set column roles ('price','sqft','psf') and leave £psf blank to auto-compute it (price ÷ sqft); a tier can carry an auto-average row. Ground every comp in real evidence (Land Registry / agent listings) — check atoms.search for scheme pricing facts (has_gdv / has_price_psf / has_valuation) already in the knowledge graph before composing; never fabricate prices or sqft. See the doc-type-comps-appendix reference for structure.",
     inputSchema: {
       type: "object",
       properties: {
@@ -3438,7 +3797,7 @@ const TOOLS: McpTool[] = [
   {
     name: "cadence.approvePackage",
     description:
-      "Approve a whole cadence PACKAGE (all touches sharing a packageId) so the dispatcher will fire them. A freshly-created cold-outreach package is queued at packageApprovalStatus='pending' and never fires until approved — this is that gate. Get the packageId from cadence.create's result or cadence.listByPackage. Pair with cadence.denyPackage to discard the sequence.",
+      "Approve a cadence PACKAGE AND begin outreach in one step (prospecting v3). Flips every touch (shared packageId) to approved, writes the prospect's pipelineStage to 'cold_outreach' on first approval (forward-only — never regresses a warm prospect), backfills outreachReadyAt, and fires touch 1 within seconds (later touches auto-send on their scheduled dates). Enforces a no-contact guard: throws if the package has no sendable contact email. This is the single 'Approve & begin outreach' gate; pair with cadence.denyPackage to discard. Get the packageId from cadence.create or cadence.listByPackage.",
     inputSchema: {
       type: "object",
       properties: { packageId: { type: "string", description: "The shared packageId of the cadence touches to approve." } },
@@ -3448,6 +3807,29 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.cadences.approvePackageInternal, {
         packageId: args.packageId,
         userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "intel.revalidate",
+    description:
+      "Run the cheap intel-revalidate pass (prospecting v3, mode 2) for a prospect: a diff-focused check of whether the prior full intel still holds (new CH charges, status change, new planning/scheme activity, news). Returns 'still_valid' | 'materially_changed'. On materially_changed the prospect is flagged for an intel refresh (intelAttentionAt). This is the lightweight counterpart to a full prospect-intel re-run; the cadence dispatcher runs it automatically before a touch fires after a >30-day gap, and a booked meeting on >7-day-stale intel raises the same flag.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex clients id of the prospect." },
+        companyNumber: { type: "string", description: "Companies House number (optional; resolved from the prospect if omitted)." },
+        reason: { type: "string", description: "Optional free-text reason for the manual re-check." },
+      },
+      required: ["clientId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runAction(internal.intelRevalidate.runRevalidateInternal, {
+        clientId: args.clientId,
+        companyNumber: args.companyNumber,
+        reason: args.reason,
+        triggeredBy: "operator",
       });
       return asText(result);
     },
@@ -3465,6 +3847,324 @@ const TOOLS: McpTool[] = [
       const result = await ctx.runMutation(internal.cadences.denyPackageInternal, {
         packageId: args.packageId,
         userId,
+      });
+      return asText(result);
+    },
+  },
+
+  // ── Outreach triage backbone (2026-07-14) ────────────────────
+  // The cross-prospect "what needs me + what fires next" read-model plus the
+  // batch approval writes. Powers the /outreach skill and the stage-workspace
+  // session digest. See convex/outreachTriage.ts.
+  {
+    name: "outreach.triageQueue",
+    description:
+      "THE cross-prospect triage read: every open outreach action in one call, grouped by kind — pendingPackages (cadence packages awaiting approve/deny), needsContact (held drafts with no sendable contact), replyDrafts (staged reply approvals awaiting accept), otherApprovals, failedSends (approved sends that errored — retry or reject), unroutedReplies (classifier sent to operator_review), deadEndReplies (ingested but matched no contact/prospect — otherwise invisible), stalledCadences (intel_hold / auto_deactivated_failures / paused — cadences that silently stopped), flaggedClients (needs-action flags from the reply lifecycle), staleIntel. Rows are trimmed (no bodies) — follow up with approval.get / reply.get / cadence.get for full content. ALWAYS call this first in an /outreach triage session; it replaces stitching together approval.listPendingByClient + reply.listUnrouted + per-prospect cadence reads.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.triageQueue, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.listUpcoming",
+    description:
+      "The OUTBOX: every active cadence touch due inside the horizon (default 7 days, max 90), sorted by fire date, each with an honest fireStatus — 'scheduled' / 'due_now' (will fire on the next 5-min dispatcher tick) vs 'paused' / 'blocked_package_pending' / 'blocked_no_contact_email' (will NOT send, and why). Overdue-but-blocked rows are the answer to 'why didn't this send?'. This is the operator's 'whether and when will cadences fire' view — no other surface shows approved future touches across prospects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        daysAhead: { type: "number", description: "Horizon in days (default 7, max 90)." },
+        limit: { type: "number", description: "Max touches returned (default 100, max 200)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachTriage.listUpcoming, {
+        daysAhead: args.daysAhead,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.approveBatch",
+    description:
+      "Approve up to 50 pending approvals in one call and FIRE each action (same executor path as approval.approve — a gmail_send really sends). RULE: itemise the batch to the operator first (one line each: recipient, subject, what fires) and get an explicit yes; batch approval is a convenience over per-item clicking, never a blind bulk flip. Per-item no-op-safe: missing/non-pending rows land in `skipped` with a reason instead of aborting the batch. Returns {total, approved, skipped[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the approvals rows to approve (max 50).",
+        },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.approveBatchInternal, {
+        approvalIds: args.approvalIds,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.approvePackageBatch",
+    description:
+      "Approve up to 25 cadence packages in one call — each gets the full cadence.approvePackage treatment (no-contact guard, pipelineStage → cold_outreach forward-only, outreachReadyAt backfill) with ONE dispatcher kick at the end, so due touch-1s fire within seconds. RULE: itemise the packages to the operator first (company, touch count, first send date) and get an explicit yes. Per-item safe: a package failing its no-contact guard is reported in results[] with ok:false instead of aborting the batch. Returns {total, approved, results[]}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to approve (max 25).",
+        },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.approvePackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.retry",
+    description:
+      "Re-queue an execution_failed approval for a REAL retry (kill switch was off, Gmail token needed reconnect, transient error). The operator already approved this exact content — retry re-runs the same executor without a re-draft. Use on the failedSends section of outreach.triageQueue after checking the executionError. No-op-safe: {ok:false, reason:'not_failed_*'} on non-failed rows.",
+    inputSchema: {
+      type: "object",
+      properties: { approvalId: { type: "string", description: "Convex id of the execution_failed approvals row." } },
+      required: ["approvalId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.retryInternal, {
+        approvalId: args.approvalId,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.reactivate",
+    description:
+      "Reactivate a STALLED cadence — the recovery action for the stalledCadences section of outreach.triageQueue. Clears ALL three silent stall states in one call (intel hold, 3-strike failure auto-deactivation, pause), sets isActive back to true, and optionally reschedules via newNextDueAt. Refuses deliberate stops: cancelled rows (reply cancellation / operator cancel), denied packages, and needs_contact holds return {ok:false} with the right redirect (fresh cadence / re-approve / cadence.setPackageContact). For an intel_hold stall, consider intel.revalidate or a fresh prospect-intel run BEFORE reactivating — the hold exists because the intel looked stale.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cadenceId: { type: "string" },
+        newNextDueAt: { type: "string", description: "Optional ISO timestamp — reschedule the touch on reactivation." },
+      },
+      required: ["cadenceId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.reactivateInternal, {
+        cadenceId: args.cadenceId,
+        userId,
+        newNextDueAt: args.newNextDueAt,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "reply.resolveBatch",
+    description:
+      "Mark up to 100 replies HANDLED so they leave the triage queue (listUnrouted / outreach.triageQueue / the session digest) while keeping full history on the row. THE backlog-reset primitive for replies: use when the operator confirms items were already answered outside the system (e.g. manually via Gmail), acknowledged, or aren't actionable (spam, dead-end from an irrelevant sender). Pass a resolutionNote saying WHY (e.g. 'answered manually via Gmail pre-system', 'not actionable — newsletter'). RULE: itemise the batch to the operator and get an explicit yes first — resolving hides items from every queue. Per-item no-op-safe ({skipped[]} for missing/already-resolved). Does NOT send anything or touch cadences.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the replyEvents rows to mark handled (max 100).",
+        },
+        resolutionNote: { type: "string", description: "Why these are considered handled — lands on every row for the audit trail." },
+      },
+      required: ["replyEventIds", "resolutionNote"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.replyEvents.resolveBatchInternal, {
+        replyEventIds: args.replyEventIds,
+        resolutionNote: args.resolutionNote,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.denyPackageBatch",
+    description:
+      "Deny up to 25 cadence packages in one call: every touch in every listed package is marked denied + inactive so none EVER fire. THE backlog-reset primitive for stale drafted outreach — e.g. packages drafted for prospects the operator has since emailed manually outside the system (sending them now would double-email). Pass a reason for the audit trail (defaults to operator_denied_package). RULE: itemise the packages (company, touches, drafted-when) and get an explicit operator yes first — this discards drafted work. A prospect denied here can get FRESH outreach later via the outreach-draft skill. Per-item safe: unknown packageIds land in results[] with ok:false.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Shared packageIds of the cadence packages to deny (max 25).",
+        },
+        reason: { type: "string", description: "Audit reason, e.g. 'stale_draft_manual_outreach_took_over'." },
+      },
+      required: ["packageIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.denyPackageBatchInternal, {
+        packageIds: args.packageIds,
+        userId,
+        reason: args.reason,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "approval.rejectBatch",
+    description:
+      "Reject up to 50 pending approvals in one call — every draft is discarded, NOTHING sends. The backlog-reset counterpart of approval.approveBatch: use when clearing stale staged drafts (superseded by manual sends, outdated content). Pass a reason for the audit trail. RULE: itemise to the operator and get an explicit yes first. Per-item no-op-safe ({skipped[]} for missing/non-pending rows).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvalIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Convex ids of the pending approvals rows to reject (max 50).",
+        },
+        reason: { type: "string", description: "Audit reason recorded on every row." },
+      },
+      required: ["approvalIds"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.approvals.rejectBatchInternal, {
+        approvalIds: args.approvalIds,
+        reason: args.reason,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "client.dismissNeedsActionFlag",
+    description:
+      "Dismiss a needs-action flag on a prospect (the flaggedClients section of outreach.triageQueue / the 'Waiting on you' chip). Use after the operator has made the decision the flag was asking for — e.g. reviewed a reply_not_interested and decided keep-or-lost, acknowledged an out-of-office. Pass the flag's kind exactly as returned by the triage queue (reply_received / reply_flag_only / reply_not_interested / reply_out_of_office / ...) and, when the flag row carries one, its sourceReplyEventId — kind+source identify WHICH flag to clear when a prospect has several.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clientId: { type: "string", description: "Convex clients id of the prospect." },
+        kind: { type: "string", description: "The flag kind to clear, exactly as listed on the triage queue row." },
+        sourceReplyEventId: { type: "string", description: "The flag's sourceReplyEventId when present — disambiguates same-kind flags." },
+      },
+      required: ["clientId", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.clients.clearNeedsActionFlagInternal, {
+        clientId: args.clientId,
+        kind: args.kind,
+        sourceReplyEventId: args.sourceReplyEventId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "touchpoint.logManualSend",
+    description:
+      "Backfill outbound emails that were sent OUTSIDE the system (operator used a generic Gmail tool) as real outbound touchpoints — up to 50 per call. For each entry: logs the touchpoint, stamps the prospect's lastOutreachSendAt forward, and advances the prospect state machine exactly as a real send would (no-op-safe). THE reconciliation write for sends with NO drafted package — when a manual send matches a drafted package's touch 1, use cadence.adoptManualSend instead (it also refits the follow-ups). Idempotent when gmailMessageId is supplied (re-running a reset never double-logs). Resolve each send from the operator's Gmail Sent search: recipient email, sent date, subject, message id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entries: {
+          type: "array",
+          description: "Manual sends to log (max 50).",
+          items: {
+            type: "object",
+            properties: {
+              contactEmail: { type: "string", description: "Recipient email — resolved to a contact + prospect. Preferred key." },
+              contactId: { type: "string", description: "Convex contacts id, if already known (alternative to contactEmail)." },
+              clientId: { type: "string", description: "Convex clients id override when the contact can't be resolved." },
+              occurredAt: { type: "string", description: "ISO timestamp of the actual manual send (from Gmail)." },
+              subject: { type: "string", description: "Email subject, for the history row." },
+              gmailMessageId: { type: "string", description: "Gmail message id — supplies idempotency; pass it whenever the Gmail search returned one." },
+              note: { type: "string", description: "Optional context, e.g. 'found during 2026-07 backlog reset'." },
+            },
+            required: ["occurredAt"],
+          },
+        },
+      },
+      required: ["entries"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.touchpoints.logManualOutboundBatchInternal, {
+        entries: args.entries,
+        actorUserId: userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "cadence.adoptManualSend",
+    description:
+      "AUTOFIT a drafted cadence package onto a manual send (backlog reconciliation). When the operator sent touch 1 THEMSELVES outside the system: marks touch 1 fired-externally at the real send date (the dispatcher can never re-send it — no double-email), REFITS the unfired follow-up touches onto the preset schedule anchored at that date (past-due dates pushed forward: min 2 days out, 2 days apart, order kept), logs the send as an outbound touchpoint (idempotent on gmailMessageId), stamps lastOutreachSendAt, and advances the prospect state. The package keeps its approval status: a pending package still needs the operator's normal 'Approve & begin outreach' before follow-ups fire — an already-approved one auto-sends on the new dates (say so explicitly when itemising). Use instead of denying when the operator wants the drafted follow-up sequence to CONTINUE from their manual send. Errors: package_not_found, touch_1_already_fired (nothing to adopt), invalid_sentAt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageId: { type: "string", description: "The drafted package whose touch 1 the operator sent manually." },
+        sentAt: { type: "string", description: "ISO timestamp of the real manual send (from Gmail Sent)." },
+        preset: { type: "string", description: "Follow-up spacing: light / moderate (default) / aggressive." },
+        gmailMessageId: { type: "string", description: "Gmail message id of the manual send — idempotency for the touchpoint." },
+        subject: { type: "string", description: "Subject of the manual send (defaults to the drafted touch-1 subject)." },
+      },
+      required: ["packageId", "sentAt"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.cadences.adoptManualSendInternal, {
+        packageId: args.packageId,
+        sentAt: args.sentAt,
+        preset: args.preset,
+        gmailMessageId: args.gmailMessageId,
+        subject: args.subject,
+        userId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "deal.listByStage",
+    description:
+      "SELECTION read for the /cold-reachout action flow (and any stage-scoped session): list mirrored HubSpot deals sitting in one pipeline stage, each joined to its app-side prospect where one exists, with explicit dedupe/readiness flags — appClient (the linked clients row with pipelineStage / prospectState / lastOutreachSendAt), alreadyWorked (true when the linked prospect has send evidence — SKIP these in a cold-reachout selection, they belong to follow-up), linkedContactCount + contactWithEmail (whether outreach can actually send). Both pipelineId AND stageId are required — HubSpot dealstage ids are only unique within a pipeline. Freshness = the HubSpot mirror sync (recurring sync + webhooks), not a live HubSpot call. Known ids live in the RockCap-MCP docs (e.g. Cold Reachout pipeline 1755919552, Weekly Targets stage 2380814543).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pipelineId: { type: "string", description: "HubSpot pipeline id (required — pairs with stageId)." },
+        stageId: { type: "string", description: "HubSpot dealstage id within that pipeline." },
+        limit: { type: "number", description: "Max deals returned (default 25, max 100)." },
+      },
+      required: ["pipelineId", "stageId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(internal.deals.listByStageForSelectionInternal, {
+        pipelineId: args.pipelineId,
+        stageId: args.stageId,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "outreach.metrics",
+    description:
+      "OUTCOME metrics for outreach (Phase 2) — triage checks state, this reports results over a window (default 90 days): sends (outbound email touchpoints, incl. reconciliation-backfilled manual sends), substantive replies (out-of-office excluded from rate math but reported), response rate at contact level (share of emailed contacts who replied — the honest headline) and send level, touchesPerEarnedReply (the operator's priority number: average sends it took to earn a contact's first reply), and a byTemplate table (sends / replies / responseRate per templateKey, replies attributed to the latest fired touch before the reply; legacy sends land in 'untagged'). Capped + windowed — `capped` flags mean a number is a floor. Baselines are only honest AFTER the backlog reset has backfilled manual sends. Use in the *-triage commands' metrics section.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sinceDays: { type: "number", description: "Window in days (default 90, max 365)." },
+      },
+      required: [],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runQuery(api.outreachMetrics.summary, {
+        sinceDays: args.sinceDays,
       });
       return asText(result);
     },
@@ -3844,6 +4544,95 @@ const TOOLS: McpTool[] = [
     },
   },
 
+  // ── Harness classification, Claude-side (2026-07-07) ─────────
+  // The two halves that make bulk document classification runnable through
+  // Claude Code (subscription cost) instead of the v4 API pipeline. The
+  // server parses and persists deterministically; the AGENT is the
+  // classifier. The API pipeline (driveHydration cron → /api/drive/ingest)
+  // stays untouched as the automatic lane for changed-file re-processing.
+  {
+    name: "document.extractText",
+    description:
+      "Harness classification step 1 — returns a document's raw text so YOU classify it, then persist your verdict with document.applyClassification. Text-layer documents (PDF/DOCX/XLSX/CSV/EML/…) are parsed SERVER-SIDE with ZERO LLM. The ONE exception: image documents (PNG/JPG term sheets) and scanned image-only PDFs have no text layer, so they are transcribed faithfully via vision — method:'vision' in the result flags this (treat as best-effort OCR; [illegible] marks unreadable regions). Works on any documents row: uses the stored bytes when current, and for a PENDING Drive-imported doc (no bytes yet) fetches them from Drive, caches them in Convex storage, and CLAIMS the mirror row ('processing') so the automatic pipeline doesn't race you — finish with applyClassification within ~30 min or the claim is reclaimed and the API pipeline takes over. Returns {text (a ≤120K-char WINDOW), truncated, textOffset, fullTextChars, fileName, mimeType, contentChecksum, source, method ('parser'|'vision'), parsedName, alreadyClassified, alreadyAtomized}. PAGING (2026-07): when fullTextChars exceeds the window, call again with `textOffset` (the note tells you the next offset) — multi-sheet workbooks now parse EVERY sheet (priority-ordered, per-sheet budget, manifest of all sheets at the top of page one), so atomize fact-dense documents from ALL pages, not just page one; the contentChecksum is identical across pages of one revision. parsedName is the V1.2 file-naming-standard parse of the fileName (docs/classification/RockCap_FileNamingStandard_RC_INTERNAL_V1.2_20260708.md; schema src/lib/naming/filename_schema.json): {scheme, docType, documentDate?, origin{role,party?}, status?, version?, reissue?, filingDate, confidence:'full'|'partial'} or null for non-standard names — TREAT A confidence:'full' parsedName.docType AS A STRONG CLASSIFICATION PRIOR (the name was authored to the client-confirmed convention; the schema's docTypes map gives its appFileType), 'partial' as a hint to verify against content, null as no signal. KEEP contentChecksum — applyClassification requires it for Drive docs (it is the drift anchor). alreadyClassified=true means the doc already has a real classification: skip it in bulk passes unless the operator asked for a re-classify (re-classifying never moves its folder). alreadyAtomized=true means the knowledge graph already has observations for this doc. This is the bulk/onboarding lane; automatic re-processing of CHANGED Drive files stays on the API pipeline.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string", description: "The documents row to parse." },
+        textOffset: { type: "number", description: "Optional paging offset into the full parsed text (default 0). Use the next-offset value from the previous call's note to read the following ≤120K-char page." },
+      },
+      required: ["documentId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(
+        internal.knowledge.harnessClassify.extractText,
+        { documentId: args.documentId, textOffset: args.textOffset },
+      );
+      return asText(result);
+    },
+  },
+  {
+    name: "document.applyClassification",
+    description:
+      "Harness classification step 2 — persist YOUR classification of a document (after document.extractText) with server-side deterministic filing, mirroring the v4 pipeline's persistence exactly. Use the vocabulary of EXISTING fileTypeDetected/category values — category MUST be one of the 13 canonical categories: Appraisals, Plans, Inspections, Professional Reports, KYC, Loan Terms, Legal Documents, Project Documents, Financial Documents, Insurance, Communications, Warranties, Photographs. fileTypeDetected is the specific type (e.g. 'RedBook Valuation', 'Facility Letter', 'Cashflow', 'Bank Statement', 'Meeting Minutes') — grep a few existing values via document.listByClient if unsure. ALSO PASS THE TWO CLASSIFICATION AXES when you can determine them: producer (client|rockcap|lender|third_party_professional|statutory_authority) and audience (internal|external|neutral) — content-derived (see the per-field descriptions; body stamp beats filename token, Drive owner is never a producer signal). The axes are persisted in the doc's extractedData.classificationAxes and refine SUBFOLDER placement: the server resolves the target folder from (fileTypeDetected, category, producer, audience) through the same placement-rules table the pipeline uses (project taxonomy when the doc has a projectId, client taxonomy otherwise; nested folder keys like client_appraisals/rockcap_appraisals/comps_appendix fall back to their parent folder on older projects; lender_pack is NEVER a target — it encodes an operator send-event, not a category) — on FIRST classification only; a doc that already has a folder is NEVER moved (folders are app-owned). Side effects match the pipeline: knowledge-bank entry (create-only), meeting-extraction job heuristics, context-cache invalidation, an ingestionEvents feed row, and drift-aware completion of the Drive mirror row (pass the contentChecksum extractText returned — REQUIRED for Drive docs; if the file changed in Drive mid-classification the row re-arms and the automatic pipeline re-extracts). Pass textContent (≤900K chars) to persist the parsed text for future re-analysis/atomization — recommended on first classification. Optional keyDates/keyAmounts/keyEntities land in the documentAnalysis block. CLASSIFICATION IDENTITY IS IMMUTABLE: if the doc already has a real classification (extractText returned alreadyClassified:true), your fileTypeDetected/category/producer/audience/confidence are IGNORED — only contents refresh (summary/documentAnalysis/textContent/checksum) and the result carries identityLocked:true; reclassification is a future explicit operator tool (the identityLocked path is the designated hook for the later re-atomization migration). This persists at zero API cost — you already did the classification.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        contentChecksum: { type: "string", description: "The fetch-time checksum document.extractText returned. REQUIRED for Drive-mirrored docs." },
+        fileTypeDetected: { type: "string", description: "Specific document type, e.g. 'RedBook Valuation', 'Facility Letter', 'Meeting Minutes'." },
+        category: { type: "string", description: "One of the 13 canonical categories (see tool description)." },
+        producer: {
+          type: "string",
+          enum: ["client", "rockcap", "lender", "third_party_professional", "statutory_authority"],
+          description: "WHO authored the document — detect from CONTENT, never Drive metadata (Drive owner is always rockcap.uk). client = developer-ops DNA (timesheets, trade cost matrices, Gross Margin %); rockcap = debt-structuring DNA (LTGDV / Lender IRR / Lender Dashboard tabs / Note house template); lender = first-person lender voice + broker-as-a-fee-line; third_party_professional = firm letterhead / architect job numbers; statutory_authority = HEREBY PERMITS / TCPA citations / planning refs. Refines subfolder placement (e.g. client_appraisals vs rockcap_appraisals).",
+        },
+        audience: {
+          type: "string",
+          enum: ["internal", "external", "neutral"],
+          description: "WHO the document is for — detect from body name-stamp + register; a filename AUDIENCE token records filing custody only and can lie (body stamp wins). neutral = public record (statutory decisions).",
+        },
+        summary: { type: "string", description: "≤1200 chars. What the document is, who it concerns, the headline figures/dates." },
+        confidence: { type: "number", description: "0..1 (clamped server-side)." },
+        reasoning: { type: "string", description: "Why you classified it this way — audit trail." },
+        keyDates: { type: "array", items: { type: "string" }, description: "Notable dates, e.g. '2027-09-30 (maturity)'." },
+        keyAmounts: { type: "array", items: { type: "string" }, description: "Notable amounts, e.g. '£3.2M senior facility'." },
+        keyEntities: {
+          type: "object",
+          description: "People/companies/locations/projects named in the document.",
+          properties: {
+            people: { type: "array", items: { type: "string" } },
+            companies: { type: "array", items: { type: "string" } },
+            locations: { type: "array", items: { type: "string" } },
+            projects: { type: "array", items: { type: "string" } },
+          },
+        },
+        textContent: { type: "string", description: "Optional (≤900K chars): the parsed text, persisted on the doc for future re-analysis." },
+      },
+      required: ["documentId", "fileTypeDetected", "category", "summary", "confidence"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(
+        internal.knowledge.harnessClassify.applyClassification,
+        {
+          documentId: args.documentId,
+          contentChecksum: args.contentChecksum,
+          fileTypeDetected: args.fileTypeDetected,
+          category: args.category,
+          producer: args.producer,
+          audience: args.audience,
+          summary: args.summary,
+          confidence: args.confidence,
+          reasoning: args.reasoning,
+          keyDates: args.keyDates,
+          keyAmounts: args.keyAmounts,
+          keyEntities: args.keyEntities,
+          textContent: args.textContent,
+        },
+      );
+      return asText(result);
+    },
+  },
+
   // ── Spreadsheet extraction, Claude-side (2026-06-01) ─────────
   // The server hands over the cells; the agent does the extraction. getSheetData
   // turns a stored xlsx/csv into structured cells so the model can reason out the
@@ -4114,6 +4903,872 @@ const TOOLS: McpTool[] = [
         notes: args.notes,
       });
       return asText(result);
+    },
+  },
+
+  // ── Drive domain ─────────────────────────────────────────────
+  // One org-wide Google Drive connection, mirrored every 2 min into
+  // driveFolders/driveFiles. Mapping a folder to a client sets OWNERSHIP SCOPE
+  // only; IMPORT is the purposeful act that creates a documents row and turns
+  // the live extraction link on. Folder imports dry-run first — a deliberate
+  // cost barrier, because every imported file is later extracted through the
+  // Claude-powered v4 pipeline. These tools drive ingestion from Claude Code.
+  // Phase 6 adds the ONLY writes back to Drive — organizational operations
+  // (createFolder / moveFile / rename; never file contents) — each staged as
+  // a PENDING approval and gated behind the /settings/drive write-back
+  // kill switch (checked at queue time AND re-checked at execute time).
+  {
+    name: "drive.status",
+    description:
+      "Google Drive connection status + mirror stats in one call. Returns the connected account email, root folder, lastSyncAt, and whether the connection needs re-authorising (needsReconnect), plus mirror counts: total/mapped/trashed folders, total/imported/trashed files, and files by extractionStatus. Read-only. Start here to confirm Drive is connected and synced before listing or importing.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (ctx, _userId) => {
+      const result = await ctx.runQuery(internal.driveSync.getStatusForMcpInternal, {});
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.listFolders",
+    description:
+      "List the child folders of a Drive folder (omit parentFolderId to list the connection root), with the root→here breadcrumb. Each folder carries its effective client mapping — effectiveClientId/effectiveClientName (the nearest ancestor mapping, inherited if not set on this folder) and isExplicitMapping (whether the mapping lives on THIS folder) — plus its effective PROJECT mapping: effectiveProjectId/effectiveProjectName and isExplicitProjectMapping (same nearest-ancestor semantics; a project mapping makes imports from that subtree file at PROJECT level) — plus its wide-net auto-import state: effectiveAutoImport/isExplicitAutoImport (see drive.setAutoImport) and autoImportCapHit (ms — the folder tripped the 20/day auto-import cap; a stamp from today means files are waiting on a manual import / harness wave). Read-only — this is how you navigate the Drive tree to find the folder to map or import. Mapping/scope is set with drive.mapFolderToClient / drive.mapFolderToProject; nothing is imported by listing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        parentFolderId: {
+          type: "string",
+          description: "Drive folder id to list children of. Omit for the connection root.",
+        },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.listFolderChildrenInternal, {
+        parentFolderId: args?.parentFolderId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.listFiles",
+    description:
+      "List the files in a Drive folder from the mirror: name, mimeType, size, modifiedTime, driveFileId, imported (whether a documents row exists — i.e. documentId is set), extractionStatus (none/settling/processing/complete/error), and documentId when imported. By default lists only the folder's direct files; pass subtree:true to list the whole descendant subtree (import-picker style, capped at 500 rows with a `truncated` flag). Read-only. Use to see what is importable and what has already been imported/extracted before calling drive.importFiles / drive.importFolder.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        folderId: { type: "string", description: "Drive folder id" },
+        subtree: {
+          type: "boolean",
+          description: "List the whole descendant subtree (capped at 500) instead of just direct files.",
+        },
+      },
+      required: ["folderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.listFilesForMcpInternal, {
+        folderId: args.folderId,
+        subtree: args?.subtree,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.getFile",
+    description:
+      "Full mirror detail for a single Drive file by driveFileId: name, mimeType, size, modifiedTime, parentFolderId, trashed, md5Checksum, webViewLink, imported flag + linked documentId, extractionStatus/extractionError, and the effective client scope (inScope / clientId / clientName / mappedFolderId — resolved via the nearest mapped ancestor folder). Read-only. Use to inspect one file's import + extraction state and confirm which client it would import under.",
+    inputSchema: {
+      type: "object",
+      properties: { driveFileId: { type: "string", description: "Drive file id" } },
+      required: ["driveFileId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.driveSync.getFileForMcpInternal, {
+        driveFileId: args.driveFileId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.mapFolderToClient",
+    description:
+      "Map a Drive folder to a client — or omit clientId to clear the mapping. Mapping sets OWNERSHIP SCOPE ONLY: it does NOT import or extract anything, creates no documents rows, and queues no work, so mapping a 10,000-file historical folder costs nothing. The mapping is inherited by descendant folders/files (nearest-ancestor wins) and determines which client a later import files under. To actually bring files into the app library, use drive.importFolder / drive.importFiles after mapping. Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id" },
+        clientId: {
+          type: "string",
+          description: "Convex clients id to map to. Omit to clear the mapping.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.mapFolderToClientInternal, {
+        driveFolderId: args.driveFolderId,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.mapFolderToProject",
+    description:
+      "Map a Drive subfolder to an in-app project — or omit projectId to clear the mapping — so imports from that subtree file at PROJECT level (documents get projectId/projectName stamped and land in the project's folder taxonomy instead of polluting the client library). The folder MUST already sit inside a client-mapped subtree, and the project must belong to that same client — rejected otherwise. Like drive.mapFolderToClient this sets SCOPE ONLY: nothing is imported or extracted, no documents rows are created, no work is queued. Inherited by descendant folders (nearest projectId-mapped ancestor wins). Typical onboarding: map the client's top folder (drive.mapFolderToClient) → map each project subfolder with this → import per project (drive.importFolder). Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id (must be inside a client-mapped subtree)" },
+        projectId: {
+          type: "string",
+          description: "Convex projects id to map to (must belong to the folder's effective client). Omit to clear the mapping.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.mapFolderToProjectInternal, {
+        driveFolderId: args.driveFolderId,
+        projectId: args.projectId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.setAutoImport",
+    description:
+      "Arm (or disarm) WIDE-NET auto-import on a Drive folder — a STANDING AUTHORIZATION: from now on, NEW files dropped anywhere in this subtree are automatically imported on the poll tick that mirrors them (metadata-first document immediately, then classified through the v4 API pipeline at a few cents per file). The folder's effective scope must have a client mapping (drive.mapFolderToClient first) — the flag is inert outside a client scope. Inherits like the project mapping: nearest ancestor-or-self with the flag EXPLICITLY set wins, so enabled:false on a subfolder carves it out of a flagged parent. GUARD RAILS: capped at 20 auto-imports/day per flagged folder. A bulk drop beyond the cap stays mirrored but UNIMPORTED, the folder is flagged (autoImportCapHit — badged in the /settings/drive tree), and cap-skipped files do NOT retro-import the next day (they are no longer 'new' to the mirror) — run drive.importFolder / a harness classification wave for the remainder. Atomization stays a harness-lane act regardless. Arming imports nothing retroactively — existing files still need an explicit import. Returns {ok, enabled}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id (should sit inside a client-mapped subtree — the flag has no effect outside one)" },
+        enabled: { type: "boolean", description: "true to arm auto-import for the subtree; false to disarm (or to carve a subfolder out of a flagged parent)" },
+      },
+      required: ["driveFolderId", "enabled"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.setFolderAutoImportInternal, {
+        driveFolderId: args.driveFolderId,
+        enabled: args.enabled,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.importFiles",
+    description:
+      "Import specific Drive files into the app library (≤200 driveFileIds per call). Each imported file becomes a METADATA-FIRST document immediately — visible in the client's library at once (fileName/size/link) — and extraction follows automatically within the ~5–20 min settle window through the Claude-powered v4 pipeline; thereafter Drive edits auto-update the document. Files under a project-mapped folder (drive.mapFolderToProject) are additionally stamped with projectId/projectName and file into the PROJECT's folder taxonomy on extraction. Returns {imported, skipped:[{driveFileId, reason}]} — a file is skipped if it is trashed, already imported, not found, or its folder has no client mapping (map it first with drive.mapFolderToClient). Use for a targeted handful of files; for a whole folder use drive.importFolder (which dry-runs the cost first). DUPLICATE SIGNATURE: several files whose Drive createdTime clusters in a tight window (seconds apart) AND whose createdTime > modifiedTime are COPIES pasted in together (e.g. a curated 'Lender Pack' send bundle) — the cheap first check is the same filename elsewhere in the tree. Classify such files by TYPE to their canonical folder (never to a lender_pack folder) and note them as outbound-pack members / probable duplicates of the canonical copy.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFileIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Drive file ids to import (max 200).",
+        },
+      },
+      required: ["driveFileIds"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.importDriveFilesInternal, {
+        driveFileIds: args.driveFileIds,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.importFolder",
+    description:
+      "Import a whole Drive folder subtree into the app library. WITHOUT confirm this is a DRY RUN — zero writes — returning {dryRun:true, fileCount (importable files), alreadyImported, folders}; nothing is imported. This is a deliberate COST BARRIER: every imported file is later extracted through the Claude-powered v4 pipeline. You MUST present fileCount to the operator and only call again with confirm:true after their EXPLICIT approval. WITH confirm:true it imports the subtree, chaining through the scheduler: it returns the first slice's counts ({dryRun:false, imported, queuedForImport, ...}) and the rest continues in the background. Files land as metadata-first documents immediately (visible at once) and extract automatically within the ~5–20 min settle window; thereafter Drive edits auto-update the documents. Files under a project-mapped folder (drive.mapFolderToProject) are stamped with projectId/projectName and file into the PROJECT's folder taxonomy — map project subfolders BEFORE importing so project documents don't pollute the client library. Files whose folder has no client mapping are skipped — map the folder first with drive.mapFolderToClient. DUPLICATE SIGNATURE (common in imported deal folders): files whose Drive createdTime clusters in a tight window (seconds apart) AND whose createdTime > modifiedTime are COPIES pasted in together — typically an operator-curated 'Lender Pack' send bundle duplicating files that live elsewhere in the tree (same filename is the cheap first check). Classify such files by TYPE to their canonical folder (lender_pack is never a classification target) and treat them as outbound-pack members / probable duplicates of the canonical copy.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFolderId: { type: "string", description: "Drive folder id" },
+        confirm: {
+          type: "boolean",
+          description:
+            "Omit/false for a dry-run count (nothing imported). Pass true ONLY after the operator approves the count.",
+        },
+      },
+      required: ["driveFolderId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.driveSync.importDriveFolderInternal, {
+        driveFolderId: args.driveFolderId,
+        confirm: args?.confirm,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "drive.createFolder",
+    description:
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only four writes the app EVER makes to Drive (create folder / move file / rename / save email attachment — the app never edits existing file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name of the new folder" },
+        parentFolderId: {
+          type: "string",
+          description: "Drive folder id of the parent (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["name", "parentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "create_folder",
+        args: { name: args.name, parentFolderId: args.parentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Folder creation staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.moveFile",
+    description:
+      "Stage moving a Drive file to a different folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the move execute (the executor fetches the file's CURRENT parents live from Drive at that moment, so a file that moved in the meantime is handled correctly, and the mirror is updated immediately — no re-extraction is queued, since contents don't change). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. Both the file and the destination folder must be in the mirror. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveFileId: { type: "string", description: "Drive file id to move" },
+        newParentFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed)",
+        },
+      },
+      required: ["driveFileId", "newParentFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "move_file",
+        args: { driveFileId: args.driveFileId, newParentFolderId: args.newParentFolderId },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Move staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.rename",
+    description:
+      "Stage renaming a Drive file or folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the rename execute (echoed into the mirror immediately — folder renames recompute descendant paths, imported file renames update the library's fileName live; no re-extraction is queued). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. The item must be in the mirror; the connection root folder cannot be renamed. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        driveId: { type: "string", description: "Drive id of the file or folder to rename" },
+        newName: { type: "string", description: "The new name" },
+        kind: {
+          type: "string",
+          description: '"file" or "folder" — which table the id refers to',
+        },
+      },
+      required: ["driveId", "newName", "kind"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "rename",
+        args: { driveId: args.driveId, newName: args.newName, kind: args.kind },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+  {
+    name: "drive.saveEmailAttachment",
+    description:
+      "Stage copying an attachment from an inbound Gmail email into a Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written by this call. The approval appears at /approvals; only after the operator approves does the executor fetch the attachment bytes from the mailbox owner's Gmail (the bytes are never stored in the app), upload them into the target folder, and echo the new file into the mirror immediately. Identify the email by replyEventId (preferred — any Gmail-ingested row from the reply feed) OR gmailMessageId (Gmail message id / RFC822 Message-ID, for mail not in the feed — read from the calling user's mailbox). filename must match an attachment on the message — check with reply.listAttachments first, and pass its partId to disambiguate duplicate filenames. The destination folder must be in the mirror (drive.listFolders) and not trashed. Pass importToLibrary:true to ALSO import the uploaded file as a metadata-first document (extraction follows via the v4 pipeline — a few cents; requires the folder to have an effective client mapping, else the import is skipped with a reason in the executionResult). NOTE: the upload does NOT trigger folder auto-import even when armed (the executor mirrors the file before the poller sees it) — importToLibrary is the only import lane. Optional newName renames the file on upload. Requires the Drive write-back kill switch ON at /settings/drive — throws (nothing staged) if off; the executor re-checks it at fire time. Also requires the mailbox owner's Gmail connection to be live. Returns {approvalId, description}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        replyEventId: {
+          type: "string",
+          description: "Reply event id of the Gmail-ingested email carrying the attachment (preferred).",
+        },
+        gmailMessageId: {
+          type: "string",
+          description:
+            "Alternative: a Gmail message id or RFC822 Message-ID header, for mail not in the reply feed (read from the calling user's mailbox).",
+        },
+        filename: {
+          type: "string",
+          description: "Filename of the attachment to save (as listed by reply.listAttachments).",
+        },
+        partId: {
+          type: "string",
+          description: "MIME part id from reply.listAttachments — pass to disambiguate duplicate filenames.",
+        },
+        targetFolderId: {
+          type: "string",
+          description: "Drive folder id of the destination (must exist in the mirror and not be trashed).",
+        },
+        newName: {
+          type: "string",
+          description: "Optional new filename for the uploaded file (defaults to the attachment's own name).",
+        },
+        importToLibrary: {
+          type: "boolean",
+          description:
+            "Also import the uploaded file into the app library after upload (extraction cost applies; folder must have a client mapping).",
+        },
+      },
+      required: ["filename", "targetFolderId"],
+    },
+    handler: async (ctx, userId, args) => {
+      const result = await ctx.runMutation(internal.driveWriteback.requestWrite, {
+        userId,
+        op: "upload_email_attachment",
+        args: {
+          replyEventId: args.replyEventId,
+          gmailMessageId: args.gmailMessageId,
+          filename: args.filename,
+          partId: args.partId,
+          targetFolderId: args.targetFolderId,
+          newName: args.newName,
+          importToLibrary: args.importToLibrary,
+        },
+      });
+      return asText({
+        ...result,
+        status: "PENDING OPERATOR APPROVAL",
+        message:
+          "Upload staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before the attachment is fetched from Gmail and uploaded. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+      });
+    },
+  },
+
+  // ── atoms.* — Knowledge Layer (Spec 2 §11 / §14b.1) ──────────
+  // The HARNESS LANE write surface. Claude Code (subscription cost) does bulk
+  // atomization via these tools; the API lane (a Convex cron → Next route)
+  // handles cheap incremental re-atomization. BOTH lanes persist through
+  // knowledge/atomsCore, so the three persistence gates (anchored /
+  // discriminating / material) are machine-checked server-side and cannot be
+  // bypassed. Predicates come from a versioned vocabulary module — call
+  // atoms.vocabulary FIRST so you never guess a predicate name.
+  {
+    name: "atoms.createBatch",
+    description:
+      "Persist a batch of candidate atoms (≤100 per call — chunk larger sets). Each atom is ONE self-contained fact anchored to a rostered entity. THREE GATES are enforced server-side and an atom that fails ANY is REJECTED, not stored: (1) anchored — subjectId must resolve to a real row (clients/projects/contacts/companiesHouseCompanies/facilities) or the atom is dropped; (2) discriminating — the peer test is your job at extraction time (see the atomize-document skill); (3) material — amounts, terms, parties/roles, dates, obligations, security, ownership, status, appetite. Predicates MUST come from the vocabulary (families: financing, people, structure, property) — call atoms.vocabulary first; unknown or native-store predicates (officer_of, has_appetite_for, etc.) are rejected. Each atom needs EXACTLY ONE of objectEntityId (an EDGE — also set objectEntityType) or objectLiteral{value,valueType,currency?,unit?} (an ATTRIBUTE). Returns the engine's result verbatim: {created, corroborated, superseded, contested, rejected, facilities}. CRITICAL: READ the `rejected` array — each entry has {index, statement, reason}. Do NOT silently drop rejects: fix the cause (usually a subjectId/objectEntityId that isn't a real row, an unknown predicate, or edge/literal both-or-neither) and resubmit the repaired atoms. Corroboration, contradiction and supersession are handled automatically (five docs stating one GDV converge on one atom). FACILITY DISCIPLINE (2026-07): a lends_to or funds_project edge with a tranche qualifier MINTS/REBUILDS the (project, lender, tranche) facility — status stamped from the source doc class (term sheet → indicative) — and `facilities.minted`/`facilities.rebuilt` return {facilityId, projectId, lenderClientId?, lenderCompanyId?, tranche?} so you can map your quote to its facility. Anchor the quote's economics (has_loan_amount, has_interest_rate, matures_on, has_loan_term_months, has_guarantee) to subjectType 'facility' with that facilityId in a FOLLOW-UP batch — NEVER to the project, where rival lenders' numbers contest each other as false conflicts. Recommended per terms doc: batch 1 = the funds_project/lends_to edge (+ scheme facts); read facilities from the result; batch 2 = the facility-anchored economics.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atoms: {
+          type: "array",
+          description: "≤100 candidate atoms.",
+          items: {
+            type: "object",
+            properties: {
+              statement: { type: "string", description: "One self-contained sentence." },
+              subjectType: { type: "string", description: "client | project | contact | company | facility" },
+              subjectId: { type: "string", description: "Stringified Convex id of the subject row (must exist)." },
+              predicate: { type: "string", description: "A vocabulary predicate (call atoms.vocabulary)." },
+              objectEntityType: { type: "string", description: "EDGE only: type of the object row." },
+              objectEntityId: { type: "string", description: "EDGE only: Convex id of the object row (must exist). Mutually exclusive with objectLiteral." },
+              objectLiteral: {
+                type: "object",
+                description: "ATTRIBUTE only. Mutually exclusive with objectEntityId.",
+                properties: {
+                  value: { description: "Canonicalized value (ISO date / raw number / string / range)." },
+                  valueType: { type: "string", description: "currency | number | percentage | date | string | range" },
+                  currency: { type: "string" },
+                  unit: { type: "string" },
+                },
+              },
+              qualifier: { type: "string", description: "Multi-instance disambiguation, e.g. Senior / Mezzanine." },
+              clientId: { type: "string", description: "Owning client scope (Convex id)." },
+              projectId: { type: "string", description: "Owning project scope (Convex id)." },
+              asOf: { type: "string", description: "ISO date the fact was true in the world." },
+              confidence: { type: "number", description: "0..1." },
+              observation: {
+                type: "object",
+                description: "Provenance for THIS source occurrence.",
+                properties: {
+                  sourceType: { type: "string", description: "document | companies_house | apollo | operator | skill | migration" },
+                  documentId: { type: "string" },
+                  contentChecksum: { type: "string" },
+                  locator: {
+                    type: "object",
+                    properties: {
+                      page: { type: "number" },
+                      sheet: { type: "string" },
+                      row: { type: "number" },
+                      cellRange: { type: "string" },
+                      section: { type: "string" },
+                    },
+                  },
+                  sourceText: { type: "string", description: "Verbatim snippet — the audit anchor." },
+                  externalRef: { type: "string", description: "CH charge/filing id, Apollo id, skillRunId, userId." },
+                  authorityTier: { type: "number", description: "5 executed-legal > 4 facility-letter > 3 valuation > 2 internal-brief > 1 email." },
+                },
+                required: ["sourceType", "authorityTier"],
+              },
+            },
+            required: ["statement", "subjectType", "subjectId", "predicate", "confidence", "observation"],
+          },
+        },
+      },
+      required: ["atoms"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.createAtomsBatch, {
+        candidates: args.atoms ?? [],
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.vocabulary",
+    description:
+      "Return the legal predicate vocabulary as a map of {name → {kind, family, direction?, description, store}}. Call this BEFORE atoms.createBatch so you use real predicate names instead of guessing. `kind` is edge (needs objectEntityId) or attribute (needs objectLiteral). `store` of 'native' means the fact lives in a structural table and is REJECTED as an atom (officer_of, funds_project native side, has_appetite_for, etc.); 'atom'/'both' are storable. Families: financing, people, structure, property, meta.",
+    inputSchema: { type: "object", properties: {} },
+    handler: async (_ctx, _userId, _args) => {
+      return asText({
+        predicates: PREDICATES,
+        families: ["financing", "people", "structure", "property", "meta"],
+        note: "store='native' predicates are rejected by atoms.createBatch (they belong in structural tables). Use kind to decide objectEntityId (edge) vs objectLiteral (attribute).",
+      });
+    },
+  },
+  {
+    name: "atoms.supersede",
+    description:
+      "Operator/hygiene: mark an atom superseded (status=superseded, reason=operator). Use when a fact is stale/wrong and should drop out of retrieval but its provenance must survive (atoms are never hard-deleted). `reason` is a free-text explanation for the audit note; the lifecycle reason is recorded as 'operator'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atomId: { type: "string", description: "Convex id of the atom." },
+        reason: { type: "string", description: "Why it is being superseded (audit note)." },
+      },
+      required: ["atomId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.supersedeAtom, {
+        atomId: args.atomId,
+        reason: "operator" as const,
+      });
+      return asText({ ...result, operatorReason: args.reason });
+    },
+  },
+  {
+    name: "atoms.retire",
+    description:
+      "Operator/hygiene: retire an atom (status=retired). Stronger than supersede — the fact is removed from the live graph but kept for provenance. Use for atoms that should never have existed (misextraction). `reason` is a free-text audit note.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        atomId: { type: "string", description: "Convex id of the atom." },
+        reason: { type: "string", description: "Why it is being retired (audit note)." },
+      },
+      required: ["atomId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.retireAtom, {
+        atomId: args.atomId,
+      });
+      return asText({ ...result, operatorReason: args.reason });
+    },
+  },
+  {
+    name: "atoms.resolveContested",
+    description:
+      "Operator adjudication of a contested fact: name the atom whose value is correct and the contest closes. The winner (winnerAtomId) returns to status=active; every OTHER member of its contested identity group (same subject/predicate/qualifier/object-kind) is archived as superseded (supersededBy=winner, reason=operator). Losers keep their full observation history — nothing is deleted. This is operator hygiene, NOT an approvals action: it fires immediately and is reversible via the preserved provenance. Errors if the atom isn't currently contested. Returns {resolved, archived}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        winnerAtomId: { type: "string", description: "Convex id of the contested atom whose value is correct." },
+      },
+      required: ["winnerAtomId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.resolveContested, {
+        winnerAtomId: args.winnerAtomId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.getForSubject",
+    description:
+      "Return the atoms already stored for a subject entity (with observation counts), so you can check existing coverage before atomizing — the idempotency check for the harness lane. Pass subjectType + subjectId; optional status filter (active / contested / superseded / retired). Default returns all statuses.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subjectType: { type: "string", description: "client | project | contact | company | facility" },
+        subjectId: { type: "string", description: "Stringified Convex id of the subject." },
+        status: { type: "string", description: "Optional: active | contested | superseded | retired." },
+      },
+      required: ["subjectType", "subjectId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.atomsCore.getAtomsForSubject, {
+        subjectType: args.subjectType,
+        subjectId: args.subjectId,
+        status: args.status,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.upsertChunks",
+    description:
+      "Persist the narrative dual index for a document (spec §3.4): the chunk retrieval side that complements atoms for prose-heavy docs (legal opinions, reports). Chunks are disposable derivatives of ONE revision — this deletes the document's existing chunks and recreates them. Chunk narrative documents into ~800-token sections; SKIP fact-dense spreadsheets (atoms win there). Pass documentId, contentChecksum, and chunks:[{chunkIndex, text, locator?}] plus optional clientId/projectId scope tags.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+        contentChecksum: { type: "string" },
+        clientId: { type: "string" },
+        projectId: { type: "string" },
+        chunks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              chunkIndex: { type: "number" },
+              text: { type: "string" },
+              tokenCount: { type: "number" },
+              locator: {
+                type: "object",
+                properties: {
+                  page: { type: "number" },
+                  sheet: { type: "string" },
+                  section: { type: "string" },
+                },
+              },
+            },
+            required: ["chunkIndex", "text"],
+          },
+        },
+      },
+      required: ["documentId", "contentChecksum", "chunks"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.upsertChunks, {
+        documentId: args.documentId,
+        contentChecksum: args.contentChecksum,
+        clientId: args.clientId,
+        projectId: args.projectId,
+        chunks: args.chunks ?? [],
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.search",
+    description:
+      "Search the knowledge layer in TWO RESULT LANES at once. `results` = ATOMS: discrete facts with provenance — a HYBRID of full-text (Convex search index) and semantic vector similarity (Voyage embeddings over the atom statements), fused with reciprocal-rank fusion — so a query matches on MEANING (e.g. 'how leveraged is the scheme' surfaces LTGDV / loan-amount atoms with zero shared words) as well as exact terms, and an atom found by both lanes ranks highest (each hit carries a `lane` marker: text | vector | both). `chunks` = PROSE PASSAGES from the narrative dual index (documentChunks, spec §3.4): the same hybrid+RRF over chunk text, each hit carrying documentId + parent document {displayName, fileName, fileTypeDetected} + locator {page/sheet/section} + chunkIndex — use chunks for the nuance atoms flatten (caveats, conditions, reasoning, surrounding context in legal opinions / reports); chunk text is trimmed to ~700 chars with `truncated:true` when cut (read the full doc via document.get if you need more). includeChunks defaults TRUE; set false to skip the chunk lane. Atom filters: clientId (owning scope; also scopes chunks), subjectType, status (default: live atoms only — active + contested). Each atom hit returns the statement, predicate, resolved subject/object entity names, objectLiteral, status, confidence, primarySourceType and observation count — provenance rides inline, and the atomId is the handle for atoms.getForSubject / graph.expandEntity drill-downs. USE THIS as the entity-resolution entry point of a graph walk: search the name/phrase, read the subject off the top hit, then expandEntity from there. Contested atoms surface as status='contested' — present BOTH values to the operator, never silently pick one. If embeddings are unavailable both lanes degrade to full-text alone (vectorLaneDisabled:true).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Full-text search over atom statements." },
+        clientId: { type: "string", description: "Optional owning-client scope filter (Convex id)." },
+        subjectType: { type: "string", description: "Optional: client | project | contact | company | facility | candidate." },
+        status: { type: "string", description: "Optional: active | contested | superseded | retired. Default: live (active + contested)." },
+        limit: { type: "number", description: "Default 20, max 50." },
+        includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide hits whose owning clientId is a prospect-status clients row; counts.prospectScopedHidden reports how many were hidden." },
+        includeChunks: { type: "boolean", description: "Default true: also run the prose-chunk lane (same query + clientId) and return a `chunks` array (documentChunks hits with parent-document metadata + locator). Set false for atoms only." },
+        chunkLimit: { type: "number", description: "Max chunk hits. Default 8, max 20." },
+      },
+      required: ["query"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runAction(internal.knowledge.embeddings.atomsSearchHybrid, {
+        query: args.query,
+        clientId: args.clientId,
+        subjectType: args.subjectType,
+        status: args.status,
+        limit: args.limit,
+        includeProspectScoped: args.includeProspectScoped,
+      });
+
+      // Chunk lane (default ON) — prose passages from the narrative dual
+      // index, same query + client scope. Trimmed to ~2,200 chars per hit so
+      // the tool response stays bounded; `truncated:true` flags a cut.
+      let chunksSection: Record<string, unknown> = {};
+      let chunkIds: string[] = [];
+      if (args.includeChunks !== false) {
+        const chunkResult = await ctx.runAction(
+          internal.knowledge.embeddings.chunksSearchHybrid,
+          { query: args.query, clientId: args.clientId, limit: args.chunkLimit },
+        );
+        const chunks = chunkResult.results.map((c) => {
+          const truncated = c.text.length > CHUNK_TEXT_CAP;
+          return {
+            ...c,
+            text: truncated ? c.text.slice(0, CHUNK_TEXT_CAP) : c.text,
+            ...(truncated ? { truncated: true as const } : {}),
+          };
+        });
+        chunkIds = chunks
+          .map((c) => c.chunkId as string)
+          .slice(0, RETRIEVAL_LOG_CAP);
+        chunksSection = { chunks, chunkCounts: chunkResult.counts };
+      }
+
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget so the
+      // usage half of salience learns from real queries; off the latency path.
+      // Chunk hits log in the same batch (chunkId rows; salience-inert).
+      const atomIds = ((result.results ?? []) as Array<{ atomId?: unknown }>)
+        .map((row) => row.atomId)
+        .filter((id): id is string => typeof id === "string")
+        .slice(0, RETRIEVAL_LOG_CAP);
+      if (atomIds.length > 0 || chunkIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          chunkIds,
+          source: "search",
+          queryText: args.query,
+          clientId: args.clientId,
+          retrievedAt: Date.now(),
+        });
+      }
+      return asText({ ...result, ...chunksSection });
+    },
+  },
+
+  // ── atoms.*Candidate — provisional entities (Spec 2 Phase 2b, §3.5) ──
+  // The repair path for unresolvable mentions: mint a candidate, anchor the
+  // atom to it (subjectType/objectEntityType "candidate") — facts are never
+  // dropped. The 2-hourly enrichment worker resolves candidates (companies →
+  // CH, people → contacts/Apollo) and re-points referencing atoms through
+  // the identity machinery.
+  {
+    name: "atoms.createCandidate",
+    description:
+      "Mint (or reuse) a PROVISIONAL entity for a person/company mention that doesn't resolve to any roster id — the atomize-document repair path for `unresolved_subject`/`unresolved_object` rejects. Anchor the rejected atom to the returned candidateId with subjectType/objectEntityType 'candidate' and resubmit: the fact is NEVER dropped, and the background enrichment worker (2-hourly) resolves the candidate (companies → Companies House exact-name search + full sync; people → client-scoped contact match, then Apollo) and re-points every referencing atom to the real entity through the identity machinery (duplicates merge automatically). Dedup is built in: the same normalized mention (lowercased, punctuation-stripped) with the same guessedType reuses ONE candidate row across documents — `reused:true` tells you it already existed. If the candidate was ALREADY RESOLVED you get `{status:'resolved', resolvedType, resolvedId}` — anchor your atom to THAT real entity directly instead of the candidate. Pass `clientId` as a scope hint whenever you know the owning client (it is what lets the worker scan the right contact roster and give Apollo a company context; stored inside contextSnippet as 'client:<id>|<snippet>' — the schema is frozen). Returns {candidateId, reused, status} or the resolved-entity ref.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mentionText: { type: "string", description: "The mention verbatim, e.g. 'Land at Willersey SPV Ltd' or 'Jason Buttler'." },
+        guessedType: { type: "string", description: "'person' or 'company'." },
+        contextSnippet: { type: "string", description: "Optional verbatim source snippet around the mention — helps the worker and the operator judge who/what this is." },
+        sourceDocumentId: { type: "string", description: "Optional Convex id of the document the mention came from." },
+        clientId: { type: "string", description: "Optional owning-client scope hint (Convex id). STRONGLY recommended — person resolution is client-scoped." },
+      },
+      required: ["mentionText", "guessedType"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.createCandidate, {
+        mentionText: args.mentionText,
+        guessedType: args.guessedType,
+        contextSnippet: args.contextSnippet,
+        sourceDocumentId: args.sourceDocumentId,
+        clientId: args.clientId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.listCandidates",
+    description:
+      "List entityCandidates rows (provisional entities minted for unresolvable mentions) with referencing-atom counts. Optional status filter: 'pending' (awaiting enrichment — the default operator triage view), 'resolved' (tombstones pointing at the real entity via resolvedToType/resolvedToId), 'dismissed'. Each row carries mentionText, guessedType, enrichmentAttempts (the worker stops retrying after 3 failed attempts but NEVER auto-dismisses — a pending row with attempts=3 is waiting for the operator), scopeClientId (parsed from the stored scope hint), sourceDocumentId, and referencingAtoms {asSubject, asObject, total} so you can see how much of the graph hangs off each unresolved mention. Use with atoms.dismissCandidate to clear noise (typos, generic phrases wrongly minted as entities).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Optional: pending | resolved | dismissed. Omit for all." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.candidates.listCandidates, {
+        status: args?.status,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.dismissCandidate",
+    description:
+      "Operator hygiene: mark an entityCandidates row 'dismissed' — this mention is not a real resolvable entity (a typo, a generic phrase, an out-of-scope party) and the enrichment worker should never chase it again. Atoms anchored to the candidate stay anchored (the facts survive, flagged as unconfirmed via their candidate reference); a later atomization pass re-encountering the same mention reuses the dismissed row rather than resurrecting it as fresh pending noise. Errors on an already-resolved candidate (the tombstone must survive so re-extraction keeps resolving instantly). This is the ONLY dismissal path — the worker itself never auto-dismisses, it just stops retrying after 3 failed attempts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        candidateId: { type: "string", description: "Convex id of the entityCandidates row." },
+      },
+      required: ["candidateId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.candidates.dismissCandidate, {
+        candidateId: args.candidateId,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "atoms.mergeEntities",
+    description:
+      "Operator hygiene: collapse a DUPLICATE existing entity into its canonical twin on the KNOWLEDGE GRAPH. Use when the SAME real thing exists under two ids — a client created twice (HubSpot/promotion), a '(175)'-suffixed duplicate contact, a company synced under two Companies House rows — and their atoms/facilities/scope tags are split across both. Re-points every knowledge-side reference from `fromId` to `toId` (BOTH must be the same `entityType`) and routes each atom through the SAME identity machinery Phase-2b candidate resolution uses: a re-pointed atom that now duplicates a live atom on the target MERGES (its observations move to the survivor, corroboration bumps, the duplicate is superseded); a value clash goes CONTESTED (both live, surfaced for adjudication — never a silent double). Also re-scopes the denormalized refs the subject/object re-point misses: atoms.clientId/projectId, the facilities mirror columns (lender/borrower/company/project), documentChunks scope tags, and appetiteSignals.lenderClientId. SCOPE: knowledge graph ONLY. This tool is CRM-BLIND — it does NOT reassign CRM tables (contacts/documents/tasks/notes/…) and does NOT delete or soft-delete the `from` entity row. For client duplicates run the CRM-side merge separately (migrations/mergeDuplicateClients — it is the atom-blind mirror of this tool); then remove the source row. `entityType`: client | project | contact | company | facility | candidate. For 'candidate' this RESOLVES the candidate to a real entity — pass `toType` (the resolved entity's type), and `toId` is that real entity's id. `reason` is a free-text audit note. Writes an auditLog row and returns {repointed, merged, contested, scope:{atomsRescoped, chunksRescoped, facilitiesRescoped, appetiteRescoped}} so you see exactly what moved.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate. fromId and toId are BOTH this type (except 'candidate', where toId is the resolved real entity named by toType)." },
+        fromId: { type: "string", description: "Convex id of the DUPLICATE to collapse (the entityCandidates id when entityType='candidate')." },
+        toId: { type: "string", description: "Convex id of the canonical entity to keep (the real entity's id when entityType='candidate')." },
+        reason: { type: "string", description: "Why these are the same entity (audit note)." },
+        toType: { type: "string", description: "Required ONLY when entityType='candidate': the resolved real entity's type (client | project | contact | company | facility)." },
+      },
+      required: ["entityType", "fromId", "toId", "reason"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runMutation(internal.knowledge.atomsCore.mergeEntities, {
+        entityType: args.entityType,
+        fromId: args.fromId,
+        toId: args.toId,
+        reason: args.reason,
+        toType: args.toType,
+      });
+      return asText(result);
+    },
+  },
+
+  // ── graph.* — Knowledge Layer traversal (Spec 2 §9 / §14b) ───
+  // Read-side of the graph. YOU (Claude) are the query planner — there is no
+  // retrieval router: a hop is one tool call, and multi-hop reasoning is a
+  // SEQUENCE of calls with pruning between hops. Atom edges and native
+  // structural edges are federated at read time (never stored twice), every
+  // edge carries provenance inline, and fan-out is truncated per the hub
+  // rule (top-K by rank + full counts, so "27 edges — expand?" is cheap).
+  {
+    name: "graph.expandEntity",
+    description:
+      "ONE HOP of the knowledge graph: the neighborhood of an entity, federating ATOM edges (facts extracted from documents/CH/Apollo/operators, provenance-stamped) with NATIVE edges synthesized live from structural tables (projects.clientRoles → funds_project/developing, contacts → works_at, clients group SPVs → spv_of_group, CH officers/PSC → officer_of/psc_of via exact-name match only — provenance.matchQuality flags it, facilities columns → funds/lends_to/secured_on with the facility hub as the node). When both lanes assert the same edge the atom wins and its provenance notes nativeCorroboration. Claude is the query planner: multi-hop questions are a SEQUENCE of expandEntity calls with reasoning between hops — pivoting is just calling this again on a neighbor. FAN-OUT RULE: edges/nativeEdges/attributes are each ranked (contested first → confidence desc → asOf recency) and truncated to `limit` (default 30, cap 100); counts always carries the FULL totals + truncated flag, so surface 'N more — expand?' instead of re-fetching blindly. Every edge carries inline provenance {sourceType, ref (atomId or table), observationCount}. Attributes are the entity's literal facts (GDV, loan amount, rates; contested values surface FIRST — present both, never pick silently); lender clients also get current appetiteSignals federated in as has_appetite_for attributes. WORKED EXAMPLE — 'which of our clients have exposure to Hampshire Trust Bank?': (1) atoms.search({query:'Hampshire Trust Bank'}) resolves the lender entity; (2) graph.expandEntity({entityType:'client', entityId:<HTB>, direction:'out'}) → nativeEdges: funds_project → Comberton (clientRoles), funds → Facility · £3.2M; edges: lends_to → Fireside Capital (facility letter, 2 observations), holds_charge_over → Bayfield SPV (CH charge ref); (3) you map projects/facilities → borrower clients and answer with three exposures, each cited. Two calls, no router. interEdges = edges among the returned ring — render them; they're what makes clusters visible. Set includeRingAttributes:true to also get ringAttributes — each ring member's own literal facts (a project's GDV/planning/cost), keyed by `${type}:${id}`, capped 12/member — so a ring member's knowledge is visible without a second expand.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: { type: "string", description: "client | project | contact | company | facility | candidate" },
+        entityId: { type: "string", description: "Convex id of the entity row." },
+        predicates: { type: "array", items: { type: "string" }, description: "Optional predicate filter (vocabulary names + synthetic facility predicates funds/lends_to/secured_on)." },
+        direction: { type: "string", description: "out | in | both (default both)." },
+        includeAttributes: { type: "boolean", description: "Default true. Set false when you only need edges." },
+        limit: { type: "number", description: "Fan-out cap per list. Default 30, hard cap 100." },
+        includeProspectScoped: { type: "boolean", description: "Default true (unfiltered — the LLM lane sees everything; spec §14b.6a). Set false to hide ATOM-lane items (edges/attributes/interEdges) whose owning clientId is a prospect-status clients row; native edges are public record and always exempt. counts.prospectScopedHidden reports how many were hidden." },
+        includeRingAttributes: { type: "boolean", description: "Default false. When true, also return ringAttributes: each ring member's ATTRIBUTE atoms (its literal facts) keyed by `${type}:${id}`, capped 12/member (overflow in ringAttributeTruncated), so ring knowledge is visible without a second expand. Atom lane only; respects includeProspectScoped." },
+      },
+      required: ["entityType", "entityId"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.expandEntityInternal, {
+        entityType: args.entityType,
+        entityId: args.entityId,
+        predicates: args.predicates,
+        direction: args.direction,
+        includeAttributes: args.includeAttributes,
+        limit: args.limit,
+        includeProspectScoped: args.includeProspectScoped,
+        includeRingAttributes: args.includeRingAttributes,
+      });
+      // Retrieval instrumentation (spec §10, Phase 2c) — fire-and-forget.
+      const atomIds = collectExpandAtomIds(result);
+      if (atomIds.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.knowledge.salience.logRetrieval, {
+          atomIds,
+          source: "expand",
+          clientId: args.entityType === "client" ? args.entityId : undefined,
+          subjectType: args.entityType,
+          subjectId: args.entityId,
+          retrievedAt: Date.now(),
+        });
+      }
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.sharedNeighbors",
+    description:
+      "The 'what connects these?' primitive: expand each input entity into a bounded structural GROUP (client → its role projects + facilities + CH group companies; project → its facilities + their SPV/borrower client; company → the client(s) it is a group SPV of + their mapped sibling companies; contact/facility/candidate → just themselves — ≤25 members/input, `capped` flagged per input in `groups`), then INTERSECT the UNION of each group's members' one-hop federated neighborhoods (atom + native edges) — a node counts as reached by an input if ANY of its group members has a direct edge to it. Returns only nodes reached by ALL inputs, each with per-input connections ({fromInput, groupMember?, predicate, direction, provenance}) — groupMember is set when the link runs input→member→node (the group hop), absent for a classic one-hop link. This closes the lender→facility→project→developer gap where the shared project sits two hops from a lender that anchors on the facility node. Use for prospect-connection checks ('does this new prospect share a director/lender with the book?'), co-exposure ('what sits between client X and lender Y?' — typically the facility + project), and dedupe suspicions. `via` narrows the shared-node type: people (contacts), companies (CH companies), lenders (clients with type='lender'), any (default). 2-5 input entities; only the input entities THEMSELVES are excluded from results — a group member the other side reaches (a developer's own project reached by a lender) is a legitimate shared node. For longer indirect chains use graph.findPaths.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entities: {
+          type: "array",
+          description: "2-5 entities to intersect.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "client | project | contact | company | facility | candidate" },
+              id: { type: "string", description: "Convex id." },
+            },
+            required: ["type", "id"],
+          },
+        },
+        via: { type: "string", description: "Optional shared-node filter: people | companies | lenders | any (default any)." },
+      },
+      required: ["entities"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.sharedNeighborsInternal, {
+        entities: args.entities ?? [],
+        via: args.via,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.findPaths",
+    description:
+      "Bounded path search between two entities over the federated edge function (atoms + native, same provenance-per-hop). BFS up to maxHops (≤3, default 3), total node expansions budgeted (~200) and per-node fan-out capped by the same contested→confidence→recency ranking, so a hub node can't blow the walk up. Returns up to 5 paths ranked shortest-first then by weakest-link confidence, each as an edge chain [{from, predicate, direction, to, provenance}] you can cite hop by hop. Use when sharedNeighbors (one hop plus its bounded group expansion) comes back empty and you suspect a longer indirect route ('how is this prospect connected to our book at all?'). counts.budgetExhausted=true means the walk was cut short — absence of a path is then NOT proof of disconnection.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: {
+          type: "object",
+          properties: { type: { type: "string" }, id: { type: "string" } },
+          required: ["type", "id"],
+        },
+        to: {
+          type: "object",
+          properties: { type: { type: "string" }, id: { type: "string" } },
+          required: ["type", "id"],
+        },
+        maxHops: { type: "number", description: "1-3 (default 3)." },
+      },
+      required: ["from", "to"],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(internal.knowledge.graphQueries.findPathsInternal, {
+        from: args.from,
+        to: args.to,
+        maxHops: args.maxHops,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "graph.overview",
+    description:
+      "The ORG-WIDE knowledge-graph snapshot (the atlas view): EVERY entity and edge in one call — all clients (flagged clientType lender/borrower/developer + clientStatus active/prospect) and projects, plus every contact/company/facility/candidate with ≥1 atom or structural edge. Edges federate BOTH lanes with the standard semantics: ATOM edges from one bounded walk of the atoms table (live only — active + contested; superseded/retired skipped) and NATIVE structural edges (clientRoles → funds_project/developing, contacts → works_at, group SPVs → spv_of_group, facility columns → funds/lends_to/secured_on, CH officers/PSC → officer_of/psc_of for companies already in the graph). Deduped per (from, to, predicate): the atom wins over its native mirror (`corroborated: true` notes the agreement); duplicate atoms keep the contested one — a contest is never hidden. Node keys and edge endpoints share the `<type>:<id>` format; each node carries atomCount/contestedCount (live atoms with it as subject) and degree (endpoints in the returned edge list). Use for the whole-book questions expandEntity can't answer in one hop — which lenders fan across multiple clients, where cross-client clusters sit, where the contested hotspots are — then drill with graph.expandEntity / atoms.getForSubject (edge.atomId is the handle). BOUNDED: response capped at maxNodes (default 2500) / maxEdges (default 6000), lowest-degree contact/company/candidate leaves dropped first; counts carries org-wide atom totals, node counts byType, and truncated=true when any cap bit. No prospect-scope filter — this is the everything view. Served from a CACHED snapshot (the graph outgrew a single query execution): the call rebuilds first only when the cache is older than ~5 min, and `builtAt` (epoch ms) rides along so you can see the snapshot's age.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxNodes: { type: "number", description: "Node cap (default and max 2500). Lowest-degree contact/company/candidate leaves drop first." },
+        maxEdges: { type: "number", description: "Edge cap (default and max 6000). Kept by contested-first → atom-over-native → confidence ranking." },
+      },
+    },
+    handler: async (ctx, _userId, args) => {
+      // Cached-snapshot read: rebuild only when past the TTL, then serve the
+      // stored chunks (the org-wide walk no longer fits one query execution).
+      await ctx.runAction(internal.knowledge.graphOverview.ensureFresh, {});
+      const snap = await ctx.runQuery(internal.knowledge.graphOverview.snapshotInternal, {
+        maxNodes: args.maxNodes,
+        maxEdges: args.maxEdges,
+      });
+      if (!snap.overview) {
+        // Only reachable when another build claimed the lock before the very
+        // first snapshot landed — momentary.
+        return asText({ error: "atlas snapshot is still building — retry in a few seconds" });
+      }
+      return asText({ ...snap.overview, builtAt: snap.builtAt });
     },
   },
 
