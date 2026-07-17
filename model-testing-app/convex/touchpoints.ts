@@ -163,6 +163,73 @@ export const backfillInboundFromReplies = internalAction({
   },
 });
 
+// Full-body sidecar for outbound email touchpoints (see schema note on
+// emailBodies — kept out of the slim ledger deliberately). Upsert-safe.
+export const saveBodyInternal = internalMutation({
+  args: {
+    touchpointId: v.id("touchpoints"),
+    bodyText: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.bodyText && !args.bodyHtml) return { ok: false };
+    const existing = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_touchpoint", (q: any) => q.eq("touchpointId", args.touchpointId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { bodyText: args.bodyText, bodyHtml: args.bodyHtml });
+      return { ok: true };
+    }
+    await ctx.db.insert("emailBodies", {
+      touchpointId: args.touchpointId,
+      bodyText: args.bodyText,
+      bodyHtml: args.bodyHtml,
+      createdAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  },
+});
+
+// Slim cursor page of outbound gmail touchpoints for the body backfill.
+export const listOutboundGmailInternal = internalQuery({
+  args: { beforeOccurredAt: v.optional(v.string()), scanLimit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.scanLimit ?? 50, 100);
+    const rows = await ctx.db
+      .query("touchpoints")
+      .withIndex("by_occurred_at", (q: any) =>
+        args.beforeOccurredAt ? q.lt("occurredAt", args.beforeOccurredAt) : q,
+      )
+      .order("desc")
+      .take(limit);
+    return {
+      candidates: rows
+        .filter(
+          (t: any) =>
+            t.provider === "gmail" && t.direction === "outbound" && t.kind === "email" && t.payloadRef,
+        )
+        .map((t: any) => ({
+          _id: t._id,
+          payloadRef: t.payloadRef,
+          capturedBy: t.capturedBy,
+          occurredAt: t.occurredAt,
+        })),
+      nextCursor: rows.length === limit ? rows[rows.length - 1].occurredAt : null,
+    };
+  },
+});
+
+export const getBodyInternal = internalQuery({
+  args: { touchpointId: v.id("touchpoints") },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("emailBodies")
+      .withIndex("by_touchpoint", (q: any) => q.eq("touchpointId", args.touchpointId))
+      .first();
+  },
+});
+
 export const patchCapturedByInternal = internalMutation({
   args: { touchpointId: v.id("touchpoints"), capturedBy: v.id("users") },
   handler: async (ctx, args) => {

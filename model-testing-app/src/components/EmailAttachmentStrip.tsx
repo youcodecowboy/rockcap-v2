@@ -68,13 +68,23 @@ export default function EmailAttachmentStrip({
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = res.filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      // Previewable types (PDF, images) open in a new tab so the operator
+      // can SEE the attachment; everything else downloads.
+      const previewable =
+        res.mimeType === 'application/pdf' || res.mimeType.startsWith('image/');
+      if (previewable) {
+        window.open(url, '_blank', 'noopener');
+        // Delay revocation so the new tab can load the blob.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = res.filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
     } catch (err: any) {
       setError(err?.message ?? 'Download failed');
     } finally {

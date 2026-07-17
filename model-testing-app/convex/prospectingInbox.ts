@@ -97,12 +97,21 @@ export const list = query({
       )
       .take(SCAN_CAP);
 
+    // Contentless HubSpot sweep rows are reply-DETECTION markers, not
+    // emails (no subject, no body, and attributed to whoever configured the
+    // sync — not a real mailbox). They confuse the feed and double-count
+    // replies the Gmail poller already captured, so they are excluded from
+    // BOTH the feed and the KPIs.
+    const isHubspotMarker = (t: any) =>
+      t.provider === "hubspot" && !t.subject && !t.bodyExcerpt;
+
     // Client join + prospect/stage filters.
     const meta = await loadClientMeta(
       ctx,
       new Set(tps.map((t: any) => String(t.relatedClientId))),
     );
     const filtered = tps.filter((t: any) => {
+      if (isHubspotMarker(t)) return false;
       const m = meta.get(String(t.relatedClientId));
       if (!m) return false;
       if (!args.includeNonProspects && m.status !== "prospect") return false;
@@ -151,7 +160,9 @@ export const list = query({
         contactNames.set(row.contactId, (c as any)?.name ?? "");
       }
       if (row.contactId) row.contactName = contactNames.get(row.contactId) || undefined;
-      if (t.capturedBy) {
+      // HubSpot-sourced rows carry the sync-configurer's user id, not a
+      // real mailbox — never show operator attribution for them.
+      if (t.capturedBy && t.provider !== "hubspot") {
         const key = String(t.capturedBy);
         if (!operators.has(key)) {
           const u = await ctx.db.get(t.capturedBy);
@@ -170,10 +181,35 @@ export const list = query({
 
 // Full email detail for the drawer's reading pane. Client-linked rows only
 // (the org-visibility rule — an unlinked reply is private inbox mail and
-// never reachable from the prospecting surfaces).
+// never reachable from the prospecting surfaces). Pass replyEventId for
+// inbound; touchpointId for outbound (body joins from the emailBodies
+// sidecar — in-app sends store it at send time, poller captures store it
+// at capture time, older rows via backfillOutboundBodies).
 export const detail = query({
-  args: { replyEventId: v.id("replyEvents") },
+  args: {
+    replyEventId: v.optional(v.id("replyEvents")),
+    touchpointId: v.optional(v.id("touchpoints")),
+  },
   handler: async (ctx, args) => {
+    if (args.touchpointId) {
+      const t: any = await ctx.db.get(args.touchpointId);
+      if (!t || !t.relatedClientId) return null;
+      const body: any = await ctx.db
+        .query("emailBodies")
+        .withIndex("by_touchpoint", (q: any) => q.eq("touchpointId", args.touchpointId))
+        .first();
+      return {
+        touchpointId: String(t._id),
+        subject: t.subject,
+        fromEmail: (t.participantEmails ?? [])[0],
+        receivedAt: t.occurredAt,
+        bodyHtml: body?.bodyHtml,
+        bodyText: body?.bodyText ?? t.bodyExcerpt,
+        attachments: [],
+        linkedClientId: String(t.relatedClientId),
+      };
+    }
+    if (!args.replyEventId) return null;
     const r: any = await ctx.db.get(args.replyEventId);
     if (!r || !r.linkedClientId) return null;
     return {
@@ -255,7 +291,11 @@ export const kpis = query({
       )
       .collect();
     for (const t of tps) {
-      const operatorId = t.capturedBy ? String(t.capturedBy) : undefined;
+      // Contentless HubSpot markers: excluded (see list — detection rows,
+      // not emails; likely duplicates of poller-captured replies).
+      if (t.provider === "hubspot" && !t.subject && !t.bodyExcerpt) continue;
+      const operatorId =
+        t.capturedBy && t.provider !== "hubspot" ? String(t.capturedBy) : undefined;
       if (t.direction === "outbound") {
         incs.push({ clientId: String(t.relatedClientId), field: "outboundSent", operatorId });
       } else if (t.direction === "inbound") {
