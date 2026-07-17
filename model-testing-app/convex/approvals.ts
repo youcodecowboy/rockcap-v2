@@ -304,6 +304,52 @@ export const internalCreate = internalMutation({
 
 // ── v1.3 — public queries for the prospect-detail Overview + Claude Code ──
 
+// Global pending queue (2026-07-17) — EVERYTHING waiting for an operator,
+// any entity type, any client, newest first. The chat-first approval flow's
+// session-opening read: without it an agent could only see pending work
+// per-client (listPendingByClient) or outreach-scoped (triageQueue), so
+// "what's waiting for me?" had no answer. Trimmed rows + client names; the
+// full draftPayload stays behind approval.get.
+export const listPendingInternal = internalQuery({
+  args: { entityType: v.optional(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.limit ?? 50, 200);
+    const rows = await ctx.db
+      .query("approvals")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .order("desc")
+      .filter((q) =>
+        args.entityType ? q.eq(q.field("entityType"), args.entityType) : q.eq(q.field("status"), "pending"),
+      )
+      .take(limit);
+    const clientNames = new Map<string, string | null>();
+    const out = [];
+    for (const r of rows) {
+      let clientName: string | null = null;
+      if (r.relatedClientId) {
+        const key = String(r.relatedClientId);
+        if (!clientNames.has(key)) {
+          const c: any = await ctx.db.get(r.relatedClientId);
+          clientNames.set(key, c?.name ?? c?.companyName ?? null);
+        }
+        clientName = clientNames.get(key) ?? null;
+      }
+      out.push({
+        approvalId: r._id,
+        entityType: r.entityType,
+        summary: r.summary,
+        requestedAt: r.requestedAt,
+        requestSourceName: r.requestSourceName,
+        relatedClientId: r.relatedClientId,
+        clientName,
+        relatedProjectId: r.relatedProjectId,
+        expiresAt: r.expiresAt,
+      });
+    }
+    return out;
+  },
+});
+
 // List pending approvals related to a client. Used by the Overview's
 // "Pending approvals" card AND by Claude Code when checking the status
 // of a drafted reply.

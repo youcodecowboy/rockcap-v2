@@ -21,6 +21,7 @@ import {
   Mail,
   Activity,
   Waypoints,
+  ShieldCheck,
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
@@ -63,6 +64,11 @@ export default function Sidebar() {
     { href: '/tasks', label: 'Tasks', icon: CheckSquare },
     { href: '/calendar', label: 'Calendar', icon: Calendar },
     { href: '/inbox', label: 'Inbox', icon: Mail },
+    // The trust gate — every external action (email sends, Drive writes)
+    // waits here. Was reachable only by typing the URL, which is how an
+    // operator ended up "unable to find the approvals page" (Edgefold,
+    // 2026-07-17). Never leave gates unnavigable.
+    { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
     { href: '/activity', label: 'Activity', icon: Activity },
     { href: '/filing', label: 'Upload & File', icon: Archive },
     { href: '/clients', label: 'Clients', icon: Building },

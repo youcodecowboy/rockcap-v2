@@ -2080,6 +2080,29 @@ const TOOLS: McpTool[] = [
   },
 
   {
+    name: "approval.listPending",
+    description:
+      "EVERYTHING pending operator approval, org-wide, any entity type, newest first — THE session-opening read for the chat-first approval flow. Each row: approvalId, entityType (gmail_send / client_communication / lender_outreach / drive_write / …), summary, requestedAt, requestSourceName, client/project links + clientName, expiresAt. Trimmed — pull the full draft with approval.get before presenting anything for a yes. The intended loop: list → present each item to the operator IN CHAT → on their explicit yes call approval.approve (approval.approveBatch ≤50 for a reviewed set; approval.reject/rejectBatch to decline) — the executor fires immediately on approve; the app's /approvals page is an alternative surface, never a requirement. Optional entityType filter (e.g. 'drive_write' for pending Drive writes only).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        entityType: {
+          type: "string",
+          description: "Filter to one entity type (e.g. drive_write, gmail_send, client_communication, lender_outreach).",
+        },
+        limit: { type: "number", description: "Max rows (default 50, max 200)" },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const rows = await ctx.runQuery(internal.approvals.listPendingInternal, {
+        entityType: args.entityType,
+        limit: args.limit,
+      });
+      return asText(rows);
+    },
+  },
+  {
     name: "approval.listPendingByClient",
     description:
       "List pending approvals for a specific client. Use to check whether qualify-and-draft or any other skill has staged drafts awaiting operator review. Returns the same approval rows as the Overview tab's 'Pending approvals' card. Includes all entity types (client_communication, gmail_send, lender_outreach, etc).",
@@ -5157,7 +5180,7 @@ const TOOLS: McpTool[] = [
   {
     name: "drive.createFolder",
     description:
-      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the folder get created (and echoed into the mirror immediately). This is one of the only four writes the app EVER makes to Drive (create folder / move file / rename / save email attachment — the app never edits existing file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
+      "Stage the creation of a new Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. Action it IN-CHAT: present the staged write to the operator and, on their explicit yes, call approval.approve (approval.approveBatch for many) — the app's /approvals page is an alternative surface, not a requirement. Only after approval does the folder get created (and echoed into the mirror immediately). This is one of the only four writes the app EVER makes to Drive (create folder / move file / rename / save email attachment — the app never edits existing file contents). Requires the Drive write-back kill switch to be enabled at /settings/drive — the call throws (nothing staged) if it is off. The parent folder must already be in the mirror (find it with drive.listFolders). Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5179,14 +5202,14 @@ const TOOLS: McpTool[] = [
         ...result,
         status: "PENDING OPERATOR APPROVAL",
         message:
-          "Folder creation staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+          "Folder creation staged — NOTHING has been written to Drive yet. Approve via approval.approve on the operator's explicit yes (or at /approvals in the app) before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },
   {
     name: "drive.moveFile",
     description:
-      "Stage moving a Drive file to a different folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the move execute (the executor fetches the file's CURRENT parents live from Drive at that moment, so a file that moved in the meantime is handled correctly, and the mirror is updated immediately — no re-extraction is queued, since contents don't change). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. Both the file and the destination folder must be in the mirror. Returns {approvalId, description}.",
+      "Stage moving a Drive file to a different folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. Action it IN-CHAT: present the staged write to the operator and, on their explicit yes, call approval.approve (approval.approveBatch for many) — the app's /approvals page is an alternative surface, not a requirement. Only after approval does the move execute (the executor fetches the file's CURRENT parents live from Drive at that moment, so a file that moved in the meantime is handled correctly, and the mirror is updated immediately — no re-extraction is queued, since contents don't change). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. Both the file and the destination folder must be in the mirror. Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5208,14 +5231,14 @@ const TOOLS: McpTool[] = [
         ...result,
         status: "PENDING OPERATOR APPROVAL",
         message:
-          "Move staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+          "Move staged — NOTHING has been written to Drive yet. Approve via approval.approve on the operator's explicit yes (or at /approvals in the app) before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },
   {
     name: "drive.rename",
     description:
-      "Stage renaming a Drive file or folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. The approval appears at /approvals; only after the operator approves does the rename execute (echoed into the mirror immediately — folder renames recompute descendant paths, imported file renames update the library's fileName live; no re-extraction is queued). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. The item must be in the mirror; the connection root folder cannot be renamed. Returns {approvalId, description}.",
+      "Stage renaming a Drive file or folder as a PENDING OPERATOR APPROVAL — nothing is written to Drive by this call. Action it IN-CHAT: present the staged write to the operator and, on their explicit yes, call approval.approve (approval.approveBatch for many) — the app's /approvals page is an alternative surface, not a requirement. Only after approval does the rename execute (echoed into the mirror immediately — folder renames recompute descendant paths, imported file renames update the library's fileName live; no re-extraction is queued). Organizational write only; the app never edits file contents. Requires the Drive write-back kill switch to be enabled at /settings/drive — throws (nothing staged) if off. The item must be in the mirror; the connection root folder cannot be renamed. Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5238,14 +5261,14 @@ const TOOLS: McpTool[] = [
         ...result,
         status: "PENDING OPERATOR APPROVAL",
         message:
-          "Rename staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+          "Rename staged — NOTHING has been written to Drive yet. Approve via approval.approve on the operator's explicit yes (or at /approvals in the app) before it executes. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },
   {
     name: "drive.saveEmailAttachment",
     description:
-      "Stage copying an attachment from an inbound Gmail email into a Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written by this call. The approval appears at /approvals; only after the operator approves does the executor fetch the attachment bytes from the mailbox owner's Gmail (the bytes are never stored in the app), upload them into the target folder, and echo the new file into the mirror immediately. Identify the email by replyEventId (preferred — any Gmail-ingested row from the reply feed) OR gmailMessageId (Gmail message id / RFC822 Message-ID, for mail not in the feed — read from the calling user's mailbox). filename must match an attachment on the message — check with reply.listAttachments first, and pass its partId to disambiguate duplicate filenames. The destination folder must be in the mirror (drive.listFolders) and not trashed. Pass importToLibrary:true to ALSO import the uploaded file as a metadata-first document (extraction follows via the v4 pipeline — a few cents; requires the folder to have an effective client mapping, else the import is skipped with a reason in the executionResult). NOTE: the upload does NOT trigger folder auto-import even when armed (the executor mirrors the file before the poller sees it) — importToLibrary is the only import lane. Optional newName renames the file on upload. Requires the Drive write-back kill switch ON at /settings/drive — throws (nothing staged) if off; the executor re-checks it at fire time. Also requires the mailbox owner's Gmail connection to be live. Returns {approvalId, description}.",
+      "Stage copying an attachment from an inbound Gmail email into a Google Drive folder as a PENDING OPERATOR APPROVAL — nothing is written by this call. Action it IN-CHAT: present the staged write to the operator and, on their explicit yes, call approval.approve (approval.approveBatch for many) — the app's /approvals page is an alternative surface, not a requirement. Only after approval does the executor fetch the attachment bytes from the mailbox owner's Gmail (the bytes are never stored in the app), upload them into the target folder, and echo the new file into the mirror immediately. Identify the email by replyEventId (preferred — any Gmail-ingested row from the reply feed) OR gmailMessageId (Gmail message id / RFC822 Message-ID, for mail not in the feed — read from the calling user's mailbox). filename must match an attachment on the message — check with reply.listAttachments first, and pass its partId to disambiguate duplicate filenames. The destination folder must be in the mirror (drive.listFolders) and not trashed. Pass importToLibrary:true to ALSO import the uploaded file as a metadata-first document (extraction follows via the v4 pipeline — a few cents; requires the folder to have an effective client mapping, else the import is skipped with a reason in the executionResult). NOTE: the upload does NOT trigger folder auto-import even when armed (the executor mirrors the file before the poller sees it) — importToLibrary is the only import lane. Optional newName renames the file on upload. Requires the Drive write-back kill switch ON at /settings/drive — throws (nothing staged) if off; the executor re-checks it at fire time. Also requires the mailbox owner's Gmail connection to be live. Returns {approvalId, description}.",
     inputSchema: {
       type: "object",
       properties: {
@@ -5300,7 +5323,7 @@ const TOOLS: McpTool[] = [
         ...result,
         status: "PENDING OPERATOR APPROVAL",
         message:
-          "Upload staged — NOTHING has been written to Drive yet. The operator must approve at /approvals before the attachment is fetched from Gmail and uploaded. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
+          "Upload staged — NOTHING has been written to Drive yet. Approve via approval.approve on the operator's explicit yes (or at /approvals in the app) before the attachment is fetched from Gmail and uploaded. (Drive write-back must also remain enabled at /settings/drive at execute time.)",
       });
     },
   },
