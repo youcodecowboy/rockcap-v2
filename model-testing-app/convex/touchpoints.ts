@@ -1,5 +1,11 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalMutation,
+  internalQuery,
+  internalAction,
+} from "./_generated/server";
 import { getAuthenticatedUserOrNull } from "./authHelpers";
 import { internal } from "./_generated/api";
 import { resolveEmailToContactClient } from "./contacts";
@@ -91,6 +97,92 @@ export const internalCreate = internalMutation({
       ...args,
       createdAt: new Date().toISOString(),
     });
+  },
+});
+
+// One-shot backfill: mirror historical client-linked replyEvents into slim
+// inbound touchpoints (createInternal on replyEvents does this at ingest
+// going forward). Idempotent — payloadRef = the replyEvents id. Run via:
+//   npx convex run touchpoints:backfillInboundFromReplies
+export const backfillInboundFromReplies = internalAction({
+  args: { limit: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ scanned: number; created: number; skipped: number }> => {
+    const max = args.limit ?? 5000;
+    let cursor: string | null = null;
+    let scanned = 0;
+    let created = 0;
+    let skipped = 0;
+    while (scanned < max) {
+      const batch: { candidates: any[]; nextCursor: string | null } = await ctx.runQuery(
+        internal.replyEvents.listLinkedSlimInternal,
+        { beforeReceivedAt: cursor ?? undefined },
+      );
+      for (const r of batch.candidates) {
+        scanned++;
+        const provider = r.source === "gmail_push" ? "gmail" : "hubspot";
+        const existing = await ctx.runQuery(
+          internal.touchpoints.findByProviderPayloadInternal,
+          { provider, payloadRef: String(r._id) },
+        );
+        if (existing) {
+          // Idempotent pass may still need to stamp operator attribution on
+          // rows created before capturedBy existed on the mirror.
+          if (!existing.capturedBy && r.userId) {
+            await ctx.runMutation(internal.touchpoints.patchCapturedByInternal, {
+              touchpointId: existing._id,
+              capturedBy: r.userId,
+            });
+          }
+          skipped++;
+          continue;
+        }
+        await ctx.runMutation(internal.touchpoints.internalCreate, {
+          provider,
+          direction: "inbound",
+          kind: "email",
+          contactId: r.contactId,
+          participantEmails: r.fromEmail ? [r.fromEmail] : undefined,
+          relatedClientId: r.linkedClientId,
+          occurredAt: r.receivedAt,
+          payloadRef: String(r._id),
+          payloadType: "replyEvent",
+          subject: r.replySubject,
+          bodyExcerpt: r.bodyExcerpt,
+          threadId: r.gmailThreadId,
+          capturedBy: r.userId,
+        });
+        created++;
+      }
+      if (!batch.nextCursor) break;
+      cursor = batch.nextCursor;
+    }
+    return { scanned, created, skipped };
+  },
+});
+
+export const patchCapturedByInternal = internalMutation({
+  args: { touchpointId: v.id("touchpoints"), capturedBy: v.id("users") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.touchpointId, { capturedBy: args.capturedBy });
+    return { ok: true };
+  },
+});
+
+// Dedupe lookup for the SENT-mail poller: in-app approved sends stamp
+// payloadRef with the Gmail message id, so a hit here means the send is
+// already tracked and the poller must not double-record it.
+export const findByProviderPayloadInternal = internalQuery({
+  args: { provider: v.string(), payloadRef: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("touchpoints")
+      .withIndex("by_provider_payload", (q: any) =>
+        q.eq("provider", args.provider).eq("payloadRef", args.payloadRef),
+      )
+      .first();
   },
 });
 

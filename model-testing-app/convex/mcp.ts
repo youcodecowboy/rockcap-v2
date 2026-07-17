@@ -4170,6 +4170,62 @@ const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "outreach.prospectingInbox",
+    description:
+      "THE prospecting inbox — the org-wide, client-linked view over BOTH mail directions in one feed, newest first. Inbound rows are replyEvents with a linkedClientId (contact-email match at ingest); outbound rows are gmail email touchpoints with a relatedClientId — in-app approved sends AND manual Gmail sends (the SENT poller captures those automatically since 2026-07-17, deduped against in-app sends by Gmail message id). Distinct from the operator's private /inbox: this surface only ever shows business correspondence. Each row: kind (inbound/outbound), occurredAt, subject, 160-char snippet (never full bodies — drill in with reply.get / touchpoint reads), clientId/clientName/pipelineStage, contact, counterpartyEmail, OPERATOR ATTRIBUTION (operatorName/operatorEmail — whose mailbox: 'sent by Rayn' vs 'received in Alex's inbox'; several operators prospect in parallel), classifiedIntent + resolvedAt (inbound), hasAttachments. Filters: stage (one of the 5 manual pipeline stages), direction, includeNonProspects (default FALSE — prospects only; pass true to include active clients), windowDays (default 45, max 120 — it is a recency surface, not an archive). Use for 'what mail moved with prospects this week', per-stage triage sweeps, and as the evidence read behind KPI questions — for the counts themselves prefer outreach.prospectingKpis.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        stage: {
+          type: "string",
+          description:
+            "Filter to one pipeline stage: cold_outreach | warm_pre_meeting | warm_post_meeting | pre_qualification | qualified",
+        },
+        direction: { type: "string", description: '"inbound" or "outbound" — omit for both' },
+        includeNonProspects: {
+          type: "boolean",
+          description: "Include active (non-prospect) clients too. Default false.",
+        },
+        windowDays: { type: "number", description: "Lookback window (default 45, max 120)" },
+        limit: { type: "number", description: "Max rows (default 50, max 100)" },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.prospectingInbox.list, {
+        stage: args.stage,
+        direction: args.direction,
+        includeNonProspects: args.includeNonProspects,
+        windowDays: args.windowDays,
+        limit: args.limit,
+      });
+      return asText(result);
+    },
+  },
+  {
+    name: "outreach.prospectingKpis",
+    description:
+      "Prospecting KPI counts over a window (default 30 days), total + broken down by pipeline stage: outboundSent (gmail email touchpoints to prospect-linked contacts — in-app sends + poller-captured manual Gmail sends), inboundReceived (client-linked replyEvents), meetingsHeld (calendar events with a matched prospect attendee whose start already passed inside the window) and meetingsUpcoming (matched events starting from now, ≤90d out) — the calendar attendee matcher links an event to a prospect when ≥1 attendee email resolves to one of its contacts (operators excluded, cancelled events excluded, internal-only meetings never count). Also returns uniqueProspectsContacted / uniqueProspectsReplied AND a byOperator breakdown (same buckets per operator — who is doing the prospecting; mail attributes to the mailbox owner, meetings to the calendar owner). Complements outreach.metrics (which measures the CADENCE pipeline: touches per earned reply, per-template attribution) — this tool measures the PROSPECTING FUNNEL regardless of how the mail was sent. Prospects only by default; includeNonProspects:true widens to active clients.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sinceDays: { type: "number", description: "Lookback window (default 30, max 120)" },
+        includeNonProspects: {
+          type: "boolean",
+          description: "Include active (non-prospect) clients too. Default false.",
+        },
+      },
+      required: [],
+    },
+    handler: async (ctx, _userId, args) => {
+      const result = await ctx.runQuery(api.prospectingInbox.kpis, {
+        sinceDays: args.sinceDays,
+        includeNonProspects: args.includeNonProspects,
+      });
+      return asText(result);
+    },
+  },
+  {
     name: "client.create",
     description:
       "Create a new borrower/developer client record (a clients row), defaulting to status='prospect'. The borrower-side counterpart to lender.create — closes the gap where a net-new prospect could previously only be seeded via CLI. Three input modes (priority order): (1) promoteFromCompanyId (Convex companies id) → promote an existing company, inheriting metadata + linking synced contacts; (2) hubspotCompanyId (string) → resolve the HubSpot id to a Convex company, then promote; (3) name only → naked creation for a genuinely net-new company. After create, populate via clients.setProspectFacts / intelligence.* / contact.create, then run prospect-intel. Defaults: type='borrower', status='prospect', country='United Kingdom'.",
