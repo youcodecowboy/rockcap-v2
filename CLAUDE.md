@@ -2,6 +2,9 @@
 
 ## Workflow Rules
 
+### Task tracking
+- **All task tracking goes through the logbook MCP server** (`logbook`, items ref'd `LOG-N`) — see the "Task Tracking" section below for the workflow. The old `.logbook/` markdown system and its `/jot`/`/triage` commands are retired; never write new entries there.
+
 ### Plan Execution
 - When executing any plan, the **last step** must always be:
   1. Run `npx next build` from `model-testing-app/` (the Next.js app lives there, not repo root) to check for build issues and fix any errors
@@ -34,7 +37,7 @@ When invoking a skill from `skills/skills/`:
 1. **Always call `skillRun.start` first** with `skillName`, `input`, `trigger` (if known), and (if the skill's `SKILL.md` has a `## Dedup` section) `dedupKey` plus `dedupWindowDays`. Use the returned `runId` for the rest of the workflow.
 2. **Honour the dedup response.** On `status: "duplicate_found"`, surface the prior brief to the operator and ask before continuing.
 3. **Always call `skillRun.complete` at the end** with status, brief, and links to created or updated entities. Never leave a run in `status: "running"`.
-4. **Log gaps as you find them.** On any gap surfaced during the run (see the `kind` enum on `skillRun.complete`), capture the entry in the `gaps` array and (in parallel) `/jot` it into the logbook for triage.
+4. **Log gaps as you find them.** On any gap surfaced during the run (see the `kind` enum on `skillRun.complete`), capture the entry in the `gaps` array and (in parallel) file it as a logbook MCP item (`create_item`, with the problem stated) for triage.
 
 ### Event-driven skills
 
