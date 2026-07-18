@@ -50,17 +50,18 @@ Some skills are not invoked by an operator; they are triggered by events (a cron
 
 ---
 
-## Task Tracking — Logbook Plugin
+## Task Tracking — Logbook MCP ("RockCap App" project)
 
-Task tracking lives in `.logbook/` and is managed by the [logbook](https://github.com/youcodecowboy/logbook) Claude Code plugin.
+Task tracking lives in the hosted logbook at `https://logbook.gvy.ai`, connected as the `logbook` MCP server (project-scoped; added via `claude mcp add`). Items are refs like `LOG-12`.
 
-- `/jot <note>` — append to inbox
-- `/triage` — group inbox into structured queued tasks
-- `/status` — dashboard of all states
-- `/logbook <task>` — explicitly start a tracked task
+Core workflow:
 
-Folder state machine: `inbox → queued → active → done` (plus `paused/`, `abandoned/`). The main `logbook` skill auto-triggers on multi-step work (feature, bug fix, refactor) and logs progress step-by-step.
+- **Session start:** call `briefing` (unread inbox + your assigned items + team scoreboard in one call).
+- **Pick up work:** `pull_item` (single, pass `claim: true` to assign yourself + set in_progress) or `pull_items` for a cluster.
+- **File work:** `create_item` / `create_items` — always state the **problem**, not just the task. Labels must exist (`list_labels` / `create_label`). Attach PRs/branches/files via `links`; long-form specs via `attach_document`.
+- **Finish:** `update_item` with `status: "done"` and ALWAYS a `resolution` (what actually changed — these accumulate into project documentation).
+- Merged PRs auto-close linked items via the GitHub webhook on `youcodecowboy/rockcap-v2` — link the PR to the item (`add_links`) so the webhook can match it.
 
-**Disambiguation with `TodoWrite`:** use the logbook Plan for task-level steps that must survive across sessions or context compaction. Use `TodoWrite` for ephemeral within-session tactical tracking. The two should not duplicate each other.
+**Disambiguation with `TodoWrite`:** logbook items are for task-level work that must survive across sessions; `TodoWrite` is for ephemeral within-session tactical tracking. The two should not duplicate each other.
 
-**Legacy:** `BL5`–`BL12` items from the previous `.backlog/` protocol are archived in `docs/superpowers/specs/2026-04-15-mobile-app-refinement-backlog.md` for historical reference.
+**Legacy:** the previous `.logbook/` markdown system (logbook Claude Code plugin: `/jot`, `/triage`, folder state machine) was retired 2026-07-18. All open items were migrated to the MCP logbook as LOG-1…LOG-26 (see `.logbook/MIGRATED.md` for the mapping); the directory is kept for historical reference only — do not add new entries there. `BL5`–`BL12` items from the even older `.backlog/` protocol are archived in `docs/superpowers/specs/2026-04-15-mobile-app-refinement-backlog.md`.
