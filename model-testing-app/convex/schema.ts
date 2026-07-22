@@ -227,7 +227,11 @@ export default defineSchema({
     .index("by_last_accessed", ["lastAccessedAt"])
     .index("by_prospect_state", ["prospectState"])
     .index("by_pipeline_stage", ["pipelineStage"])
-    .index("by_companies_house_number", ["companiesHouseNumber"]),
+    .index("by_companies_house_number", ["companiesHouseNumber"])
+    .searchIndex("search_name", {
+      searchField: "name",
+      filterFields: ["type", "status"],
+    }),
 
   // Companies table - HubSpot companies (prospects, separate from clients)
   // Companies can be promoted to clients when they become active
@@ -346,7 +350,8 @@ export default defineSchema({
     .index("by_hubspot_id", ["hubspotDealId"])
     .index("by_shortcode", ["projectShortcode"])
     .index("by_deal_phase", ["dealPhase"])
-    .index("by_predecessor", ["predecessorProjectId"]),
+    .index("by_predecessor", ["predecessorProjectId"])
+    .searchIndex("search_name", { searchField: "name" }),
 
   // Documents table - stores file references and analysis results
   documents: defineTable({
@@ -493,7 +498,11 @@ export default defineSchema({
     .index("by_scope", ["scope"])
     .index("by_owner", ["ownerId"])
     .index("by_scope_owner", ["scope", "ownerId"])
-    .index("by_duplicate_of", ["duplicateOf"]),
+    .index("by_duplicate_of", ["duplicateOf"])
+    .searchIndex("search_fileName", {
+      searchField: "fileName",
+      filterFields: ["scope", "clientId", "projectId"],
+    }),
 
   // Document Notes - User annotations on specific documents (for document reader)
   documentNotes: defineTable({
@@ -650,7 +659,8 @@ export default defineSchema({
     .index("by_document", ["sourceDocumentId"])
     .index("by_hubspot_id", ["hubspotContactId"])
     .index("by_email", ["email"])
-    .index("by_owner", ["hubspotOwnerId"]),
+    .index("by_owner", ["hubspotOwnerId"])
+    .searchIndex("search_name", { searchField: "name" }),
 
   // Deals table - HubSpot deals for prospecting (this is what they actually use)
   deals: defineTable({
@@ -1442,7 +1452,8 @@ export default defineSchema({
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
     .index("by_template", ["templateId"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .searchIndex("search_title", { searchField: "title" }),
 
   // Note Templates - templates for creating notes
   noteTemplates: defineTable({
@@ -2013,7 +2024,8 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_dueDate", ["dueDate"])
     .index("by_client", ["clientId"])
-    .index("by_project", ["projectId"]),
+    .index("by_project", ["projectId"])
+    .searchIndex("search_title", { searchField: "title" }),
 
   // Notifications table - unified notification system
   notifications: defineTable({
@@ -2155,7 +2167,8 @@ export default defineSchema({
     .index("by_user", ["createdBy"])
     .index("by_client", ["clientId"])
     .index("by_project", ["projectId"])
-    .index("by_google_event_id", ["googleEventId"]),
+    .index("by_google_event_id", ["googleEventId"])
+    .searchIndex("search_title", { searchField: "title" }),
 
   // Context cache for AI assistant - caches gathered context for clients/projects
   contextCache: defineTable({
@@ -3656,7 +3669,8 @@ export default defineSchema({
     .index("by_fireflies_id", ["firefliesId"])
     .index("by_review_state", ["reviewState"])
     .index("by_status", ["status"])
-    .index("by_status_date", ["status", "meetingDate"]),
+    .index("by_status_date", ["status", "meetingDate"])
+    .searchIndex("search_title", { searchField: "title" }),
 
   // Meeting Extraction Jobs - async queue for extracting meetings from documents
   meetingExtractionJobs: defineTable({
