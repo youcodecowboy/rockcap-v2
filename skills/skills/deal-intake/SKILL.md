@@ -69,7 +69,7 @@ Persisted to Convex:
 
 6. **Wait for V4 classification.** If docs are still `status: pending | processing`, wait up to 60 seconds. After timeout, proceed with whatever's classified; surface `gap: v4_did_not_complete` for the stragglers.
 
-7. **Detect deal type + phase.** Per `references/deal-type-and-phase-detection.md`: score against the detection signals, output `{dealType, dealPhase, confidence, evidence[]}`. Honour operator's `dealTypeHint` / `dealPhaseHint` if provided (skip detection and use the override). Persist via `intelligence.addKnowledgeItem` at `deal.type`, `deal.phase`, `deal.detectionConfidence`, `deal.detectionEvidence`.
+7. **Detect deal type + phase.** Per `references/deal-type-and-phase-detection.md`: score against the detection signals, output `{dealType, dealPhase, confidence, evidence[]}`. Honour operator's `dealTypeHint` / `dealPhaseHint` if provided (skip detection and use the override). Persist via `intelligence.addKnowledgeItem` using the knowledge-item fieldPaths "deal.type", "deal.phase", "deal.detectionConfidence", "deal.detectionEvidence" (fieldPath strings, not tools).
 
 8. **Seed the right checklist.** New projects get the 15-item standard template automatically (`project.create` schedules it). If a project is somehow missing one, re-seed via `checklist.initializeForProject`. For Bridging-type, also seed bridging-specific items via `checklist.createCustomItem`. Auto-link any matching docs via `checklist.linkDocument` (this is a first-pass; the audit at step 9 catches additional link opportunities).
 

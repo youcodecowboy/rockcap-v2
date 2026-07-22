@@ -11,7 +11,7 @@ reference, refresh the manifest. If you're not certain a tool exists, check the
 manifest or call `meta.listTools` — never guess a tool name.
 
 The validator (`tools/validate-skills.mjs`) enforces this on every commit. A
-skill that invokes `something.thatDoesntExist(...)` cannot be saved. When the
+skill that invokes `something.thatDoesntExist(...)` (an example name that doesn't exist) cannot be saved. When the
 validator suggests "closest real tools," pick from that list.
 
 ## 2. Never edit the wiring

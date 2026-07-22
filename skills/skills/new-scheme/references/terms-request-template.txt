@@ -1,0 +1,170 @@
+# RockCap — Terms Request Project Instructions
+
+Use this as the instructions section when creating a new project for a scheme going out to lenders.
+
+---
+
+## Appraisal Model — Reference Guide
+
+The canonical **RockCap Appraisal Model User Guide** lives at:
+
+`/Users/raynsmid/Library/CloudStorage/GoogleDrive-rayns@rockcap.uk/.shortcut-targets-by-id/1kmiHPBWD_PLOjrtwRSgK0_bvzzA5EZUA/Historic RockCap Desktop/RockCap/2025/Onboarding Documents/V2 - Claude/v2/RockCap Appraisal Model User Guide.docx`
+
+This is the authoritative reference for how RockCap builds and reads appraisal models. Consult it whenever you are:
+- Interpreting the appraisal for this scheme (sheet structure, input vs output cells, Lender Dashboard conventions)
+- Performing quality control on a model (formatting rules, formula hygiene, calculation conventions — no bold, black text for inputs, no IF wrappers, % metrics auto-calculated)
+- Drafting the financial sections of a lender brief, term request, or credit pack
+- Checking that GDV, cost, programme, LTGDV, LTC, Day 1, residual, and interest figures tie back correctly
+
+Read it directly from the shared drive rather than duplicating into the scheme folder — single source of truth, Alex's edits propagate automatically. If a figure in the model appears to contradict the guide's conventions, flag it rather than silently adjusting.
+
+---
+
+## 1. Review & Understand the Scheme
+
+Before drafting anything, review the following source documents (upload to project knowledge as they become available):
+
+- **Appraisal model** — the single source of truth for financials (GDV, costs, land payment, programme, acquisition date, residual values, S106 provision). Check the Lender Dashboard sheet first.
+- **Accommodation schedule** — unit count, NIA (sqm and sqft), unit types, building/area breakdown.
+- **Planning consents** — Full Plans Approval (FP) and Listed Building Consent (LBC) if applicable. Note reference numbers, conditions, and any phasing requirements.
+- **Agent pricing reports** — e.g. Knight Frank, Carter Jonas. Cross-reference £/psf assumptions against the appraisal.
+- **GA plans / site plan** — understand the physical layout, parcels, and any split-site structures.
+- **Borrower track record / CVs** — for the lender brief narrative.
+- **Title / legal docs** — if available at this stage.
+
+Key things to confirm early:
+- Is there a multi-parcel or split-structure? (e.g. conversion vs new-build, separate SPVs, different security perimeters) — this must be explicit in all documentation.
+- What is the funding requirement? (Day 1 land loan target, total facility size, what's in/out of the senior debt perimeter)
+- CIL vs S106 — don't conflate. CIL may be exempt (e.g. listed building conversions). S106 is a negotiated planning obligation. Check the appraisal for any S106 provision.
+
+---
+
+## 2. Draft the Lender Brief (Note)
+
+Structure (based on the standard RockCap note format):
+
+# RockCap Lender Note — Reusable Prompt
+
+Paste this into any new project or conversation when you need a lender note built.
+
+---
+
+## Prompt (copy everything below this line)
+
+---
+
+You are helping me create a RockCap lender note. This is a 2-page Word document (.docx) that goes out to lenders to present a deal opportunity. It needs to be tight, scannable, and give lenders the full picture quickly. No fluff.
+
+**Format:** Arial 9pt body text throughout. A4 page, slightly tighter margins (~0.9") to fit on 2 pages. Header: "RockCap | Lender Note | Confidential" with a blue underline. Footer: site address in small grey text.
+
+**Structure — 6 numbered sections:**
+
+**Header block** at the top:
+- Note reference (e.g. Note_RS_INTERNAL_V1.0_YYYYMMDD)
+- Subject: Lender Brief: [Site Name], [Location] – [Facility Type]
+- Date: DD/MM/YYYY
+- Relationship Manager: Alex Lundberg (AL)
+
+**1. Executive Summary**
+- 2–3 sentence intro paragraph saying what the scheme is and where it's at
+- Then bold-labelled bullets: **Borrower**, **Funding Requirement** (include LTGDV % and gross amount), **GDV** (valuer, date), **Cost to Complete** (QS, report ref, date), **Programme** (time to PC), **Exit** (sale/refinance/bulk purchase), **Adverse** (only if applicable — one-liner summary, cross-ref to section 5, frame as minor vs net worth)
+
+**2. Project Details & Transaction Structure**
+- One sentence intro on build status and what the refinance/facility achieves
+- Then bold-labelled bullets: **Scheme**, **Land** (price), **Planning** (ref numbers), **Construction** (% complete, amount expended), **Monitoring** (surveyor, number of reports), **Senior Lender** (name, what happens, Day 1 requirement), **Subordinated Debt** (if applicable), **Security** (charge type), **Interest Saving** (if applicable — actual vs allocated), **Facility** (LTGDV %, gross amount, headroom), **Term** (months, split build/sales)
+
+**3. Borrower Profile & Experience**
+- One sentence intro
+- Bold-labelled bullets: **Track Record** (key completed schemes), **Current Projects** (if relevant), **Net Worth** (amount, assets, liabilities), **Borrowing Entity** (SPV name)
+- 3–4 bullets max. Track record doc is enclosed separately.
+
+**4. Key Metrics**
+- Simple 2-column table: Metric | Value
+- Navy header row (#1B2A4A) with white text, alternating light grey (#F2F4F7) / white data rows
+- ~6 rows: GDV, Gross Facility, Day 1 Requirement, Cost to Complete, Facility Term, Build Programme Remaining
+- Adapt rows to the deal type
+
+**5. Enhanced Due Diligence – Adverse Credit**
+- ONLY include if there is adverse credit. If the borrower is clean, skip entirely.
+- Open with one sentence: items addressed transparently, none reflect financial incapacity, immaterial relative to net worth
+- Subheading per item (e.g. "CCJs & Consumer Defaults", "[Company] – HMRC Administration")
+- Bold-labelled bullets for simple items (CCJs, defaults)
+- Short prose for complex items needing narrative (administrations, fraud allegations, contested claims) — state what happened, then lay out the facts that defuse it with plain bullets
+- End complex items with: "Full [statement/evidence] is enclosed. This documentation has previously satisfied other lenders."
+- Tone: confident, factual, front-foot. Not defensive.
+
+**6. Enclosed Documentation**
+- Bullet list of all documents being sent with the note (valuation, monitoring report, credit report, A&L, evidence bundles, track record, CGIs, payment schedules, etc.)
+
+**Rules:**
+- Every data point appears ONCE. The metrics table in S4 is the only place numbers are allowed to repeat for quick reference.
+- No PG assumptions — leave to the lender to specify
+- No unit schedules — provided separately with the valuation
+- No comparable evidence — separate document
+- No detailed cost breakdowns — enclosed with the monitoring report
+- Bold-labelled bullets throughout, no prose paragraphs except where narrative is genuinely needed (adverse credit explanations)
+- Source of truth hierarchy: Red Book valuation > QS/monitoring surveyor > Alex's corrected model > borrower's own materials. Never let borrower figures override the Red Book without explicit instruction from Alex.
+
+**Colours:** Navy #1B2A4A (headings, header), Accent blue #2E5D8A (subheadings, header line), Body #333333, Grey #666666 (sign-off, footer)
+
+**Filename:** [SiteName]_LenderNote_[Version]_AL_RS_EXTERNAL_[YYYYMMDD].docx
+
+I will now provide you with the source documents for this scheme. Please read them all, then build the lender note following the format above. Flag any data discrepancies or items needing confirmation from Alex before the note goes out.
+
+Sign Off
+
+Prepared by RockCap
+Alex Lundberg, Director
+alex@rockcap.uk / 07815 912 057
+
+
+---
+
+## 4. Build the Appraisal / Financial Model
+
+- Use the RockCap appraisal template (external version for lenders).
+- Key sheets: Lender Dashboard, Cost Summary, Cashflow, Sales Schedule.
+- Formatting: no bold, all black text (not blue) for inputs, percentage metrics auto-calculated from amounts, no IF statement wrappers.
+- Cross-check: does the accommodation schedule unit count match the appraisal? Does GDV match agent pricing? Do cost assumptions tie to QS/employer's agent figures?
+
+---
+
+## 5. Deal Structure Chart
+
+Create a visual showing:
+- SPV / JV / ownership structure
+- Which parcels/phases are within the lender's security perimeter and which are outside
+- Security suite (first charge, debenture, share charge, PGs)
+- Cash flows between entities (land payment, development management fees, equity contributions)
+
+This is critical for lenders to understand what they're lending against vs what sits outside their risk.
+
+---
+
+## 6. Lender Outreach & Terms Comparison
+
+Once the pack is assembled and sent out:
+- Track all lender responses via email subject line search (use the project/scheme name, not individual lender names, to capture the full universe).
+- Build a **terms comparison spreadsheet** when indicative terms come back. Columns should include: facility size, Day 1 land loan, LTV, LTC, LTGDV, margin + benchmark, arrangement fee, exit fee, monitoring fee, PG requirements, programme/term, and any special conditions.
+- Percentage metrics should be auto-calculated from the inputted amounts against the appraisal figures (GDV, total costs, land value).
+- **Keep formulas simple, do not over-engineer.** Use plain cells (`=B2/C2`, `=SUM(...)`, `=H2-$G$11`). Do not wrap calcs in defensive `IF` guards (e.g. `=IF(A$2="","",...)`) on populated cells; reach for an `IF` only when a blank/zero/negative case genuinely occurs in that range. Same rule applies to accommodation schedules and any built workbook.
+
+---
+
+## 7. Credit Process (Post-Terms)
+
+Once a lender is selected or shortlisted:
+- Obtain their **credit information request** (typically 15–25 items).
+- Build a **credit checklist** cross-referencing their request against what's already in the lender pack.
+- Identify items already provided vs outstanding items needed from the borrower.
+- Request outstanding items from the borrower/JV in a single organised email — don't drip-feed.
+
+---
+
+## Reminders & Principles
+
+- The appraisal model is the source of truth — check it before flagging anything as "missing."
+- Multi-parcel / split-structure must be explicit in every document and visual.
+- Search by project name (not lender name) in email to capture all lender responses.
+- When project knowledge search doesn't surface specific data, examine the Excel files directly (openpyxl).
+- Keep everything version-controlled: filename format is `[ProjectName]_[DocType]_[Author]_[EXTERNAL if applicable]_[Version]_[Date].extension`

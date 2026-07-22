@@ -1,0 +1,26 @@
+{
+  "skill_name": "makeprompt",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "gemini-comps-fire",
+      "prompt": "i need a deep research prompt for gemini - comps for a new build scheme in SW19 wimbledon, 12 flats, mix of 1 and 2 beds, need achieved sales within about a mile, last 18 months. want it to come back with something i can hand straight to claude to verify",
+      "expected_output": "A copy-paste Gemini Deep Research prompt in a code block: objective up front, hard scope boundaries (SW19 ~1 mile, 18-month window, new-build flats), achieved-prices-only with asking labelled+excluded, per-comp URL requirement, sqft source hierarchy, explicit output table columns, flag-don't-drop rule, stopping criteria. UK conventions. No persona fluff.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "claude-project-terms",
+      "prompt": "give me a project prompt for a new claude.ai project - i'll paste in lender term sheets for a deal and it needs to build the terms comparison and a recommendation i can send the client",
+      "expected_output": "An XML-structured claude.ai project system prompt: role (functional, no theatre), context with RockCap one-liner + injection points for deal specifics, numbered workflow (paste terms -> extract -> compare -> recommend), rules (UK English, no invented figures, appraisal model source of truth, no em-dashes/promo language), explicit output format for the comparison + recommendation, few-shot section with instruction to paste first approved output. Under ~1500 words.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "alex-claude-lender-intel",
+      "prompt": "make me a prompt alex can use in his claude so that after his BDM calls with lenders he can dictate what happened and get a clean lender intel update out of it",
+      "expected_output": "A short, paraphrase-robust prompt for Alex's Claude (voice/Wispr workflow): numbered steps not prose, self-contained RockCap context, tells Alex what to dictate/paste, explicit output structure for a lender appetite/intel update, UK conventions, no reliance on Rayn's files or session context.",
+      "files": []
+    }
+  ]
+}

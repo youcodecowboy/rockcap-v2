@@ -35,7 +35,7 @@ Persisted to Convex:
 
 ## Workflow
 
-1. Load the deal in full via `deal.get_full_context` (BL-5.4). Include all lenderApproaches (even closed_lost), all milestones (including missed), all documents, all touchpoints with key counterparties, the underwriting model versions.
+1. Load the deal in full via `deal.get_full_context` (BL-5.4 — planned; no mcp tool yet, use `project.getDeepContext` today). Include all lenderApproaches (even closed_lost), all milestones (including missed), all documents, all touchpoints with key counterparties, the underwriting model versions.
 2. Pull the timeline: when did the deal start, when did each milestone hit, where did it slow down or speed up. Use `milestones` actualDate vs targetDate to flag deviations.
 3. Identify the key learnings. Categories:
    - **What worked**: the lender that closed, the structure that landed, the document that unlocked.

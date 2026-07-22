@@ -35,7 +35,7 @@ Required:
 Resolved if omitted:
 
 - `companyNumber` — the prospect's `companiesHouseNumber` (used as the dedup key).
-- `sinceIso` — the date of the last full intel (`clients.lastFullIntelAt`); the diff window base.
+- `sinceIso` — the date of the last full intel (the `clients.lastFullIntelAt` client-row field, no MCP tool); the diff window base.
 
 ## Dedup
 
@@ -49,7 +49,7 @@ Resolved if omitted:
 3. **Pull the current state.** Look up current charge-holder / Companies House data for the company number. Note new charges, satisfied/released charges, and any company-status change versus the baseline.
 4. **Light external check.** Search for new planning or scheme activity and significant news since `sinceIso`. Keep it light — this is a diff, not a full re-investigation.
 5. **Decide the verdict.** Bias **hard** toward `still_valid`. Only return `materially_changed` when there is concrete, citable new evidence (a charge id, a planning reference, a status, a URL). When in doubt, `still_valid`.
-6. **Persist.** `intel.recordRevalidateResult` (stamps `lastIntelRevalidateAt` / `lastIntelResult` on the client and sets the skillRun `revalidateResult`) and `skillRun.complete` with `revalidateResult`, a one/two-sentence `brief`, and the evidence-cited `findings` in `intelMarkdown`.
+6. **Persist.** `skillRun.complete` with `linkedClientId` + `revalidateResult` (the complete call itself stamps `lastIntelRevalidateAt` / `lastIntelResult` onto the client — `intel.recordRevalidateResult` was never built — no MCP tool), a one/two-sentence `brief`, and the evidence-cited `findings` in `intelMarkdown`.
 
 ## Outputs
 
@@ -79,6 +79,6 @@ Each finding is evidence-cited so the operator can judge a hold at a glance:
 
 - `client.get`, `prospect.getDeepContext` (graph section), `atoms.search` — baseline reads. Fallback only: `intelligence.getClientIntelligence` / `intelligence.queryIntelligence` when the graph section is empty (client not yet atomized).
 - Companies House / charge-holder lookup for the current-state diff.
-- `intel.revalidate` (operator-driven mode 2, returns verdict + findings), `intel.recordRevalidateResult` (persist verdict + freshness stamps), `skillRun.start` / `skillRun.complete`.
+- `intel.revalidate` (operator-driven mode 2, returns verdict + findings), `skillRun.start` / `skillRun.complete` (completing with `linkedClientId` + `revalidateResult` persists the verdict + freshness stamps — no separate persist tool).
 
 Known gap: live web-search and a direct Companies-House-sync atomic tool are not yet in the autonomous route's tool registry (see the route's `ALLOWED_TOOL_NAMES`). Until they land, the autonomous pass leans on captured `clientIntelligence` plus the charge-holder lookup; the operator-driven path (this skill, in Claude Code) has the full MCP surface and should be preferred when a thorough diff matters.

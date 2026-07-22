@@ -1,0 +1,33 @@
+{
+  "gmail_api_dir": "/Users/raynsmid/Library/CloudStorage/OneDrive-Personal/Desktop/Projects/EmailTriage/gmail-api",
+  "subject_stem": "Oakridge Lynch, Stroud / Oakfield Developments / ",
+  "cc": ["alex@rockcap.uk"],
+  "closing": "Alex will give you a call to discuss.",
+  "cold_intro": "I work with Alex at RockCap and he wanted to share the below with you.",
+  "tiers": {
+    "senior": {
+      "subject_suffix": "Residential Development Finance",
+      "pack_dir": "/Users/raynsmid/Library/CloudStorage/GoogleDrive-rayns@rockcap.uk/.shortcut-targets-by-id/1kmiHPBWD_PLOjrtwRSgK0_bvzzA5EZUA/Historic RockCap Desktop/Oakfield Developments/Oakridge Lynch/3. Lender Pack/Senior Lender Pack",
+      "lead": "Please find attached the lender pack for a residential development at Oakridge Lynch, Stroud, Gloucestershire. We are seeking senior development finance for the scheme, ",
+      "attached": "I have attached:\n- Lender Note\n- RockCap appraisal and client build appraisal\n- Oakfield Developments CV and combined Asset & Liability statement\n- Planning appeal decision, Design & Access Statement and approved drawings",
+      "expect_files": 22
+    },
+    "equity": {
+      "subject_suffix": "Development Equity",
+      "pack_dir": "/Users/raynsmid/Library/CloudStorage/GoogleDrive-rayns@rockcap.uk/.shortcut-targets-by-id/1kmiHPBWD_PLOjrtwRSgK0_bvzzA5EZUA/Historic RockCap Desktop/Oakfield Developments/Oakridge Lynch/3. Lender Pack/Equity Lender Pack",
+      "lead": "Please find attached the pack for a residential development at Oakridge Lynch, Stroud, Gloucestershire. We are seeking a development equity partner for the scheme, and the enclosed equity brief sets out the opportunity, structure and projected returns.",
+      "attached": "I have attached:\n- Equity Brief\n- RockCap appraisal and client build appraisal\n- Oakfield Developments CV and combined Asset & Liability statement\n- Planning appeal decision, Design & Access Statement and approved drawings",
+      "expect_files": 22
+    }
+  },
+  "lenders": [
+    {"label": "Paragon / Helmore", "tier": "senior", "salutation": "Hi James,", "to": ["james.helmore@paragonbank.co.uk"], "cold": false, "leverage": "and the appraisal is modelled at both 65% and 70% LTGDV."},
+    {"label": "Close Brothers / Argent", "tier": "senior", "salutation": "Hi Andrew,", "to": ["Andrew.Argent@closebrothers.com"], "cold": true, "leverage": "and we are only asking you to get to 65% LTGDV.", "closing_extra": "Any questions, please let me know."},
+    {"label": "Falco (senior 1st-charge)", "tier": "equity", "salutation": "Hi Richard and Millie,", "to": ["randerson@falcogroup.co.uk", "msprenger@falcogroup.co.uk"], "cold": false,
+     "subject_suffix": "Residential Development Finance",
+     "pack_dir": "/Users/raynsmid/Library/CloudStorage/GoogleDrive-rayns@rockcap.uk/.shortcut-targets-by-id/1kmiHPBWD_PLOjrtwRSgK0_bvzzA5EZUA/Historic RockCap Desktop/Oakfield Developments/Oakridge Lynch/3. Lender Pack/Senior Lender Pack",
+     "lead": "Please find attached the lender pack for a residential development at Oakridge Lynch, Stroud, Gloucestershire. We are seeking senior development finance for the scheme, and we would be keen to understand your appetite under your first-charge product. The appraisal is modelled at both 65% and 70% LTGDV.",
+     "attached": "I have attached:\n- Lender Note\n- RockCap appraisal and client build appraisal\n- Oakfield Developments CV and combined Asset & Liability statement\n- Planning appeal decision, Design & Access Statement and approved drawings",
+     "leverage": ""}
+  ]
+}

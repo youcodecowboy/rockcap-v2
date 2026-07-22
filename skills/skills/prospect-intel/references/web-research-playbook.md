@@ -87,7 +87,7 @@ If the LinkedIn URL slug doesn't match the director's full name, log it in the g
 
 After Phases A + B, run targeted cross-reference queries:
 
-1. **Connection check.** For each director, see if they've co-directed with anyone in the RockCap intelligence base. Run a Convex query: `intelligence.searchPeople({name: directorName})` to find existing records.
+1. **Connection check.** For each director, see if they've co-directed with anyone in the RockCap intelligence base. Run `atoms.search({query: directorName})` to find existing records (a dedicated `intelligence.searchPeople` is planned; no MCP tool yet).
 2. **Address cross-check.** Search the registered address: `"{registered address}" property` to see if other property entities share the address (multi-SPV pattern).
 3. **Sister entity check.** If the company name contains a distinctive identifier (e.g., a unique surname-based group name), search `"{distinctive identifier}" companies house` to find sister entities under similar branding.
 4. **Duplicate-identity disambiguation.** If the CH officer search at Phase B returned multiple entries for the same name + DOB combination at DIFFERENT correspondence addresses, you must disambiguate:

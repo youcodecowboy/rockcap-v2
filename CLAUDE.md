@@ -24,11 +24,13 @@
 
 When working in this repo + considering MCP tool selection or skill invocation, start at these three files in order:
 
-1. **`skills/CATALOGUE.md`** — every MCP tool (123 across 24 domains) with grouping, "when to use" guidance, and common-pattern cookbooks. This is the canonical reference for tool selection. The 4 most-used tools across all workflows are documented prominently: `prospect.getDeepContext` / `client.getDeepContext` / `project.getDeepContext` / `lender.getDeepContext` + `lender.matchForDeal`.
-2. **`skills/skills/README.md`** — the skill index. Lists all 17 skills with maturity status (v2-hardened vs skeleton) + deal-lifecycle mapping. Use when figuring out which skill to invoke for a given operator ask. For the prospect flow specifically (intel → accept → draft → approve), see **`skills/skills/prospect-pipeline-gates.md`** — the four-gate guide for `prospect-intel` (intel-only) → operator accept → `outreach-draft` → approve.
+1. **`skills/CATALOGUE.md`** — every MCP tool (188 across 31 domains) with grouping, "when to use" guidance, and common-pattern cookbooks. This is the canonical reference for tool selection. The 4 most-used tools across all workflows are documented prominently: `prospect.getDeepContext` / `client.getDeepContext` / `project.getDeepContext` / `lender.getDeepContext` + `lender.matchForDeal`.
+2. **`skills/skills/README.md`** — the skill index. Lists all 35 skills with maturity status (v2-hardened vs skeleton) + deal-lifecycle mapping. Use when figuring out which skill to invoke for a given operator ask. For the prospect flow specifically (intel → accept → draft → approve), see **`skills/skills/prospect-pipeline-gates.md`** — the four-gate guide for `prospect-intel` (intel-only) → operator accept → `outreach-draft` → approve.
 3. **`skills/CONVENTIONS.md`** — cross-skill voice, style, and operating rules. Every skill follows these.
 
-**Maintain discoverability:** when adding or removing an MCP tool, update `CATALOGUE.md` in the same commit. When creating or hardening a skill, update `skills/skills/README.md` status table in the same commit. At 123 tools and 22 skills, Claude Code can only pick well if the documentation is accurate. The cost of staying disciplined is a one-line edit per change.
+**Maintain discoverability:** when adding or removing an MCP tool, update `CATALOGUE.md` in the same commit. When creating or hardening a skill, update `skills/skills/README.md` status table in the same commit. At 188 tools and 35 skills, Claude Code can only pick well if the documentation is accurate. The cost of staying disciplined is a one-line edit per change.
+
+**Skills are co-maintained with the RockCap-MCP repo** (`~/rockcap/rockcap-mcp`, github `youcodecowboy/RockCap-MCP`): collaborators without access to this repo edit skills there, so that repo is the canonical editing home for skill/sub-skill content and its `tools-manifest.json` is refreshed from the live `meta.listTools`. Sync direction is mcp → here (`skills/` ⇄ `skills/skills/`, `CATALOGUE.md` ⇄ `skills/CATALOGUE.md`); when auditing drift, run `node tools/audit-tool-refs.mjs` in that repo — it flags skill references to MCP tools that don't exist on the app side.
 
 ### Skill execution
 

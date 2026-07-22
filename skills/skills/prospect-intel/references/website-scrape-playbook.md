@@ -11,7 +11,7 @@ Workflow step 2.6 (website discovery + scrape). Runs after Companies House data 
 The CH filing rarely lists a website. Use this order of attempts:
 
 1. **CH profile registered office check.** Some CH profiles include a `Company contact website` field. Check the `companiesHouseCompanies` row's `metadata` if present.
-2. **HubSpot custom property check.** If HubSpot has a `website` field on the company, use it. Surface via `companies.get({hubspotCompanyId})`.
+2. **HubSpot custom property check.** If HubSpot has a `website` field on the company, use it. Surface via `companies.get({hubspotCompanyId})` (planned; no MCP tool yet — the HubSpot companies projection isn't MCP-exposed).
 3. **Domain heuristic.** Construct candidate URLs from the legal name:
    - Strip "Limited", "Ltd", "PLC", "LLP" suffixes.
    - Lowercase + remove punctuation + replace spaces with nothing (or hyphens).
