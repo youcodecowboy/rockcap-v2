@@ -63,3 +63,4 @@ Thumbs.db
 # Superpowers brainstorming artifacts (session-local mockups)
 .superpowers/
 
+skills/**/__pycache__/
