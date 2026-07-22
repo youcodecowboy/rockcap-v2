@@ -3,15 +3,23 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
+import { Search } from 'lucide-react';
 import NotificationDropdown from './NotificationDropdown';
-import GlobalSearch from './GlobalSearch';
+import CommandPalette from './CommandPalette';
 import { ThemeToggle } from './ThemeToggle';
 import { useColors } from '@/lib/useColors';
+import { useGlobalSearch } from '@/contexts/GlobalSearchContext';
 
 export default function NavigationBar() {
   // Only render UserButton on client to avoid hydration mismatch
   const [isMounted, setIsMounted] = useState(false);
+  const [isMac, setIsMac] = useState(true);
   const colors = useColors();
+  const { setIsOpen } = useGlobalSearch();
+
+  useEffect(() => {
+    setIsMac(!/windows|linux/i.test(navigator.userAgent));
+  }, []);
 
   useEffect(() => {
     setIsMounted(true);
@@ -43,8 +51,27 @@ export default function NavigationBar() {
           {/* Theme toggle */}
           <ThemeToggle />
 
-          {/* Global Search */}
-          <GlobalSearch />
+          {/* Global Search / Command Palette */}
+          <button
+            onClick={() => setIsOpen(true)}
+            className="flex items-center gap-2 rounded-full border px-4 py-2 transition-colors"
+            style={{
+              background: colors.bg.card,
+              borderColor: colors.border.default,
+              color: colors.text.secondary,
+            }}
+            aria-label="Global Search"
+          >
+            <Search className="h-4 w-4" />
+            <span className="text-sm font-normal">Search</span>
+            <kbd
+              className="rounded border px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ borderColor: colors.border.default, color: colors.text.secondary }}
+            >
+              {isMac ? '⌘K' : 'Ctrl K'}
+            </kbd>
+          </button>
+          <CommandPalette />
 
           {/* Notification Dropdown */}
           <NotificationDropdown />

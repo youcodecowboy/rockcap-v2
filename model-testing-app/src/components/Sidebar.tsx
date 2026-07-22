@@ -25,7 +25,6 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { useChatDrawer } from '@/contexts/ChatDrawerContext';
-import { useGlobalSearch } from '@/contexts/GlobalSearchContext';
 import { useColors } from '@/lib/useColors';
 
 interface NavItem {
@@ -38,7 +37,6 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [isHovered, setIsHovered] = useState(false);
   const { isOpen: isChatOpen } = useChatDrawer();
-  const { isOpen: isGlobalSearchOpen } = useGlobalSearch();
   const { isAuthenticated } = useConvexAuth();
   const openFlags = useQuery(api.flags.getMyFlags, isAuthenticated ? { status: "open" } : "skip");
   const unreadCount = openFlags?.length ?? 0;
@@ -85,7 +83,7 @@ export default function Sidebar() {
     <aside
       className={`fixed left-0 top-16 h-[calc(100vh-4rem)] transition-all duration-300 ease-in-out z-50 ${
         isHovered ? 'w-64' : 'w-20'
-      } ${isChatOpen || isGlobalSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      } ${isChatOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{ zIndex: 50, background: sidebarBg, color: sidebarTextColor }}

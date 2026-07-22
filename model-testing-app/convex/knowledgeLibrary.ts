@@ -1,6 +1,164 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
+
+// ── Auto-link at classification (2026-07-17) ────────────────────────────
+// The bulk-upload lane has always matched classified files against
+// knowledgeChecklistItems.matchingDocumentTypes and auto-checked at ≥0.7
+// confidence — but the Drive-hydration and harness classification lanes
+// never did, so Drive-ingested documents left checklists untouched
+// (Edgefold: planning docs classified, every checklist item still
+// "missing"). This is the shared hook both lanes now call after persisting
+// a classification. Match semantics mirror bulk-upload exactly: exact
+// fileType match 0.92, category match 0.75, link only the top match at
+// ≥0.7. Linking mirrors linkDocumentToChecklistItem: idempotent, first
+// link is primary and marks the item fulfilled.
+async function autoLinkCore(
+  ctx: any,
+  documentId: Id<"documents">,
+): Promise<{ linked: boolean; itemName?: string; confidence?: number; reason?: string }> {
+  const doc = await ctx.db.get(documentId);
+  if (!doc) return { linked: false, reason: "no_document" };
+  const fileType = (doc.fileTypeDetected ?? "").trim();
+  const category = (doc.category ?? "").trim();
+  if (!fileType || fileType === "Unclassified" || fileType === "Document") {
+    return { linked: false, reason: "unclassified" };
+  }
+
+  // Candidates: the doc's project's items plus client-level items.
+  const items: any[] = [];
+  if (doc.projectId) {
+    items.push(
+      ...(await ctx.db
+        .query("knowledgeChecklistItems")
+        .withIndex("by_project", (q: any) => q.eq("projectId", doc.projectId))
+        .collect()),
+    );
+  }
+  if (doc.clientId) {
+    const clientItems = await ctx.db
+      .query("knowledgeChecklistItems")
+      .withIndex("by_client", (q: any) => q.eq("clientId", doc.clientId))
+      .collect();
+    items.push(...clientItems.filter((i: any) => !i.projectId));
+  }
+  if (items.length === 0) return { linked: false, reason: "no_checklist" };
+
+  // Matching. The templates' matchingDocumentTypes are near-miss variants of
+  // the classifier's vocabulary ("Decision Notice" vs "Planning Decision
+  // Notice", "Floor Plan" vs "Floor Plans"), so exact equality misses most
+  // real matches. Normalized CONTAINS matching bridges them, ranked by the
+  // matched type's specificity (longest normalized match wins — so "Floor
+  // Plans" fulfils the Floorplans item via 'Floor Plan', not the Site Plan
+  // item via the generic 'Plans'). Category-only matches are NEVER
+  // auto-fulfilled — they become suggestions for the operator (a category
+  // fallback once linked an S106 Agreement as the Facility Letter).
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const nFile = norm(fileType);
+  let best: { item: any; confidence: number; matchLen: number } | null = null;
+  let suggestion: { item: any } | null = null;
+  for (const item of items) {
+    const types: string[] = item.matchingDocumentTypes ?? [];
+    for (const t of types) {
+      const nT = norm(t);
+      if (!nT) continue;
+      let confidence = 0;
+      if (nT === nFile) confidence = 0.92;
+      else if (nFile.includes(nT) || nT.includes(nFile)) confidence = 0.85;
+      if (confidence >= 0.7) {
+        const matchLen = Math.min(nT.length, nFile.length);
+        if (
+          !best ||
+          confidence > best.confidence ||
+          (confidence === best.confidence && matchLen > best.matchLen)
+        ) {
+          best = { item, confidence, matchLen };
+        }
+      }
+    }
+    if (
+      !suggestion &&
+      category &&
+      item.category?.toLowerCase() === category.toLowerCase() &&
+      item.status !== "fulfilled"
+    ) {
+      suggestion = { item };
+    }
+  }
+  if (!best) {
+    // Category-only: suggest, never fulfil. Operator confirms in the app or
+    // links explicitly via checklist.linkDocument.
+    if (suggestion && !suggestion.item.suggestedDocumentId) {
+      await ctx.db.patch(suggestion.item._id, {
+        suggestedDocumentId: documentId,
+        suggestedDocumentName: doc.fileName || "Unknown",
+        suggestedConfidence: 0.6,
+        updatedAt: new Date().toISOString(),
+      });
+      return { linked: false, reason: "suggested_only", itemName: suggestion.item.name };
+    }
+    return { linked: false, reason: "no_match" };
+  }
+
+  const now = new Date().toISOString();
+  const existingLink = await ctx.db
+    .query("knowledgeChecklistDocumentLinks")
+    .withIndex("by_checklist_item", (q: any) => q.eq("checklistItemId", best!.item._id))
+    .filter((q: any) => q.eq(q.field("documentId"), documentId))
+    .first();
+  if (existingLink) return { linked: false, reason: "already_linked" };
+
+  const existingLinks = await ctx.db
+    .query("knowledgeChecklistDocumentLinks")
+    .withIndex("by_checklist_item", (q: any) => q.eq("checklistItemId", best!.item._id))
+    .collect();
+  const isPrimary = existingLinks.length === 0;
+  await ctx.db.insert("knowledgeChecklistDocumentLinks", {
+    checklistItemId: best.item._id,
+    documentId,
+    documentName: doc.fileName || "Unknown",
+    linkedAt: now,
+    isPrimary,
+  });
+  if (isPrimary) {
+    await ctx.db.patch(best.item._id, {
+      status: "fulfilled",
+      suggestedDocumentId: undefined,
+      suggestedDocumentName: undefined,
+      suggestedConfidence: undefined,
+      updatedAt: now,
+    });
+  }
+  return { linked: true, itemName: best.item.name, confidence: best.confidence };
+}
+
+export const autoLinkDocumentToChecklistInternal = internalMutation({
+  args: { documentId: v.id("documents") },
+  handler: async (ctx, args) => autoLinkCore(ctx, args.documentId),
+});
+
+// One-shot repair: run the auto-link over a client's already-classified
+// documents (rows classified before the hook existed). Idempotent.
+//   npx convex run knowledgeLibrary:autoLinkAllForClientInternal '{"clientId":"..."}'
+export const autoLinkAllForClientInternal = internalMutation({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .collect();
+    let linked = 0;
+    const details: Array<{ fileName?: string; itemName?: string }> = [];
+    for (const d of docs) {
+      const r = await autoLinkCore(ctx, d._id);
+      if (r.linked) {
+        linked++;
+        details.push({ fileName: d.fileName, itemName: r.itemName });
+      }
+    }
+    return { scanned: docs.length, linked, details };
+  },
+});
 
 // ============================================================================
 // QUERIES

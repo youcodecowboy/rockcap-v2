@@ -5,6 +5,7 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { makeFunctionReference } from "convex/server";
 import { resolveDriveMirrorFolderKey } from "./driveMirrorPlacement";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -580,6 +581,18 @@ export const applyExtraction = internalMutation({
             firstDirtyAt: undefined,
           }),
     });
+
+    // Dynamic checklist: match the fresh classification against the client
+    // /project checklist and auto-fulfil (same semantics as the bulk-upload
+    // lane; no-op when unclassified or no checklist). Scheduled + string-ref
+    // so a checklist failure can never fail the extraction persist.
+    await ctx.scheduler.runAfter(
+      0,
+      makeFunctionReference<"mutation", { documentId: Id<"documents"> }>(
+        "knowledgeLibrary:autoLinkDocumentToChecklistInternal",
+      ),
+      { documentId },
+    );
 
     return { documentId, applied: true };
   },

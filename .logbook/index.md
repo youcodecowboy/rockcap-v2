@@ -1,5 +1,7 @@
 # Logbook Index
 
+> **⚠️ RETIRED 2026-07-18** — task tracking moved to the logbook MCP (`https://logbook.gvy.ai`). Open items migrated as LOG-1…LOG-26; see [MIGRATED.md](MIGRATED.md). This directory is history only.
+
 Last updated: 2026-05-28
 
 | Status | Date | Title | Tags | File |

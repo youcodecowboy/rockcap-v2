@@ -1,6 +1,10 @@
 # Logbook Inbox
 
-## Open (queued for separate work)
+> **⚠️ RETIRED 2026-07-18** — do not add new notes here. All open items below were migrated to the logbook MCP (LOG-12…LOG-26; see [MIGRATED.md](MIGRATED.md)). New notes go in as `create_item` calls on the `logbook` MCP server.
+
+## Open (queued for separate work — MIGRATED, see banner)
+
+- 2026-07-08 — **Naming standard V1.2 wiring** (client CONFIRMED the standard today; doc + filename_schema.json landed via PR #76). Remaining lane: (1) extend `parseDocumentName` (src/lib/documentNaming.ts) to the V1.2 grammar — dual-date names (two `\d{8}` tokens: document date after DocType pins vintage, trailing filing date is recency) + `R\d` terms-reissue tokens; (2) versionPrecedence series ordering should prefer document date over filing date when both present (out-of-order planning-permission case, standard §5); (3) reconcile `tentative:true` appFileType mappings in filename_schema.json against placement-rules.ts; (4) wire the parser into classification as a pre-LLM signal + generate standard-compliant names on ingest (drive.rename approval flow for legacy files). Sequence BEFORE the ~1000-doc batch so names carry classification signal. #naming #classification #drive
 
 - 2026-07-06 — contact display-name hygiene (visible in knowledge graph): "Peter Mackenzie (175)" carries a numeric suffix in the contacts row; "Nicola Elia RenÃ¨ Kinnie" is UTF-8 mojibake (é double-encoded — likely from a CH/Apollo sync path). Audit contacts name fields; fix the two rows; find + fix the encoding culprit in the sync that wrote them. #backend #cleanup #data-quality
 
@@ -28,3 +32,4 @@
 - ✅ DONE — corrections corpus design shipped: `skills/corpora/document-classification-corrections.md` created with 5 entries from live fixes during research + 9 diagnostic patterns + skill usage guide. Loaded by deal-intake at startup for pre-validation; future-consumed by classification-critic.
 
 - 2026-07-07 — Email overhaul SPEC'd (docs/spec-3-email-overhaul.md, recon-grounded): headline bugs F1 (email_fresh approvals never send — silent stub, marked executed) + F2 (only mailbox's sendEnabled OFF — nothing sends today, operator can flip at /settings/gmail); HubSpot race → contentless duplicate replies; contact identity gaps; countUnrouted broken in prod (16MB). Verdict: keep Gmail transport, NO Resend. W0-W4 workstreams; W4 = email→atoms (spec 2 §14c). HAND-OFF: another session builds this.
+- [2026-07-11] Knowledge: move atom embeddings to a side table (atomEmbeddings) — graph reads pay ~8KB/row for unused vectors; expandEntity scan caps could relax 10x. See PR #90 comments.

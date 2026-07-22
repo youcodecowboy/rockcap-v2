@@ -5,6 +5,7 @@ import {
   internalQuery,
 } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import { makeFunctionReference } from "convex/server";
 import type { Id } from "../_generated/dataModel";
 import {
   ensureAccessToken,
@@ -874,6 +875,17 @@ export const applyClassification = internalMutation({
             }),
       });
     }
+
+    // Dynamic checklist: match the classification against the client/project
+    // checklist and auto-fulfil (parity with the bulk-upload lane). String
+    // ref via scheduler — isolated from the classification persist.
+    await ctx.scheduler.runAfter(
+      0,
+      makeFunctionReference<"mutation", { documentId: Id<"documents"> }>(
+        "knowledgeLibrary:autoLinkDocumentToChecklistInternal",
+      ),
+      { documentId: args.documentId },
+    );
 
     return {
       applied: true,
