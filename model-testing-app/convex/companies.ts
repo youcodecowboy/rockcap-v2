@@ -42,7 +42,10 @@ export const get = query({
  */
 export const getAll = query({
   handler: async (ctx) => {
-    return await ctx.db.query("companies").collect();
+    // BOUNDED (Convex 16k-row / 16MB read-limit guard): companies is a
+    // continuously-ingested table. Cap newest-first; consumers filter/pick in
+    // memory. Structural follow-up: paginate the company-picker surfaces.
+    return await ctx.db.query("companies").order("desc").take(2000);
   },
 });
 
@@ -52,9 +55,12 @@ export const getAll = query({
 export const getByLifecycleStage = query({
   args: { lifecycleStage: v.string() },
   handler: async (ctx, args) => {
+    // Use the by_lifecycle_stage index instead of a full-table .filter().
     return await ctx.db
       .query("companies")
-      .filter((q) => q.eq(q.field("hubspotLifecycleStage"), args.lifecycleStage))
+      .withIndex("by_lifecycle_stage", (q: any) =>
+        q.eq("hubspotLifecycleStage", args.lifecycleStage),
+      )
       .collect();
   },
 });
@@ -241,8 +247,14 @@ export const searchByName = query({
     if (q.length < 2) return [];
     const limit = args.limit ?? 8;
 
-    const all = await ctx.db.query("companies").collect();
-    const matches = all.filter((c) => c.name.toLowerCase().includes(q));
+    // Use the search_name full-text index instead of scanning every company on
+    // each keystroke. Pull a bounded candidate set (relevance-ordered) then apply
+    // the existing exact/starts-with/contains + unpromoted-preference scoring so
+    // the ranking the UI expects is preserved.
+    const matches = await ctx.db
+      .query("companies")
+      .withSearchIndex("search_name", (s: any) => s.search("name", args.query))
+      .take(25);
 
     // Score: exact match > starts-with > contains, and unpromoted > promoted
     const scored = matches
@@ -282,10 +294,12 @@ export const listUnprocessedInternal = internalQuery({
 
     // Pull recent companies. There's no index on createdAt, so use _creationTime
     // via collect + filter (acceptable for the 30d window + ~hundreds of rows).
-    const allRecent = await ctx.db
-      .query("companies")
-      .filter((q) => q.gt(q.field("_creationTime"), sinceMs))
-      .collect();
+    // BOUNDED: order newest-first and take a cap instead of scanning the whole
+    // table for the sinceDays window. Callers pass a ~30d window, comfortably
+    // inside the cap; the in-memory _creationTime guard keeps the window exact.
+    const allRecent = (
+      await ctx.db.query("companies").order("desc").take(2000)
+    ).filter((c: any) => c._creationTime > sinceMs);
 
     const candidates: Array<{
       company: any;
@@ -365,10 +379,12 @@ export const listUnprocessed = query({
   handler: async (ctx, args) => {
     const sinceMs = Date.now() - args.sinceDays * 24 * 60 * 60 * 1000;
 
-    const allRecent = await ctx.db
-      .query("companies")
-      .filter((q) => q.gt(q.field("_creationTime"), sinceMs))
-      .collect();
+    // BOUNDED: order newest-first and take a cap instead of scanning the whole
+    // table for the sinceDays window. Callers pass a ~30d window, comfortably
+    // inside the cap; the in-memory _creationTime guard keeps the window exact.
+    const allRecent = (
+      await ctx.db.query("companies").order("desc").take(2000)
+    ).filter((c: any) => c._creationTime > sinceMs);
 
     const candidates: Array<{
       company: any;

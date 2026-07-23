@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
-import { api } from "./_generated/api";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { recordUploadIngestion } from "./knowledge/ingestUpload";
 import {
   buildDocumentName,
@@ -52,6 +52,41 @@ function generateDocumentCode(
   });
 }
 
+// documentCode uniqueness helpers — point lookups on the by_documentCode index,
+// replacing the former full-table scans that loaded every heavy documents row
+// (textContent/extractedData/documentAnalysis) and blew Convex's 16MB read
+// limit. Soft-deleted rows are excluded (their codes are reusable), matching
+// the old `.filter(neq isDeleted).collect()` semantics.
+export async function documentCodeIsTaken(
+  ctx: any,
+  code: string,
+  excludeId?: string,
+): Promise<boolean> {
+  const hits = await ctx.db
+    .query("documents")
+    .withIndex("by_documentCode", (q: any) => q.eq("documentCode", code))
+    .collect();
+  return hits.some(
+    (d: any) => d.isDeleted !== true && (!excludeId || d._id !== excludeId),
+  );
+}
+
+// Given a base code, return the first free variant (base, base-1, base-2, …)
+// not taken by a live document. Same suffixing the old scans produced.
+export async function uniqueDocumentCode(
+  ctx: any,
+  baseCode: string,
+  excludeId?: string,
+): Promise<string> {
+  let finalCode = baseCode;
+  let counter = 1;
+  while (await documentCodeIsTaken(ctx, finalCode, excludeId)) {
+    finalCode = `${baseCode}-${counter}`;
+    counter++;
+  }
+  return finalCode;
+}
+
 // Query: Get all documents
 export const list = query({
   args: {
@@ -66,12 +101,15 @@ export const list = query({
     )),
   },
   handler: async (ctx, args) => {
+    // Heavy documents rows (textContent/extractedData) — every branch is capped
+    // newest-first so the reads stay well under Convex's 16MB execution limit.
     if (args.clientId) {
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId!))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
         if (args.status && doc.status !== args.status) return false;
@@ -81,8 +119,9 @@ export const list = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId!))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
       return docs.filter(doc => {
         if (args.category && doc.category !== args.category) return false;
         if (args.status && doc.status !== args.status) return false;
@@ -92,8 +131,9 @@ export const list = query({
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_category", (q: any) => q.eq("category", args.category!))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
       return docs.filter(doc => {
         if (args.status && doc.status !== args.status) return false;
         return true;
@@ -102,10 +142,17 @@ export const list = query({
       return await ctx.db
         .query("documents")
         .withIndex("by_status", (q: any) => q.eq("status", args.status!))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
     } else {
-      return await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+      // No filter: cap at the newest 1000 live docs. The old unbounded
+      // .collect() scanned the entire heavy table and crashed in prod.
+      return await ctx.db
+        .query("documents")
+        .order("desc")
+        .filter((q) => q.neq(q.field("isDeleted"), true))
+        .take(1000);
     }
   },
 });
@@ -146,11 +193,13 @@ export const getAttachmentMetaInternal = internalQuery({
 export const getByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
+    // Cap at newest 1000 — heavy rows, avoids the 16MB read-limit crash.
     return await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .order("desc")
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
+      .take(1000);
   },
 });
 
@@ -158,73 +207,93 @@ export const getByClient = query({
 export const getByProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
+    // Cap at newest 1000 — heavy rows, avoids the 16MB read-limit crash.
     return await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .order("desc")
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
+      .take(1000);
   },
 });
 
 // Query: Get internal documents (no client/project)
 export const getInternal = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    return allDocs.filter(doc => !doc.clientId && !doc.projectId);
+    // Docs with no clientId live on the by_client(undefined) index lane — this
+    // bounds the scan to client-less rows instead of the whole heavy table.
+    // Capped at 1000; JS-filter projectId undefined to match the old predicate.
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", undefined))
+      .take(1000);
+    return docs.filter(doc => doc.isDeleted !== true && !doc.clientId && !doc.projectId);
   },
 });
 
 // Query: Get unclassified documents (no client AND no project)
 export const getUnclassified = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    return allDocs.filter(doc => !doc.clientId && !doc.projectId);
+    // Same bounded by_client(undefined) lane as getInternal.
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q: any) => q.eq("clientId", undefined))
+      .take(1000);
+    return docs.filter(doc => doc.isDeleted !== true && !doc.clientId && !doc.projectId);
   },
 });
 
 // Query: Get folder statistics for clients
+//
+// Document-derived counts + lastUpdated come from statsCache ("docFolderStats",
+// refreshed by recomputeDocumentAggregates). The clients/projects tables are
+// light (no textContent) so they're still read live for names; only the heavy
+// documents scan was moved to the cache.
 export const getFolderStats = query({
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "docFolderStats"))
+      .first();
+    const stats = (cached?.value ?? { clients: {}, projects: {} }) as {
+      clients: Record<string, { count: number; lastUpdatedMs: number }>;
+      projects: Record<string, { count: number; lastUpdatedMs: number }>;
+    };
     const clients = await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const projects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    
+
     // Group documents by client
     const clientStats = clients.map(client => {
-      const clientDocs = allDocs.filter(doc => doc.clientId === client._id);
-      const lastUpdated = clientDocs.length > 0
-        ? Math.max(...clientDocs.map(doc => new Date(doc.uploadedAt).getTime()))
-        : 0;
-      
+      const s = stats.clients[client._id];
+      const lastUpdatedMs = s?.lastUpdatedMs ?? 0;
+
       return {
         clientId: client._id,
         clientName: client.name,
-        documentCount: clientDocs.length,
-        lastUpdated: lastUpdated > 0 ? new Date(lastUpdated).toISOString() : null,
+        documentCount: s?.count ?? 0,
+        lastUpdated: lastUpdatedMs > 0 ? new Date(lastUpdatedMs).toISOString() : null,
       };
     });
-    
+
     // Group documents by project
     const projectStats = projects.map(project => {
-      const projectDocs = allDocs.filter(doc => doc.projectId === project._id);
-      const lastUpdated = projectDocs.length > 0
-        ? Math.max(...projectDocs.map(doc => new Date(doc.uploadedAt).getTime()))
-        : 0;
-      
+      const s = stats.projects[project._id];
+      const lastUpdatedMs = s?.lastUpdatedMs ?? 0;
+
       // Get client name for this project
       const clientId = project.clientRoles?.[0]?.clientId;
       const client = clientId ? clients.find(c => c._id === clientId) : null;
-      
+
       return {
         projectId: project._id,
         projectName: project.name,
         clientId: clientId,
         clientName: client?.name,
-        documentCount: projectDocs.length,
-        lastUpdated: lastUpdated > 0 ? new Date(lastUpdated).toISOString() : null,
+        documentCount: s?.count ?? 0,
+        lastUpdated: lastUpdatedMs > 0 ? new Date(lastUpdatedMs).toISOString() : null,
       };
     });
-    
+
     return {
       clients: clientStats.sort((a, b) => {
         const aTime = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
@@ -248,47 +317,48 @@ export const search = query({
     category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // Rewritten onto the search_fileName full-text index (was an unbounded
+    // .collect() of the whole heavy table → 16MB read-limit crash). Matching is
+    // now fileName-based rather than summary/reasoning/client/project substring;
+    // fileType/category still filtered in JS. Capped at 200 results.
     const lowerQuery = args.query.toLowerCase().trim();
-    
-    docs = docs.filter(doc => {
-      if (args.fileType && doc.fileTypeDetected !== args.fileType) {
-        return false;
-      }
-      if (args.category && doc.category !== args.category) {
-        return false;
-      }
-      if (lowerQuery) {
-        const summaryMatch = doc.summary.toLowerCase().includes(lowerQuery);
-        const fileNameMatch = doc.fileName.toLowerCase().includes(lowerQuery);
-        const clientMatch = doc.clientName?.toLowerCase().includes(lowerQuery);
-        const projectMatch = doc.projectName?.toLowerCase().includes(lowerQuery) ||
-                            doc.suggestedProjectName?.toLowerCase().includes(lowerQuery);
-        const reasoningMatch = doc.reasoning.toLowerCase().includes(lowerQuery);
-        return summaryMatch || fileNameMatch || clientMatch || projectMatch || reasoningMatch;
-      }
+
+    const docs = lowerQuery
+      ? await ctx.db
+          .query("documents")
+          .withSearchIndex("search_fileName", (q) => q.search("fileName", args.query))
+          .take(200)
+      : await ctx.db.query("documents").order("desc").take(200);
+
+    return docs.filter(doc => {
+      if (doc.isDeleted === true) return false;
+      if (args.fileType && doc.fileTypeDetected !== args.fileType) return false;
+      if (args.category && doc.category !== args.category) return false;
       return true;
     });
-    
-    return docs;
   },
 });
 
-// Query: Get unique file types
+// Query: Get unique file types — served from statsCache ("uniqueFileTypes",
+// refreshed by recomputeDocumentAggregates). A live scan loaded every heavy row.
 export const getUniqueFileTypes = query({
   handler: async (ctx) => {
-    const docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const types = new Set(docs.map(doc => doc.fileTypeDetected));
-    return Array.from(types).sort();
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "uniqueFileTypes"))
+      .first();
+    return (cached?.value ?? []) as string[];
   },
 });
 
-// Query: Get unique categories
+// Query: Get unique categories — served from statsCache ("uniqueCategories").
 export const getUniqueCategories = query({
   handler: async (ctx) => {
-    const docs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const categories = new Set(docs.map(doc => doc.category));
-    return Array.from(categories).sort();
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "uniqueCategories"))
+      .first();
+    return (cached?.value ?? []) as string[];
   },
 });
 
@@ -297,11 +367,12 @@ export const getRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const sorted = allDocs.sort((a, b) => 
-      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-    );
-    return sorted.slice(0, limit);
+    // Indexed newest-first + take — no more full-table sort of heavy rows.
+    return await ctx.db
+      .query("documents")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(limit);
   },
 });
 
@@ -416,16 +487,9 @@ export const create = mutation({
         );
       }
 
-      // Ensure uniqueness if code was generated
+      // Ensure uniqueness if code was generated (by_documentCode point lookups).
       if (documentCode) {
-        const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-        let finalCode = documentCode;
-        let counter = 1;
-        while (existingDocs.some(doc => doc.documentCode === finalCode)) {
-          finalCode = `${documentCode}-${counter}`;
-          counter++;
-        }
-        documentCode = finalCode;
+        documentCode = await uniqueDocumentCode(ctx, documentCode);
       }
     }
     
@@ -582,15 +646,8 @@ export const uploadFileAndCreateDocument = mutation({
         uploadedAt
       );
 
-      // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-      let finalCode = documentCode;
-      let counter = 1;
-      while (existingDocs.some(doc => doc.documentCode === finalCode)) {
-        finalCode = `${documentCode}-${counter}`;
-        counter++;
-      }
-      documentCode = finalCode;
+      // Ensure uniqueness (by_documentCode point lookups).
+      documentCode = await uniqueDocumentCode(ctx, documentCode);
     }
 
     const documentId = await ctx.db.insert("documents", {
@@ -847,13 +904,8 @@ export const updateDocumentCode = mutation({
       throw new Error("Document not found");
     }
     
-    // Check for uniqueness
-    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-    const isDuplicate = existingDocs.some(
-      doc => doc._id !== args.id && doc.documentCode === args.documentCode
-    );
-    
-    if (isDuplicate) {
+    // Check for uniqueness (by_documentCode point lookup, excluding self).
+    if (await documentCodeIsTaken(ctx, args.documentCode, args.id)) {
       throw new Error("Document code already exists");
     }
     
@@ -870,10 +922,11 @@ export const updateDocumentCodesForClient = mutation({
     excludeDocumentId: v.optional(v.id("documents")), // Optional document to exclude
   },
   handler: async (ctx, args) => {
-    // Get all documents for this client
+    // Get all documents for this client (by_client index — was a full-table
+    // filter scan of every heavy row).
     const clientDocs = await ctx.db
       .query("documents")
-      .filter((q: any) => q.eq(q.field("clientId"), args.clientId))
+      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
       .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
 
@@ -882,28 +935,41 @@ export const updateDocumentCodesForClient = mutation({
       ? clientDocs.filter(doc => doc._id !== args.excludeDocumentId)
       : clientDocs;
 
-    // Get all existing document codes to check uniqueness
-    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-    const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
-    
+    // Uniqueness set — only codes in the pattern family can collide with the
+    // pattern + numeric suffixes assigned below, so the by_documentCode index
+    // range keeps this off the (former) full-table scan. Excludes the docs
+    // being reassigned + soft-deleted rows. Capped at 1000 family members.
+    const excludeIds = new Set(docsToUpdate.map(d => d._id));
+    const familyDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_documentCode", (q: any) =>
+        q.gte("documentCode", args.documentCodePattern).lt("documentCode", args.documentCodePattern + "￿")
+      )
+      .take(1000);
+    const existingCodes = new Set(
+      familyDocs
+        .filter((d: any) => d.isDeleted !== true && !excludeIds.has(d._id) && d.documentCode)
+        .map((d: any) => d.documentCode as string)
+    );
+
     // Update each document with unique code
     const updatedIds: string[] = [];
     for (const doc of docsToUpdate) {
       let newCode = args.documentCodePattern;
       let counter = 1;
-      
+
       // Ensure uniqueness
-      while (existingCodes.has(newCode) && newCode !== doc.documentCode) {
+      while (existingCodes.has(newCode)) {
         newCode = `${args.documentCodePattern}-${counter}`;
         counter++;
       }
-      
+
       // Update document
       await ctx.db.patch(doc._id, { documentCode: newCode });
       existingCodes.add(newCode);
       updatedIds.push(doc._id);
     }
-    
+
     return {
       updatedCount: updatedIds.length,
       documentIds: updatedIds,
@@ -919,10 +985,11 @@ export const updateDocumentCodesForProject = mutation({
     excludeDocumentId: v.optional(v.id("documents")), // Optional document to exclude
   },
   handler: async (ctx, args) => {
-    // Get all documents for this project
+    // Get all documents for this project (by_project index — was a full-table
+    // filter scan of every heavy row).
     const projectDocs = await ctx.db
       .query("documents")
-      .filter((q: any) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
       .filter((q: any) => q.neq(q.field("isDeleted"), true))
       .collect();
 
@@ -931,28 +998,39 @@ export const updateDocumentCodesForProject = mutation({
       ? projectDocs.filter(doc => doc._id !== args.excludeDocumentId)
       : projectDocs;
 
-    // Get all existing document codes to check uniqueness
-    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-    const existingCodes = new Set(allDocs.map(doc => doc.documentCode).filter(Boolean));
-    
+    // Uniqueness set from the by_documentCode index range (pattern family only).
+    // See updateDocumentCodesForClient for the rationale. Capped at 1000.
+    const excludeIds = new Set(docsToUpdate.map(d => d._id));
+    const familyDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_documentCode", (q: any) =>
+        q.gte("documentCode", args.documentCodePattern).lt("documentCode", args.documentCodePattern + "￿")
+      )
+      .take(1000);
+    const existingCodes = new Set(
+      familyDocs
+        .filter((d: any) => d.isDeleted !== true && !excludeIds.has(d._id) && d.documentCode)
+        .map((d: any) => d.documentCode as string)
+    );
+
     // Update each document with unique code
     const updatedIds: string[] = [];
     for (const doc of docsToUpdate) {
       let newCode = args.documentCodePattern;
       let counter = 1;
-      
+
       // Ensure uniqueness
-      while (existingCodes.has(newCode) && newCode !== doc.documentCode) {
+      while (existingCodes.has(newCode)) {
         newCode = `${args.documentCodePattern}-${counter}`;
         counter++;
       }
-      
+
       // Update document
       await ctx.db.patch(doc._id, { documentCode: newCode });
       existingCodes.add(newCode);
       updatedIds.push(doc._id);
     }
-    
+
     return {
       updatedCount: updatedIds.length,
       documentIds: updatedIds,
@@ -1005,15 +1083,17 @@ export const getFileUrl = query({
 export const getBaseDocumentsByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
+    // Cap at newest 1000 — heavy rows, avoids the 16MB read-limit crash.
     const docs = await ctx.db
       .query("documents")
       .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+      .order("desc")
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-    
+      .take(1000);
+
     // Filter for base documents (isBaseDocument: true and projectId is null/undefined)
-    return docs.filter(doc => 
-      doc.isBaseDocument === true && 
+    return docs.filter(doc =>
+      doc.isBaseDocument === true &&
       (!doc.projectId || doc.projectId === undefined)
     );
   },
@@ -1064,15 +1144,8 @@ export const moveDocument = mutation({
         }
       );
       
-      // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-      let finalCode = newDocumentCode;
-      let counter = 1;
-      while (existingDocs.some(d => d._id !== args.documentId && d.documentCode === finalCode)) {
-        finalCode = `${newDocumentCode}-${counter}`;
-        counter++;
-      }
-      newDocumentCode = finalCode;
+      // Ensure uniqueness (by_documentCode point lookups, excluding self).
+      newDocumentCode = await uniqueDocumentCode(ctx, newDocumentCode, args.documentId);
     }
 
     // Update document
@@ -1128,11 +1201,10 @@ export const duplicateDocument = mutation({
     const baseCode = doc.documentCode || doc._id;
     let newDocumentCode = `${baseCode}-COPY`;
 
-    // Ensure uniqueness by adding counter if needed
-    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
+    // Ensure uniqueness by adding counter if needed (by_documentCode lookups).
     let finalCode = newDocumentCode;
     let counter = 2;
-    while (existingDocs.some((d) => d.documentCode === finalCode)) {
+    while (await documentCodeIsTaken(ctx, finalCode)) {
       finalCode = `${baseCode}-COPY-${counter}`;
       counter++;
     }
@@ -1288,15 +1360,8 @@ export const moveDocumentCrossScope = mutation({
       { scope: args.targetScope, uploaderInitials }
     );
 
-    // Ensure uniqueness
-    const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-    let finalCode = newDocumentCode;
-    let counter = 1;
-    while (existingDocs.some(d => d._id !== args.documentId && d.documentCode === finalCode)) {
-      finalCode = `${newDocumentCode}-${counter}`;
-      counter++;
-    }
-    newDocumentCode = finalCode;
+    // Ensure uniqueness (by_documentCode point lookups, excluding self).
+    newDocumentCode = await uniqueDocumentCode(ctx, newDocumentCode, args.documentId);
 
     // 6. Build update object based on target scope
     const updates: Record<string, any> = {
@@ -1413,22 +1478,36 @@ export const getExtractionHistory = query({
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    // Get all documents for this project
+    // Get all documents for this project (newest 1000 — heavy rows).
     const documents = await ctx.db
       .query("documents")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .order("desc")
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
+      .take(1000);
 
-    // Get all extractions for these documents
-    const allExtractions = await ctx.db.query("documentExtractions").collect();
-    
-    // Filter to extractions for documents in this project
-    const documentIds = new Set(documents.map(d => d._id));
-    const projectExtractions = allExtractions.filter(e => 
-      documentIds.has(e.documentId) || e.projectId === args.projectId
-    );
-    
+    // Get extractions for this project + for each of its documents, via indexes
+    // (was an unbounded .collect() of the whole documentExtractions table, whose
+    // extractedData payloads are heavy).
+    const byProject = await ctx.db
+      .query("documentExtractions")
+      .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+      .collect();
+    const seen = new Set(byProject.map(e => e._id));
+    const projectExtractions = [...byProject];
+    for (const doc of documents) {
+      const docExtractions = await ctx.db
+        .query("documentExtractions")
+        .withIndex("by_document", (q: any) => q.eq("documentId", doc._id))
+        .collect();
+      for (const e of docExtractions) {
+        if (!seen.has(e._id)) {
+          seen.add(e._id);
+          projectExtractions.push(e);
+        }
+      }
+    }
+
     // Sort by extractedAt (most recent first)
     projectExtractions.sort((a, b) => 
       new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime()
@@ -1479,7 +1558,14 @@ export const getUnfiled = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
 
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // Unfiled docs in EVERY scope have no clientId (client scope by definition;
+    // internal/personal structurally), so the by_client(undefined) lane bounds
+    // the scan instead of loading the entire heavy table. Capped at 300 rows —
+    // same bounded-inbox rationale as getUnfiledCount (~150).
+    const allDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_client", (q) => q.eq("clientId", undefined))
+      .take(300);
 
     // Get current user for personal document access
     let currentUserId: string | null = null;
@@ -1492,9 +1578,10 @@ export const getUnfiled = query({
     }
 
     return allDocs.filter(doc => {
+      if (doc.isDeleted === true) return false;
       const scope = doc.scope || "client";
 
-      // Client scope: unfiled = no clientId
+      // Client scope: unfiled = no clientId (guaranteed by the index lane)
       if (scope === "client") {
         return !doc.clientId;
       }
@@ -1582,12 +1669,14 @@ export const getByFolder = query({
       if (!args.projectId) {
         return [];
       }
-      // Get documents for this project and folder type
+      // Get documents for this project and folder type (newest 1000 — heavy
+      // rows, avoids the 16MB read-limit crash).
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
 
       // Filter for documents in this specific folder within the project
       // For "unfiled", return docs not matching any known project folder
@@ -1601,12 +1690,13 @@ export const getByFolder = query({
       }
       return docs.filter(doc => doc.folderId === args.folderType);
     } else {
-      // Client-level folder
+      // Client-level folder (newest 1000 — heavy rows, avoids 16MB crash).
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
 
       // For "unfiled", return client-level docs not matching any known client folder
       if (args.folderType === "unfiled") {
@@ -1654,12 +1744,14 @@ export const getByScope = query({
     }
 
     if (args.scope === "internal") {
-      // Internal documents - accessible to all authenticated users
+      // Internal documents - accessible to all authenticated users.
+      // Newest 1000 — heavy rows, avoids the 16MB read-limit crash.
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_scope", (q: any) => q.eq("scope", "internal"))
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
 
       // Filter by folder if provided
       if (args.folderId) {
@@ -1670,14 +1762,16 @@ export const getByScope = query({
     }
 
     if (args.scope === "personal") {
-      // Personal documents - only show user's own documents
+      // Personal documents - only show user's own documents.
+      // Newest 1000 — heavy rows, avoids the 16MB read-limit crash.
       const docs = await ctx.db
         .query("documents")
         .withIndex("by_scope_owner", (q: any) =>
           q.eq("scope", "personal").eq("ownerId", user._id)
         )
+        .order("desc")
         .filter((q) => q.neq(q.field("isDeleted"), true))
-        .collect();
+        .take(1000);
 
       // Filter by folder if provided
       if (args.folderId) {
@@ -1691,7 +1785,9 @@ export const getByScope = query({
   },
 });
 
-// Query: Get internal document counts per folder
+// Query: Get internal document counts per folder — served from statsCache
+// ("internalDocCounts", refreshed by recomputeDocumentAggregates). A live scan
+// of internal-scope docs loaded heavy rows.
 export const getInternalDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
@@ -1700,19 +1796,11 @@ export const getInternalDocumentCounts = query({
       return {};
     }
 
-    const docs = await ctx.db
-      .query("documents")
-      .withIndex("by_scope", (q: any) => q.eq("scope", "internal"))
-      .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-
-    const counts: Record<string, number> = {};
-    for (const doc of docs) {
-      const folderId = doc.folderId || "miscellaneous";
-      counts[folderId] = (counts[folderId] || 0) + 1;
-    }
-
-    return counts;
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "internalDocCounts"))
+      .first();
+    return (cached?.value ?? {}) as Record<string, number>;
   },
 });
 
@@ -1752,64 +1840,247 @@ export const getPersonalDocumentCounts = query({
   },
 });
 
-// Query: Get document counts per client
+// Query: Get document counts per client.
+// Served from statsCache — a full-table scan here exceeds the 16MB read limit
+// (document rows carry textContent). The cache is refreshed every 15 minutes
+// by the recomputeClientDocCounts chain (see crons.ts).
 export const getClientDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const counts: Record<string, number> = {};
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "clientDocCounts"))
+      .first();
+    return (cached?.value ?? {}) as Record<string, number>;
+  },
+});
 
-    for (const doc of allDocs) {
-      if (doc.clientId) {
+// Recompute per-client document counts into statsCache. Walks the documents
+// table in small pages (rows can approach the 1MB document ceiling, so each
+// execution must stay well under the 16MB read limit) and chains itself via
+// the scheduler until done — same bounded-mutation pattern as the nightly
+// knowledge integrity sweep.
+export const recomputeClientDocCounts = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    counts: v.optional(v.record(v.string(), v.number())),
+  },
+  handler: async (ctx, args) => {
+    const counts: Record<string, number> = { ...(args.counts ?? {}) };
+    const page = await ctx.db
+      .query("documents")
+      .paginate({ numItems: 12, cursor: args.cursor ?? null });
+
+    for (const doc of page.page) {
+      if (doc.clientId && doc.isDeleted !== true) {
         counts[doc.clientId] = (counts[doc.clientId] || 0) + 1;
       }
     }
 
-    return counts;
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.documents.recomputeClientDocCounts, {
+        cursor: page.continueCursor,
+        counts,
+      });
+      return;
+    }
+
+    const existing = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "clientDocCounts"))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { value: counts, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("statsCache", {
+        key: "clientDocCounts",
+        value: counts,
+        updatedAt: Date.now(),
+      });
+    }
   },
 });
 
-// Query: Get folder counts for a client (both client-level and project-level)
-export const getFolderCounts = query({
-  args: { clientId: v.id("clients") },
+// Recompute the document-derived aggregates that back the dashboard/sidebar
+// stat queries (getFolderStats, getUniqueFileTypes, getUniqueCategories,
+// getInternalDocumentCounts, getFolderCounts, getProjectFolderCounts, and
+// internalFolders.getDocumentCounts) into statsCache. One paginated walk of the
+// heavy documents table (rows can approach the 1MB ceiling, so 12/page keeps
+// each execution well under the 16MB read limit) then a paginated walk of the
+// notes table, chaining via the scheduler — same bounded-mutation pattern as
+// recomputeClientDocCounts. Registered on the "recompute-document-aggregates"
+// cron. Keeps every consuming query's return shape identical, served from the
+// cache keys written at the end.
+export const recomputeDocumentAggregates = internalMutation({
+  args: {
+    phase: v.optional(v.union(v.literal("documents"), v.literal("notes"))),
+    cursor: v.optional(v.string()),
+    acc: v.optional(v.any()),
+  },
   handler: async (ctx, args) => {
-    const docs = await ctx.db
-      .query("documents")
-      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
-      .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
+    const phase = args.phase ?? "documents";
+    const acc: any = args.acc ?? {
+      clientDocStats: {},        // clientId  -> { count, lastUpdatedMs }
+      projectDocStats: {},       // projectId -> { count, lastUpdatedMs }
+      fileTypes: {},             // set-as-object of fileTypeDetected
+      categories: {},            // set-as-object of category
+      internalDocCounts: {},     // folderId  -> count (internal scope)
+      folderCountsByClient: {},  // clientId  -> { clientFolders, clientTotal, projectFolders }
+      notesByProject: {},        // projectId -> note count
+    };
 
-    const clientFolders: Record<string, number> = {};
-    const projectFolders: Record<string, Record<string, number>> = {};
-    let clientTotal = 0;
+    if (phase === "documents") {
+      const page = await ctx.db
+        .query("documents")
+        .paginate({ numItems: 12, cursor: args.cursor ?? null });
 
-    for (const doc of docs) {
-      if (doc.projectId) {
-        // Project-level document
-        if (!projectFolders[doc.projectId]) {
-          projectFolders[doc.projectId] = {};
+      for (const doc of page.page) {
+        if (doc.isDeleted === true) continue;
+
+        if (doc.fileTypeDetected) acc.fileTypes[doc.fileTypeDetected] = true;
+        if (doc.category) acc.categories[doc.category] = true;
+
+        if (doc.scope === "internal") {
+          const fid = doc.folderId || "miscellaneous";
+          acc.internalDocCounts[fid] = (acc.internalDocCounts[fid] || 0) + 1;
         }
-        const folderKey = doc.folderId || 'uncategorized';
-        projectFolders[doc.projectId][folderKey] = (projectFolders[doc.projectId][folderKey] || 0) + 1;
-      } else {
-        // Client-level document (no project)
-        clientTotal++;
-        if (doc.folderId && doc.folderType === 'client') {
-          clientFolders[doc.folderId] = (clientFolders[doc.folderId] || 0) + 1;
+
+        const uploadedMs = doc.uploadedAt ? new Date(doc.uploadedAt).getTime() : 0;
+
+        if (doc.clientId) {
+          const cs = acc.clientDocStats[doc.clientId] || { count: 0, lastUpdatedMs: 0 };
+          cs.count++;
+          if (uploadedMs > cs.lastUpdatedMs) cs.lastUpdatedMs = uploadedMs;
+          acc.clientDocStats[doc.clientId] = cs;
+
+          const fc = acc.folderCountsByClient[doc.clientId] || {
+            clientFolders: {},
+            clientTotal: 0,
+            projectFolders: {},
+          };
+          if (doc.projectId) {
+            if (!fc.projectFolders[doc.projectId]) fc.projectFolders[doc.projectId] = {};
+            const key = doc.folderId || "uncategorized";
+            fc.projectFolders[doc.projectId][key] = (fc.projectFolders[doc.projectId][key] || 0) + 1;
+          } else {
+            fc.clientTotal++;
+            if (doc.folderId && doc.folderType === "client") {
+              fc.clientFolders[doc.folderId] = (fc.clientFolders[doc.folderId] || 0) + 1;
+            }
+          }
+          acc.folderCountsByClient[doc.clientId] = fc;
         }
+
+        if (doc.projectId) {
+          const ps = acc.projectDocStats[doc.projectId] || { count: 0, lastUpdatedMs: 0 };
+          ps.count++;
+          if (uploadedMs > ps.lastUpdatedMs) ps.lastUpdatedMs = uploadedMs;
+          acc.projectDocStats[doc.projectId] = ps;
+        }
+      }
+
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.documents.recomputeDocumentAggregates, {
+          phase: "documents",
+          cursor: page.continueCursor,
+          acc,
+        });
+        return;
+      }
+
+      // Documents done → walk notes for per-project note counts.
+      await ctx.scheduler.runAfter(0, internal.documents.recomputeDocumentAggregates, {
+        phase: "notes",
+        cursor: undefined,
+        acc,
+      });
+      return;
+    }
+
+    // phase === "notes" — notes rows are lighter than documents; 100/page.
+    const page = await ctx.db
+      .query("notes")
+      .paginate({ numItems: 100, cursor: args.cursor ?? null });
+
+    for (const note of page.page) {
+      if (note.projectId) {
+        const pid = note.projectId as string;
+        acc.notesByProject[pid] = (acc.notesByProject[pid] || 0) + 1;
       }
     }
 
-    // Add note counts to the "notes" folder for each project
-    const allNotes = await ctx.db.query("notes").collect();
-    for (const note of allNotes) {
-      if (note.projectId) {
-        const pid = note.projectId as string;
-        if (!projectFolders[pid]) {
-          projectFolders[pid] = {};
-        }
-        projectFolders[pid]["notes"] = (projectFolders[pid]["notes"] || 0) + 1;
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.documents.recomputeDocumentAggregates, {
+        phase: "notes",
+        cursor: page.continueCursor,
+        acc,
+      });
+      return;
+    }
+
+    // All walks complete → write each aggregate to its statsCache key.
+    const writes: Array<[string, any]> = [
+      ["docFolderStats", { clients: acc.clientDocStats, projects: acc.projectDocStats }],
+      ["uniqueFileTypes", Object.keys(acc.fileTypes).sort()],
+      ["uniqueCategories", Object.keys(acc.categories).sort()],
+      ["internalDocCounts", acc.internalDocCounts],
+      ["folderCountsByClient", acc.folderCountsByClient],
+      ["notesByProject", acc.notesByProject],
+    ];
+    for (const [key, value] of writes) {
+      const existing = await ctx.db
+        .query("statsCache")
+        .withIndex("by_key", (q) => q.eq("key", key))
+        .first();
+      if (existing) {
+        await ctx.db.patch(existing._id, { value, updatedAt: Date.now() });
+      } else {
+        await ctx.db.insert("statsCache", { key, value, updatedAt: Date.now() });
       }
+    }
+  },
+});
+
+// Query: Get folder counts for a client (both client-level and project-level).
+//
+// Document folder counts come from statsCache ("folderCountsByClient", a
+// per-client nested record) and note counts from statsCache ("notesByProject"),
+// both refreshed by recomputeDocumentAggregates. The old version .collect()ed
+// every client doc AND the entire notes table (heavy rows → 16MB crash).
+export const getFolderCounts = query({
+  args: { clientId: v.id("clients") },
+  handler: async (ctx, args) => {
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "folderCountsByClient"))
+      .first();
+    const all = (cached?.value ?? {}) as Record<string, {
+      clientFolders: Record<string, number>;
+      clientTotal: number;
+      projectFolders: Record<string, Record<string, number>>;
+    }>;
+    const entry = all[args.clientId] ?? { clientFolders: {}, clientTotal: 0, projectFolders: {} };
+
+    const clientFolders: Record<string, number> = { ...entry.clientFolders };
+    const clientTotal = entry.clientTotal;
+    const projectFolders: Record<string, Record<string, number>> = {};
+    for (const [pid, folders] of Object.entries(entry.projectFolders)) {
+      projectFolders[pid] = { ...folders };
+    }
+
+    // Add note counts to the "notes" folder for each project (global, matching
+    // the old behaviour where every project with notes gets an entry).
+    const notesCached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "notesByProject"))
+      .first();
+    const notesByProject = (notesCached?.value ?? {}) as Record<string, number>;
+    for (const [pid, n] of Object.entries(notesByProject)) {
+      if (!n) continue;
+      if (!projectFolders[pid]) {
+        projectFolders[pid] = {};
+      }
+      projectFolders[pid]["notes"] = (projectFolders[pid]["notes"] || 0) + n;
     }
 
     return { clientFolders, projectFolders, clientTotal };
@@ -1820,46 +2091,47 @@ export const getFolderCounts = query({
 export const getProjectFolderCounts = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    // Get all projects for this client
+    // Get all projects for this client (projects table is light — read live for
+    // membership). Document folder counts + note counts come from statsCache
+    // (refreshed by recomputeDocumentAggregates); the old version .collect()ed
+    // every client doc (heavy rows) → 16MB crash.
     const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
     const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
 
-    // Get all documents for this client
-    const docs = await ctx.db
-      .query("documents")
-      .withIndex("by_client", (q: any) => q.eq("clientId", args.clientId))
-      .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-    
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "folderCountsByClient"))
+      .first();
+    const all = (cached?.value ?? {}) as Record<string, {
+      clientFolders: Record<string, number>;
+      clientTotal: number;
+      projectFolders: Record<string, Record<string, number>>;
+    }>;
+    const projectFolders = all[args.clientId]?.projectFolders ?? {};
+
+    const notesCached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "notesByProject"))
+      .first();
+    const notesByProject = (notesCached?.value ?? {}) as Record<string, number>;
+
     // Build counts per project
     const result: Record<string, { folders: Record<string, number>; total: number }> = {};
-    
+
     for (const project of clientProjects) {
-      result[project._id] = { folders: {}, total: 0 };
-    }
-    
-    for (const doc of docs) {
-      if (doc.projectId && result[doc.projectId]) {
-        const folderKey = doc.folderId || 'uncategorized';
-        result[doc.projectId].folders[folderKey] = (result[doc.projectId].folders[folderKey] || 0) + 1;
-        result[doc.projectId].total++;
-      }
+      const folders: Record<string, number> = { ...(projectFolders[project._id] ?? {}) };
+      const total = Object.values(folders).reduce((a, b) => a + b, 0);
+      result[project._id] = { folders, total };
     }
 
     // Add note counts to the "notes" folder for each project
     for (const project of clientProjects) {
-      const projectNotes = await ctx.db
-        .query("notes")
-        .withIndex("by_project", (q: any) => q.eq("projectId", project._id))
-        .collect();
-      if (projectNotes.length > 0) {
-        if (!result[project._id]) {
-          result[project._id] = { folders: {}, total: 0 };
-        }
-        result[project._id].folders["notes"] = (result[project._id].folders["notes"] || 0) + projectNotes.length;
-        result[project._id].total += projectNotes.length;
+      const n = notesByProject[project._id] || 0;
+      if (n > 0) {
+        result[project._id].folders["notes"] = (result[project._id].folders["notes"] || 0) + n;
+        result[project._id].total += n;
       }
     }
 
@@ -2361,26 +2633,9 @@ export const rename = mutation({
 
     if (args.documentCode !== undefined) {
       if (args.documentCode) {
-        // Check for duplicate codes
-        const existing = await ctx.db
-          .query("documents")
-          .filter((q) => q.neq(q.field("isDeleted"), true))
-          .collect();
-        const duplicate = existing.find(
-          (d) => d.documentCode === args.documentCode && d._id !== args.id
-        );
-        if (duplicate) {
-          // Auto-suffix to avoid duplicate
-          let suffix = 1;
-          let candidateCode = `${args.documentCode}-${suffix}`;
-          while (existing.some((d) => d.documentCode === candidateCode && d._id !== args.id)) {
-            suffix++;
-            candidateCode = `${args.documentCode}-${suffix}`;
-          }
-          updates.documentCode = candidateCode;
-        } else {
-          updates.documentCode = args.documentCode;
-        }
+        // Auto-suffix to avoid duplicate (by_documentCode point lookups,
+        // excluding self — was a full-table scan of every heavy row).
+        updates.documentCode = await uniqueDocumentCode(ctx, args.documentCode, args.id);
       } else {
         updates.documentCode = args.documentCode;
       }

@@ -58,10 +58,15 @@ export const get = query({
 export const getByProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
+    // Bounded at 200 newest-first. Each codifiedExtractions row holds an `items`
+    // array (extraction JSON), so an unbounded collect over a busy project can
+    // approach the 16MB per-execution read limit. 200 covers any realistic
+    // per-project extraction history.
     return await ctx.db
       .query("codifiedExtractions")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+      .order("desc")
+      .take(200);
   },
 });
 
@@ -771,70 +776,64 @@ export const getDeleteImpact = query({
  * Merge all confirmed but unmerged extractions for a project
  * Use this to backfill data that was extracted before auto-merge was implemented
  */
+// Paginated + self-scheduling. The former version collected the ENTIRE
+// codifiedExtractions table (or a whole project's) — heavy `items` rows — into
+// one execution, a 16MB-read-limit hazard. This processes one bounded page per
+// execution and self-schedules the next page until done. Kick off with:
+//   npx convex run codifiedExtractions:mergeUnmergedExtractions
+// The explicit return-type annotation breaks the self-referential `api`
+// inference cycle (the TS2589 trap documented across this codebase).
 export const mergeUnmergedExtractions = mutation({
   args: {
     projectId: v.optional(v.id("projects")),
+    cursor: v.optional(v.string()),
+    mergedSoFar: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    // Get all extractions that are confirmed but not merged
-    let extractions;
-    if (args.projectId) {
-      extractions = await ctx.db
-        .query("codifiedExtractions")
-        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-        .collect();
-    } else {
-      extractions = await ctx.db.query("codifiedExtractions").collect();
-    }
-    
-    const unmerged = extractions.filter(e => 
-      e.isFullyConfirmed && 
-      !e.mergedToProjectLibrary && 
-      e.projectId
-    );
-    
-    let mergedCount = 0;
-    const results: { extractionId: string; documentName: string; projectId: string; result: string; itemCount: number }[] = [];
-    
-    for (const extraction of unmerged) {
-      const document = await ctx.db.get(extraction.documentId as Id<"documents">);
-      const documentName = document?.fileName ?? "Unknown Document";
-      
-      if (!extraction.projectId) {
-        results.push({
-          extractionId: extraction._id,
-          documentName,
-          projectId: "missing",
-          result: "skipped - no projectId",
-          itemCount: extraction.items?.length ?? 0,
-        });
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ done: boolean; mergedThisPage: number; mergedSoFar: number }> => {
+    const PAGE = 25;
+    const base = args.projectId
+      ? ctx.db
+          .query("codifiedExtractions")
+          .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      : ctx.db.query("codifiedExtractions");
+    const page = await base.paginate({ cursor: args.cursor ?? null, numItems: PAGE });
+
+    let mergedThisPage = 0;
+    for (const extraction of page.page) {
+      if (
+        !extraction.isFullyConfirmed ||
+        extraction.mergedToProjectLibrary ||
+        !extraction.projectId
+      ) {
         continue;
       }
-      
+      const document = await ctx.db.get(extraction.documentId as Id<"documents">);
+      const documentName = document?.fileName ?? "Unknown Document";
+
       await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
         extractionId: extraction._id,
         projectId: extraction.projectId,
         documentId: extraction.documentId,
         documentName,
       });
-      
-      mergedCount++;
-      results.push({
-        extractionId: extraction._id,
-        documentName,
-        projectId: extraction.projectId,
-        result: "scheduled for merge",
-        itemCount: extraction.items?.length ?? 0,
-      });
+      mergedThisPage++;
     }
-    
-    return {
-      totalExtractions: extractions.length,
-      unmergedFound: unmerged.length,
-      mergedCount,
-      results,
-      message: `Scheduled ${mergedCount} extractions for merge`,
-    };
+
+    const mergedSoFar = (args.mergedSoFar ?? 0) + mergedThisPage;
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, api.codifiedExtractions.mergeUnmergedExtractions, {
+        projectId: args.projectId,
+        cursor: page.continueCursor,
+        mergedSoFar,
+      });
+      return { done: false, mergedThisPage, mergedSoFar };
+    }
+
+    return { done: true, mergedThisPage, mergedSoFar };
   },
 });
 
@@ -844,8 +843,14 @@ export const mergeUnmergedExtractions = mutation({
 export const debugExtractions = query({
   args: {},
   handler: async (ctx) => {
-    const extractions = await ctx.db.query("codifiedExtractions").collect();
-    
+    // Hard-bounded debug helper: full-table collect of heavy `items` rows in a
+    // public query is a read-limit hazard, so cap at the 25 newest. This is a
+    // diagnostic surface, not a data source.
+    const extractions = await ctx.db
+      .query("codifiedExtractions")
+      .order("desc")
+      .take(25);
+
     const results = [];
     for (const e of extractions) {
       const doc = await ctx.db.get(e.documentId);
@@ -869,44 +874,47 @@ export const debugExtractions = query({
  * Backfill projectIds from documents to extractions and trigger merges
  * This fixes extractions that were created before the document was assigned to a project
  */
+// Paginated chained migration. The former version collected the ENTIRE
+// codifiedExtractions table (heavy `items` rows) in one execution — a 16MB
+// read-limit hazard. This walks the table one bounded page per execution,
+// self-scheduling the next page until done. Running totals ride through the
+// args. Kick off with:
+//   npx convex run codifiedExtractions:backfillProjectIds
+// Explicit return-type annotation breaks the self-referential `api` inference
+// cycle (the TS2589 trap documented across this codebase).
 export const backfillProjectIds = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const extractions = await ctx.db.query("codifiedExtractions").collect();
-    
-    let updatedCount = 0;
-    let mergeScheduledCount = 0;
-    const results: { 
-      extractionId: string; 
-      documentName: string;
-      action: string;
-      projectId?: string;
-    }[] = [];
-    
-    for (const extraction of extractions) {
+  args: {
+    cursor: v.optional(v.string()),
+    updatedSoFar: v.optional(v.number()),
+    mergesScheduledSoFar: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    done: boolean;
+    projectIdsUpdated: number;
+    mergesScheduled: number;
+  }> => {
+    const PAGE = 25;
+    const page = await ctx.db
+      .query("codifiedExtractions")
+      .paginate({ cursor: args.cursor ?? null, numItems: PAGE });
+
+    let updatedCount = args.updatedSoFar ?? 0;
+    let mergeScheduledCount = args.mergesScheduledSoFar ?? 0;
+
+    for (const extraction of page.page) {
       const document = await ctx.db.get(extraction.documentId);
-      if (!document) {
-        results.push({
-          extractionId: extraction._id,
-          documentName: "DELETED",
-          action: "skipped - document not found",
-        });
-        continue;
-      }
-      
+      if (!document) continue;
+
       // Check if extraction needs projectId from document
       if (!extraction.projectId && document.projectId) {
         await ctx.db.patch(extraction._id, {
           projectId: document.projectId,
         });
         updatedCount++;
-        results.push({
-          extractionId: extraction._id,
-          documentName: document.fileName,
-          action: "updated projectId",
-          projectId: document.projectId,
-        });
-        
+
         // If fully confirmed and not yet merged, schedule merge
         if (extraction.isFullyConfirmed && !extraction.mergedToProjectLibrary && extraction.items.length > 0) {
           await ctx.scheduler.runAfter(0, api.projectDataLibrary.mergeExtractionToLibrary, {
@@ -916,12 +924,6 @@ export const backfillProjectIds = mutation({
             documentName: document.fileName,
           });
           mergeScheduledCount++;
-          results.push({
-            extractionId: extraction._id,
-            documentName: document.fileName,
-            action: "scheduled merge",
-            projectId: document.projectId,
-          });
         }
       } else if (extraction.projectId && extraction.isFullyConfirmed && !extraction.mergedToProjectLibrary && extraction.items.length > 0) {
         // Has projectId, is confirmed, but not merged yet
@@ -932,21 +934,19 @@ export const backfillProjectIds = mutation({
           documentName: document.fileName,
         });
         mergeScheduledCount++;
-        results.push({
-          extractionId: extraction._id,
-          documentName: document.fileName,
-          action: "scheduled merge (had projectId)",
-          projectId: extraction.projectId,
-        });
       }
     }
-    
-    return {
-      totalExtractions: extractions.length,
-      projectIdsUpdated: updatedCount,
-      mergesScheduled: mergeScheduledCount,
-      results,
-    };
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, api.codifiedExtractions.backfillProjectIds, {
+        cursor: page.continueCursor,
+        updatedSoFar: updatedCount,
+        mergesScheduledSoFar: mergeScheduledCount,
+      });
+      return { done: false, projectIdsUpdated: updatedCount, mergesScheduled: mergeScheduledCount };
+    }
+
+    return { done: true, projectIdsUpdated: updatedCount, mergesScheduled: mergeScheduledCount };
   },
 });
 

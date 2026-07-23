@@ -7,7 +7,18 @@ import { Id } from "./_generated/dataModel";
 // ============================================================================
 
 /**
- * Get all snapshots for a project
+ * Get all snapshots for a project — METADATA ONLY.
+ *
+ * Each dataLibrarySnapshots row holds a frozen full copy of every
+ * projectDataItem in its `items` array, so returning full rows for a whole
+ * project's snapshot history can blow the 16MB per-execution read limit. The
+ * history list UI only needs metadata (reason, counts, timestamps); fetch a
+ * single snapshot's items on demand via `getSnapshotItems`.
+ *
+ * Bounded at 200 newest-first. Convex has no projection — `.take()` still reads
+ * whole rows (items included) — so the cap is a real read-weight guard, not just
+ * a smaller return payload. FOLLOW-UP: a dedicated snapshot-metadata table (or
+ * moving `items` to a child table) would let this be truly cheap and unbounded.
  */
 export const getSnapshotsByProject = query({
   args: { projectId: v.id("projects") },
@@ -15,12 +26,40 @@ export const getSnapshotsByProject = query({
     const snapshots = await ctx.db
       .query("dataLibrarySnapshots")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
-    
-    // Sort by created date descending
-    return snapshots.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+      .order("desc")
+      .take(200);
+
+    return snapshots.map((s) => ({
+      _id: s._id,
+      _creationTime: s._creationTime,
+      projectId: s.projectId,
+      createdAt: s.createdAt,
+      createdBy: s.createdBy,
+      reason: s.reason,
+      itemCount: s.itemCount,
+      documentCount: s.documentCount,
+      modelRunId: s.modelRunId,
+      description: s.description,
+    }));
+  },
+});
+
+/**
+ * Fetch a single snapshot's frozen items on demand (companion to the
+ * metadata-only `getSnapshotsByProject`). One row read; heavy but bounded to one
+ * snapshot.
+ */
+export const getSnapshotItems = query({
+  args: { snapshotId: v.id("dataLibrarySnapshots") },
+  handler: async (ctx, args) => {
+    const snap = await ctx.db.get(args.snapshotId);
+    if (!snap) return null;
+    return {
+      snapshotId: snap._id,
+      itemCount: snap.itemCount,
+      documentCount: snap.documentCount,
+      items: snap.items,
+    };
   },
 });
 
@@ -353,25 +392,36 @@ export const cleanupOldSnapshots = mutation({
     keepCount: v.number(), // How many recent snapshots to keep
   },
   handler: async (ctx, args) => {
-    const snapshots = await ctx.db
-      .query("dataLibrarySnapshots")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
-    
-    // Sort by date descending
-    const sorted = snapshots.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    // Keep the specified number, delete the rest
-    // But never delete snapshots linked to model runs
-    const toDelete = sorted.slice(args.keepCount).filter(s => !s.modelRunId);
-    
-    for (const snapshot of toDelete) {
-      await ctx.db.delete(snapshot._id);
+    // Walk newest-first in bounded pages via the by_project index instead of
+    // collecting every heavy snapshot row (each carries a full `items` copy) to
+    // sort in memory. Keep the first `keepCount`; delete older ones except those
+    // linked to a model run. Deleting removes rows from the tail, so a plain
+    // cursor walk is stable here.
+    const PAGE = 25;
+    let cursor: string | null = null;
+    let seen = 0;
+    let deleted = 0;
+
+    while (true) {
+      const page = await ctx.db
+        .query("dataLibrarySnapshots")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .order("desc")
+        .paginate({ cursor, numItems: PAGE });
+
+      for (const snapshot of page.page) {
+        seen++;
+        if (seen <= args.keepCount) continue;
+        if (snapshot.modelRunId) continue; // never delete model-run snapshots
+        await ctx.db.delete(snapshot._id);
+        deleted++;
+      }
+
+      if (page.isDone) break;
+      cursor = page.continueCursor;
     }
-    
-    return { deleted: toDelete.length };
+
+    return { deleted };
   },
 });
 

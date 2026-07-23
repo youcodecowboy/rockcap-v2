@@ -245,10 +245,14 @@ export const transitionStateInternal = internalMutation({
 export const outreachStats = query({
   args: {},
   handler: async (ctx) => {
-    const clients = await ctx.db.query("clients").collect();
-    const prospects = clients.filter(
-      (c: any) => c.status === "prospect" && c.prospectState,
-    );
+    // Narrow the base set with by_status instead of scanning all clients, then
+    // keep only rows with a prospectState. Bounded cap as a read-limit guard;
+    // the per-prospect fanout below is two indexed reads each.
+    const clients = await ctx.db
+      .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
+      .take(2000);
+    const prospects = clients.filter((c: any) => c.prospectState);
     const stats: Record<
       string,
       { emailsSent: number; lastSentAt?: string; lastReplyAt?: string }

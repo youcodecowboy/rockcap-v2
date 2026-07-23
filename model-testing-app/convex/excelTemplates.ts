@@ -28,23 +28,24 @@ export const getTemplateByName = query({
 });
 
 // Query: Get all Excel templates
+//
+// fileType (a MIME string) is not indexed, and Excel docs are rare, so a
+// filtered .collect() previously scanned the ENTIRE heavy documents table
+// (textContent/extractedData rows) to find a handful of matches → 16MB
+// read-limit crash risk. There is no usable index (by_category / by_status hold
+// unrelated values), so we bound the scan to the newest 1000 rows and filter in
+// JS. Trade-off: templates older than the newest 1000 docs won't surface.
+// FOLLOW-UP: a documents `.index("by_fileType", ["fileType"])` would make this
+// exact and cheap again.
 export const listTemplates = query({
   args: {},
   handler: async (ctx) => {
-    const docs = await ctx.db
-      .query("documents")
-      .filter((q) =>
-        q.and(
-          q.or(
-            q.eq(q.field("fileType"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            q.eq(q.field("fileType"), "application/vnd.ms-excel")
-          ),
-          q.neq(q.field("isDeleted"), true)
-        )
-      )
-      .collect();
-    
-    return docs;
+    const recent = await ctx.db.query("documents").order("desc").take(1000);
+    return recent.filter((doc) =>
+      doc.isDeleted !== true &&
+      (doc.fileType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        doc.fileType === "application/vnd.ms-excel")
+    );
   },
 });
 

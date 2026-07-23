@@ -1194,13 +1194,22 @@ export const checkForDuplicates = query({
     const internalExternal = args.isInternal ? "INT" : "EXT";
     const basePattern = `${args.projectShortcode.toUpperCase()}-${typeAbbrev}-${internalExternal}`;
     
-    // Find documents with matching pattern
-    const allDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-    const matches = allDocs.filter(doc => {
-      if (!doc.documentCode) return false;
-      return doc.documentCode.startsWith(basePattern);
-    });
-    
+    // Find documents whose documentCode starts with basePattern. The
+    // by_documentCode index range gives us exactly that prefix family, instead
+    // of the former full-table scan that loaded every heavy documents row and
+    // risked the 16MB read limit. Capped at 1000 members of the family.
+    const familyDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_documentCode", (q: any) =>
+        q.gte("documentCode", basePattern).lt("documentCode", basePattern + "￿")
+      )
+      .take(1000);
+    const matches = familyDocs.filter((doc: any) =>
+      doc.isDeleted !== true &&
+      doc.documentCode &&
+      doc.documentCode.startsWith(basePattern)
+    );
+
     if (matches.length === 0) {
       return { isDuplicate: false, existingDocuments: [] };
     }

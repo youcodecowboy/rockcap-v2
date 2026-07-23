@@ -193,4 +193,26 @@ crons.daily(
   internal.knowledge.integritySweep.nightlyIntegritySweep,
 );
 
+// Per-client document count cache (statsCache "clientDocCounts") — feeds the
+// docs sidebar + mobile client list badges. Chained paginated walk, so no
+// single execution scans the heavy documents table.
+crons.interval(
+  "recompute-client-doc-counts",
+  { minutes: 15 },
+  internal.documents.recomputeClientDocCounts,
+  {},
+);
+
+// Document-derived stat aggregates (statsCache keys: docFolderStats,
+// uniqueFileTypes, uniqueCategories, internalDocCounts, folderCountsByClient,
+// notesByProject) — feed the docs dashboard/sidebar stat queries. Chained
+// paginated walk of the heavy documents table + the notes table, so no single
+// execution exceeds the 16MB read limit.
+crons.interval(
+  "recompute-document-aggregates",
+  { minutes: 15 },
+  internal.documents.recomputeDocumentAggregates,
+  {},
+);
+
 export default crons;

@@ -52,15 +52,29 @@ export const getByProject = query({
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
+    // Bounded at 300 newest-first. documentExtractions rows hold `extractedData`
+    // blobs, so an unbounded collect over a busy project risks the 16MB read
+    // limit. We then keep only the latest version per document — the common need
+    // — which further trims the payload.
     const extractions = await ctx.db
       .query("documentExtractions")
       .withIndex("by_project", (q: any) => q.eq("projectId", args.projectId))
-      .collect();
-    
+      .order("desc")
+      .take(300);
+
     // Sort by extractedAt (descending) - most recent first
-    return extractions.sort((a, b) => 
+    extractions.sort((a, b) =>
       new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime()
     );
+
+    // Collapse to the latest version per document.
+    const latestByDoc = new Map<string, (typeof extractions)[number]>();
+    for (const e of extractions) {
+      const key = e.documentId as unknown as string;
+      const seen = latestByDoc.get(key);
+      if (!seen || e.version > seen.version) latestByDoc.set(key, e);
+    }
+    return Array.from(latestByDoc.values());
   },
 });
 

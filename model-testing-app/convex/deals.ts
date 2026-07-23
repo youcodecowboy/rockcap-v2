@@ -6,8 +6,12 @@ import { v } from "convex/values";
  */
 export const getAllDeals = query({
   handler: async (ctx) => {
-    const deals = await ctx.db.query("deals").collect();
-    
+    // BOUNDED (Convex 16k-row / 16MB read-limit guard): deals is HubSpot-synced
+    // and grows. Cap newest-first, plus a per-deal contact/company fanout below.
+    // Structural follow-up: paginate the prospecting deals surface.
+    const deals = await ctx.db.query("deals").order("desc").take(2000);
+
+
     // Fetch associated contacts and companies
     const dealsWithDetails = await Promise.all(
       deals.map(async (deal) => {
@@ -89,7 +93,11 @@ export const getDealsByPipeline = query({
  */
 export const getPipelineTotal = query({
   handler: async (ctx) => {
-    const deals = await ctx.db.query("deals").collect();
+    // BOUNDED to stay under the Convex read limit. A true sum needs every row, so
+    // this is a generous newest-first cap (an approximation once deals exceed the
+    // cap). Structural follow-up: maintain a running pipeline-total aggregate
+    // (updated on deal upsert) instead of summing the table on every read.
+    const deals = await ctx.db.query("deals").order("desc").take(5000);
     const total = deals.reduce((sum, deal) => {
       return sum + (deal.amount || 0);
     }, 0);
@@ -111,13 +119,28 @@ export const listForClient = query({
       .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
       .collect();
     if (companies.length === 0) return [];
-    const companyIds = new Set(companies.map((c) => c._id));
-    const allDeals = await ctx.db.query("deals").collect();
-    return allDeals.filter((d) =>
-      (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)),
-    );
+    // Resolve deals via the reverse link the companies already carry
+    // (company.linkedDealIds → direct get), instead of scanning the whole deals
+    // table. Maintained symmetrically with deal.linkedCompanyIds by the HubSpot
+    // sync. Semantic note: a deal with a forward linkedCompanyIds link but no
+    // reverse company.linkedDealIds back-link won't surface — durable fix is a
+    // dealCompanies join table (see report).
+    return await resolveDealsForCompanies(ctx, companies);
   },
 });
+
+// Shared reverse-link resolver for the client-scoped deal queries. Dedupes deal
+// ids gathered from each promoted company's linkedDealIds, then direct-gets.
+async function resolveDealsForCompanies(ctx: any, companies: any[]) {
+  const dealIds = new Map<string, any>();
+  for (const c of companies) {
+    for (const id of (c.linkedDealIds ?? [])) dealIds.set(String(id), id);
+  }
+  const deals = await Promise.all(
+    Array.from(dealIds.values()).map((id) => ctx.db.get(id)),
+  );
+  return deals.filter((d): d is NonNullable<typeof d> => d !== null);
+}
 
 /**
  * List only OPEN deals (not closed-won/closed-lost) for a client.
@@ -131,13 +154,9 @@ export const listOpenForClient = query({
       .withIndex("by_promoted", (q) => q.eq("promotedToClientId", args.clientId))
       .collect();
     if (companies.length === 0) return [];
-    const companyIds = new Set(companies.map((c) => c._id));
-    const allDeals = await ctx.db.query("deals").collect();
-    return allDeals.filter(
-      (d) =>
-        (d.linkedCompanyIds ?? []).some((id) => companyIds.has(id)) &&
-        d.isClosed !== true,
-    );
+    // Reverse-link resolution (see listForClient), then keep only open deals.
+    const deals = await resolveDealsForCompanies(ctx, companies);
+    return deals.filter((d) => d.isClosed !== true);
   },
 });
 

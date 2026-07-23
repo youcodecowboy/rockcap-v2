@@ -279,7 +279,8 @@ export default defineSchema({
     .index("by_hubspot_id", ["hubspotCompanyId"])
     .index("by_promoted", ["promotedToClientId"])
     .index("by_lifecycle_stage", ["hubspotLifecycleStage"])
-    .index("by_owner", ["hubspotOwnerId"]),
+    .index("by_owner", ["hubspotOwnerId"])
+    .searchIndex("search_name", { searchField: "name" }),
 
   // Projects table - supports many-to-many with clients via clientRoles
   projects: defineTable({
@@ -499,6 +500,7 @@ export default defineSchema({
     .index("by_owner", ["ownerId"])
     .index("by_scope_owner", ["scope", "ownerId"])
     .index("by_duplicate_of", ["duplicateOf"])
+    .index("by_documentCode", ["documentCode"])
     .searchIndex("search_fileName", {
       searchField: "fileName",
       filterFields: ["scope", "clientId", "projectId"],
@@ -2169,6 +2171,16 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_google_event_id", ["googleEventId"])
     .searchIndex("search_title", { searchField: "title" }),
+
+  // Small precomputed aggregates (e.g. per-client document counts) refreshed
+  // by chained paginated mutations — full-table scans over `documents` exceed
+  // the 16MB per-execution read limit because rows carry textContent, so
+  // badge-count queries read this cache instead.
+  statsCache: defineTable({
+    key: v.string(),
+    value: v.any(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 
   // Context cache for AI assistant - caches gathered context for clients/projects
   contextCache: defineTable({

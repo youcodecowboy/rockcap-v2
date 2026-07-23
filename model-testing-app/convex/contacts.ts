@@ -32,21 +32,32 @@ export const getByClient = query({
 
     if (companies.length === 0) return direct;
 
-    const companyIdSet = new Set(companies.map((c) => c._id));
-    const indirectByCompany: any[] = [];
-    // Per-company indexed scan would be ideal, but `linkedCompanyIds` is an
-    // array field with no compound index. Scanning `contacts` once and
-    // filtering in memory is acceptable here — contact docs are small and
-    // we're resolving a single client view, not the whole table.
-    const all = await ctx.db
-      .query("contacts")
-      .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-    for (const c of all) {
-      if ((c.linkedCompanyIds ?? []).some((id) => companyIdSet.has(id))) {
-        indirectByCompany.push(c);
+    // Path (2) — resolved WITHOUT a full contacts scan. `contact.linkedCompanyIds`
+    // is an array field with no index, so instead of scanning the whole (fastest-
+    // growing) contacts table we walk the reverse links the promoted companies
+    // already carry: `company.linkedContactIds` (internal ids → direct get) and
+    // `company.hubspotContactIds` (HubSpot ids → indexed by_hubspot_id lookup).
+    // These reverse arrays are maintained symmetrically with linkedCompanyIds by
+    // the HubSpot sync + contacts.create. Semantic note: a contact that carries a
+    // forward linkedCompanyIds link but whose company row was NOT back-linked
+    // won't surface here; the durable fix is a contactCompanies join table (see
+    // report). resolveByEmailInternal still cross-checks the forward link.
+    const indirectById = new Map<string, any>();
+    for (const company of companies) {
+      for (const contactId of (company.linkedContactIds ?? [])) {
+        if (indirectById.has(String(contactId))) continue;
+        const c = await ctx.db.get(contactId);
+        if (c && !c.isDeleted) indirectById.set(String(contactId), c);
+      }
+      for (const hsId of (company.hubspotContactIds ?? [])) {
+        const c = await ctx.db
+          .query("contacts")
+          .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hsId))
+          .first();
+        if (c && !c.isDeleted) indirectById.set(String(c._id), c);
       }
     }
+    const indirectByCompany = Array.from(indirectById.values());
 
     // Deduplicate union of paths (a contact may satisfy both at once).
     const byId = new Map<string, any>();
@@ -71,7 +82,16 @@ export const getByProject = query({
 // Query: Get all contacts
 export const getAll = query({
   handler: async (ctx) => {
-    return await ctx.db.query("contacts").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // BOUNDED (Convex 16k-row / 16MB read-limit guard): contacts is the
+    // fastest-growing table and this feeds ~7 in-memory-filter UI surfaces
+    // (rolodex, contact pickers, autocompletes). Order newest-first and cap so
+    // the most recently-created contacts always win. Structural follow-up: give
+    // these surfaces a paginated/searched read instead of "load every contact".
+    return await ctx.db
+      .query("contacts")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(2000);
   },
 });
 
@@ -348,20 +368,38 @@ export async function resolveEmailToContactClient(
 // client, back-fill clientId onto every contact linked to that company.
 // Without this, contacts synced from HubSpot BEFORE the promotion keep
 // linkedCompanyIds but never gain a clientId, so inbound replies from them
-// don't link to the prospect. Mirrors getByClient's in-memory scan over
-// linkedCompanyIds (array field, no compound index). Manually-assigned
-// clientIds are never overwritten.
+// don't link to the prospect. Manually-assigned clientIds are never overwritten.
+//
+// Reworked off the full-contacts scan (Convex 16k-row / 16MB read-limit guard —
+// contacts is the fastest-growing table): resolve the company's contacts via the
+// reverse links it already carries — `linkedContactIds` (internal ids → direct
+// get) and `hubspotContactIds` (indexed by_hubspot_id lookup) — instead of
+// scanning every contact. Same reverse-array assumption as getByClient; the
+// durable fix is a contactCompanies join table (see report).
 export async function backfillContactClientLinks(
   ctx: { db: any },
   companyId: string,
   clientId: string,
 ) {
-  const all = await ctx.db.query("contacts").collect();
-  for (const c of all) {
-    if (c.isDeleted || c.clientId) continue;
-    if ((c.linkedCompanyIds ?? []).some((id: string) => id === companyId)) {
-      await ctx.db.patch(c._id, { clientId });
-    }
+  const company = await ctx.db.get(companyId);
+  if (!company) return;
+
+  const candidateIds = new Map<string, any>();
+  for (const contactId of (company.linkedContactIds ?? [])) {
+    candidateIds.set(String(contactId), contactId);
+  }
+  for (const hsId of (company.hubspotContactIds ?? [])) {
+    const c = await ctx.db
+      .query("contacts")
+      .withIndex("by_hubspot_id", (q: any) => q.eq("hubspotContactId", hsId))
+      .first();
+    if (c) candidateIds.set(String(c._id), c._id);
+  }
+
+  for (const contactId of candidateIds.values()) {
+    const c = await ctx.db.get(contactId);
+    if (!c || c.isDeleted || c.clientId) continue;
+    await ctx.db.patch(c._id, { clientId });
   }
 }
 

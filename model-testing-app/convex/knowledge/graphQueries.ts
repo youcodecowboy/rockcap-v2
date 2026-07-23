@@ -2062,6 +2062,14 @@ export const clientAtomTotals = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
     await requireIdentity(ctx);
+    // Bounded count. atoms carry an optional 1024-dim float64 embedding
+    // (~8KB each) and Convex has no projection (a `.collect()` to read `.length`
+    // loads every embedding), so an unbounded count on a heavily-atomized client
+    // could blow the 16MB per-execution read limit. Cap each status at 1000 —
+    // the drawer header only needs "how much", and a value of 1000 reads as
+    // "1000+". FOLLOW-UP: a maintained counter (statsCache-style, bumped on atom
+    // status writes) is the right way to make this exact and O(1).
+    const CAP = 1000;
     let active = 0;
     let contested = 0;
     for (const status of ["active", "contested"] as const) {
@@ -2070,7 +2078,7 @@ export const clientAtomTotals = query({
         .withIndex("by_client_status", (q) =>
           q.eq("clientId", args.clientId).eq("status", status),
         )
-        .collect();
+        .take(CAP);
       if (status === "active") active = rows.length;
       else contested = rows.length;
     }
