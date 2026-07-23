@@ -193,4 +193,14 @@ crons.daily(
   internal.knowledge.integritySweep.nightlyIntegritySweep,
 );
 
+// Per-client document count cache (statsCache "clientDocCounts") — feeds the
+// docs sidebar + mobile client list badges. Chained paginated walk, so no
+// single execution scans the heavy documents table.
+crons.interval(
+  "recompute-client-doc-counts",
+  { minutes: 15 },
+  internal.documents.recomputeClientDocCounts,
+  {},
+);
+
 export default crons;

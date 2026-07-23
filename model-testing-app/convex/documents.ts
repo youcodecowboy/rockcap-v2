@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
-import { api } from "./_generated/api";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { recordUploadIngestion } from "./knowledge/ingestUpload";
 import {
   buildDocumentName,
@@ -1752,20 +1752,64 @@ export const getPersonalDocumentCounts = query({
   },
 });
 
-// Query: Get document counts per client
+// Query: Get document counts per client.
+// Served from statsCache — a full-table scan here exceeds the 16MB read limit
+// (document rows carry textContent). The cache is refreshed every 15 minutes
+// by the recomputeClientDocCounts chain (see crons.ts).
 export const getClientDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
-    const allDocs = await ctx.db.query("documents").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const counts: Record<string, number> = {};
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "clientDocCounts"))
+      .first();
+    return (cached?.value ?? {}) as Record<string, number>;
+  },
+});
 
-    for (const doc of allDocs) {
-      if (doc.clientId) {
+// Recompute per-client document counts into statsCache. Walks the documents
+// table in small pages (rows can approach the 1MB document ceiling, so each
+// execution must stay well under the 16MB read limit) and chains itself via
+// the scheduler until done — same bounded-mutation pattern as the nightly
+// knowledge integrity sweep.
+export const recomputeClientDocCounts = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    counts: v.optional(v.record(v.string(), v.number())),
+  },
+  handler: async (ctx, args) => {
+    const counts: Record<string, number> = { ...(args.counts ?? {}) };
+    const page = await ctx.db
+      .query("documents")
+      .paginate({ numItems: 12, cursor: args.cursor ?? null });
+
+    for (const doc of page.page) {
+      if (doc.clientId && doc.isDeleted !== true) {
         counts[doc.clientId] = (counts[doc.clientId] || 0) + 1;
       }
     }
 
-    return counts;
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.documents.recomputeClientDocCounts, {
+        cursor: page.continueCursor,
+        counts,
+      });
+      return;
+    }
+
+    const existing = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "clientDocCounts"))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { value: counts, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("statsCache", {
+        key: "clientDocCounts",
+        value: counts,
+        updatedAt: Date.now(),
+      });
+    }
   },
 });
 
