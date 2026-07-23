@@ -4,6 +4,7 @@ import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser } from "./authHelpers";
 import { buildDocumentName } from "../src/lib/documentNaming";
+import { uniqueDocumentCode } from "./documents";
 
 // Mutation: Direct upload document with AI analysis
 // This bypasses the queue and creates the document immediately
@@ -53,15 +54,9 @@ export const uploadDocumentDirect = mutation({
         date: uploadedAt,
       });
       
-      // Ensure uniqueness
-      const existingDocs = await ctx.db.query("documents").filter((q: any) => q.neq(q.field("isDeleted"), true)).collect();
-      let finalCode = documentCode;
-      let counter = 1;
-      while (existingDocs.some(doc => doc.documentCode === finalCode)) {
-        finalCode = `${documentCode}-${counter}`;
-        counter++;
-      }
-      documentCode = finalCode;
+      // Ensure uniqueness (by_documentCode point lookups — was a full-table scan
+      // of every heavy documents row, a 16MB read-limit crash risk).
+      documentCode = await uniqueDocumentCode(ctx, documentCode);
     }
     
     // Insert document directly

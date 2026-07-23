@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // ============================================================================
@@ -118,11 +119,16 @@ export const searchLenders = query({
     region: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Get all lender intelligence records
+    // Get lender intelligence records via the client-type index. Bounded at 200:
+    // clientIntelligence rows are heavy (deep-profile objects + contextMarkdown),
+    // so an unbounded collect can approach the 16MB per-execution read limit as the
+    // lender book grows. 200 comfortably covers the current roster; if it is ever
+    // exceeded a purpose-built slim lender-profile cache (dealSize/propertyTypes/
+    // regions only) keyed by lender is the right follow-up.
     const allLenders = await ctx.db
       .query("clientIntelligence")
       .withIndex("by_client_type", (q) => q.eq("clientType", "lender"))
-      .collect();
+      .take(200);
 
     // Filter by criteria
     let filtered = allLenders;
@@ -194,13 +200,18 @@ export const listClientIntelligence = query({
     clientType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Admin/search helper. clientIntelligence rows are heavy (deep-profile
+    // objects + contextMarkdown logs that grow unbounded), so both branches are
+    // hard-capped at 50 to stay well under the 16MB per-execution read limit —
+    // an admin listing never needs the whole table in one call. If a full
+    // enumeration is ever required, page it.
     if (args.clientType) {
       return await ctx.db
         .query("clientIntelligence")
         .withIndex("by_client_type", (q) => q.eq("clientType", args.clientType!))
-        .collect();
+        .take(50);
     }
-    return await ctx.db.query("clientIntelligence").collect();
+    return await ctx.db.query("clientIntelligence").take(50);
   },
 });
 
@@ -1144,22 +1155,73 @@ export const appendContextInternal = internalMutation({
 // strict-object validator rejecting existing documents on the next push.
 // Idempotent — safe to run repeatedly; reports how many docs it touched.
 // Run with: npx convex run intelligence:stripRetiredRecentUpdates
+// Converted 2026-07 to a self-scheduling paginated chain. The former single
+// pass did unindexed full-table `.collect()` over BOTH intelligence tables in
+// one execution — with heavy deep-profile rows that easily exceeds the 16MB
+// per-execution read limit. This walks clientIntelligence in 10-row pages to
+// exhaustion, then projectIntelligence, self-scheduling the next page each
+// step so every execution reads only a small bounded slice. Running totals ride
+// through the args. Still idempotent — kick off with:
+//   npx convex run intelligence:stripRetiredRecentUpdates
+// The explicit return-type annotation breaks the self-referential `internal`
+// api inference cycle (the TS2589 trap this codebase documents elsewhere).
 export const stripRetiredRecentUpdates = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    let clientsCleaned = 0;
-    let projectsCleaned = 0;
+  args: {
+    phase: v.optional(v.union(v.literal("clients"), v.literal("projects"))),
+    cursor: v.optional(v.string()),
+    clientsCleaned: v.optional(v.number()),
+    projectsCleaned: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    done: boolean;
+    phase: "clients" | "projects";
+    clientsCleaned: number;
+    projectsCleaned: number;
+  }> => {
+    const PAGE = 10;
+    const phase = args.phase ?? "clients";
+    let clientsCleaned = args.clientsCleaned ?? 0;
+    let projectsCleaned = args.projectsCleaned ?? 0;
 
-    for (const row of await ctx.db.query("clientIntelligence").collect()) {
-      const ai = (row as any).aiSummary;
-      if (ai && ai.recentUpdates !== undefined) {
-        const rest = { ...ai };
-        delete rest.recentUpdates;
-        await ctx.db.patch(row._id, { aiSummary: rest });
-        clientsCleaned++;
+    if (phase === "clients") {
+      const page = await ctx.db
+        .query("clientIntelligence")
+        .paginate({ cursor: args.cursor ?? null, numItems: PAGE });
+      for (const row of page.page) {
+        const ai = (row as any).aiSummary;
+        if (ai && ai.recentUpdates !== undefined) {
+          const rest = { ...ai };
+          delete rest.recentUpdates;
+          await ctx.db.patch(row._id, { aiSummary: rest });
+          clientsCleaned++;
+        }
       }
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.intelligence.stripRetiredRecentUpdates,
+          { phase: "clients", cursor: page.continueCursor, clientsCleaned, projectsCleaned },
+        );
+        return { ok: true, done: false, phase: "clients", clientsCleaned, projectsCleaned };
+      }
+      // clientIntelligence exhausted — hand off to the projectIntelligence phase.
+      await ctx.scheduler.runAfter(
+        0,
+        internal.intelligence.stripRetiredRecentUpdates,
+        { phase: "projects", clientsCleaned, projectsCleaned },
+      );
+      return { ok: true, done: false, phase: "projects", clientsCleaned, projectsCleaned };
     }
-    for (const row of await ctx.db.query("projectIntelligence").collect()) {
+
+    // phase === "projects"
+    const page = await ctx.db
+      .query("projectIntelligence")
+      .paginate({ cursor: args.cursor ?? null, numItems: PAGE });
+    for (const row of page.page) {
       const ai = (row as any).aiSummary;
       if (ai && ai.recentUpdates !== undefined) {
         const rest = { ...ai };
@@ -1168,7 +1230,15 @@ export const stripRetiredRecentUpdates = internalMutation({
         projectsCleaned++;
       }
     }
-    return { ok: true, clientsCleaned, projectsCleaned };
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.intelligence.stripRetiredRecentUpdates,
+        { phase: "projects", cursor: page.continueCursor, clientsCleaned, projectsCleaned },
+      );
+      return { ok: true, done: false, phase: "projects", clientsCleaned, projectsCleaned };
+    }
+    return { ok: true, done: true, phase: "projects", clientsCleaned, projectsCleaned };
   },
 });
 

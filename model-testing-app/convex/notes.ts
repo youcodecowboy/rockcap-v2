@@ -519,11 +519,17 @@ export const getAll = query({
         return note.userId === user._id;
       });
     } else {
-      // Get all notes
+      // Get all notes — bounded to the 200 most recently created. Notes carry a
+      // full rich-text `content` JSON body, so an unbounded collect over the
+      // whole table can approach the 16MB per-execution read limit. Order by
+      // creation desc + take(200) keeps the "all notes" view (an unfiled inbox)
+      // cheap; the scoped by-client/by-project/by-template branches above stay
+      // full since they are already narrowed by an index.
       notes = await ctx.db
         .query("notes")
-        .collect();
-      
+        .order("desc")
+        .take(200);
+
       // Filter: Show all filed notes (shared), but only user's own unfiled notes
       notes = notes.filter(note => {
         // If note is filed (has clientId or projectId), show it (shared)

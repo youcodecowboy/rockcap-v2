@@ -33,10 +33,12 @@ export const list = query({
         .withIndex("by_status", (q: any) => q.eq("status", args.status!))
         .collect();
     } else {
-      emails = await ctx.db.query("prospectingEmails").collect();
+      // BOUNDED: prospectingEmails is an append-only log; order newest-first and
+      // cap instead of scanning the whole table for the no-filter branch.
+      emails = await ctx.db.query("prospectingEmails").order("desc").take(2000);
     }
-    
-    return emails.sort((a, b) => 
+
+    return emails.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   },
@@ -204,8 +206,13 @@ export const getRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
-    const allEmails = await ctx.db.query("prospectingEmails").collect();
-    const sorted = allEmails.sort((a, b) => 
+    // Order desc (append-only log) + take a small buffer, then re-sort by
+    // createdAt for exact ordering, instead of scanning the whole table.
+    const recent = await ctx.db
+      .query("prospectingEmails")
+      .order("desc")
+      .take(Math.max(limit * 3, limit));
+    const sorted = recent.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     return sorted.slice(0, limit);

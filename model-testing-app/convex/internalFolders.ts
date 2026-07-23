@@ -64,7 +64,10 @@ export const getByType = query({
   },
 });
 
-// Query: Get document counts per internal folder
+// Query: Get document counts per internal folder — served from statsCache
+// ("internalDocCounts", refreshed by documents.recomputeDocumentAggregates on
+// the "recompute-document-aggregates" cron). A live scan of internal-scope docs
+// loaded heavy rows (textContent/extractedData) and risked the 16MB read limit.
 export const getDocumentCounts = query({
   args: {},
   handler: async (ctx) => {
@@ -73,21 +76,11 @@ export const getDocumentCounts = query({
       return {};
     }
 
-    // Get all internal-scoped documents
-    const documents = await ctx.db
-      .query("documents")
-      .withIndex("by_scope", (q) => q.eq("scope", "internal"))
-      .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
-
-    // Count documents per folder
-    const counts: Record<string, number> = {};
-    for (const doc of documents) {
-      const folderId = doc.folderId || "miscellaneous";
-      counts[folderId] = (counts[folderId] || 0) + 1;
-    }
-
-    return counts;
+    const cached = await ctx.db
+      .query("statsCache")
+      .withIndex("by_key", (q) => q.eq("key", "internalDocCounts"))
+      .first();
+    return (cached?.value ?? {}) as Record<string, number>;
   },
 });
 

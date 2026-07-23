@@ -18,9 +18,16 @@ export const list = query({
   },
   handler: async (ctx, args) => {
     // Note: clientId filtering happens in memory since we can't index on array elements
-    // For better performance with many projects, consider denormalizing client relationships
-    let projects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    
+    // (clientRoles is an array). BOUNDED newest-first as a Convex read-limit
+    // guard; projects grow slowly. Structural follow-up: a projectClients join
+    // table would let this (and getByClient) index the client→projects lookup.
+    let projects = await ctx.db
+      .query("projects")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(2000);
+
+
     if (args.clientId) {
       projects = projects.filter(p => 
         p.clientRoles.some(cr => cr.clientId === args.clientId)
@@ -47,7 +54,14 @@ export const get = query({
 export const getByClient = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // clientRoles is an array (unindexable) — filter in memory. BOUNDED newest-
+    // first as a read-limit guard; see list() for the projectClients join-table
+    // follow-up that would make this an indexed lookup.
+    const allProjects = await ctx.db
+      .query("projects")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(2000);
     return allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );

@@ -23,25 +23,40 @@ export const list = query({
     )),
   },
   handler: async (ctx, args) => {
-    let docs = await ctx.db.query("internalDocuments").collect();
-    
-    // Filter by linked client if provided
+    // Use an index for the narrowing filter instead of collecting the whole
+    // table (rows carry heavy extractedData blobs). by_linked_client and
+    // by_category are exact-match indexes; status has no index so it stays a JS
+    // post-filter. The unfiltered fallback is bounded to the 200 newest via the
+    // by_uploadedAt index — an unbounded collect could hit the 16MB read limit.
+    let docs;
     if (args.linkedClientId) {
-      docs = docs.filter(doc => doc.linkedClientId === args.linkedClientId);
+      docs = await ctx.db
+        .query("internalDocuments")
+        .withIndex("by_linked_client", (q: any) => q.eq("linkedClientId", args.linkedClientId))
+        .collect();
+    } else if (args.category) {
+      docs = await ctx.db
+        .query("internalDocuments")
+        .withIndex("by_category", (q: any) => q.eq("category", args.category))
+        .collect();
+    } else {
+      docs = await ctx.db
+        .query("internalDocuments")
+        .withIndex("by_uploadedAt")
+        .order("desc")
+        .take(200);
     }
-    
-    // Filter by category if provided
-    if (args.category) {
+
+    // Remaining filters that the chosen index did not already satisfy.
+    if (args.linkedClientId && args.category) {
       docs = docs.filter(doc => doc.category === args.category);
     }
-    
-    // Filter by status if provided
     if (args.status) {
       docs = docs.filter(doc => doc.status === args.status);
     }
-    
+
     // Sort by most recent first
-    return docs.sort((a, b) => 
+    return docs.sort((a, b) =>
       new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
   },
@@ -70,8 +85,17 @@ export const getByClient = query({
 export const getByProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
-    const allDocs = await ctx.db.query("internalDocuments").collect();
-    return allDocs.filter(doc => 
+    // linkedProjectIds is an ARRAY column, so Convex can't index membership —
+    // this is an unavoidable scan + JS filter. Bounded to the 200 newest via the
+    // by_uploadedAt index so a growing internalDocuments table can't blow the
+    // 16MB read limit. FOLLOW-UP: a junction table (internalDocumentProjects) or
+    // a by_project index would make this exact and unbounded.
+    const recentDocs = await ctx.db
+      .query("internalDocuments")
+      .withIndex("by_uploadedAt")
+      .order("desc")
+      .take(200);
+    return recentDocs.filter(doc =>
       doc.linkedProjectIds && doc.linkedProjectIds.includes(args.projectId)
     );
   },
@@ -240,17 +264,23 @@ export const getFileUrl = query({
 export const getByFolder = query({
   args: { folderId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    let docs = await ctx.db.query("internalDocuments").collect();
-    
+    // Use the by_folder index instead of collecting the whole table and
+    // JS-filtering (rows carry heavy extractedData blobs). "No folder" docs have
+    // folderId undefined, which the index matches directly.
+    let docs;
     if (args.folderId === undefined || args.folderId === null) {
-      // Return documents without a folder (null or undefined folderId)
-      docs = docs.filter(doc => !doc.folderId);
+      docs = await ctx.db
+        .query("internalDocuments")
+        .withIndex("by_folder", (q: any) => q.eq("folderId", undefined))
+        .collect();
     } else {
-      // Return documents in the specified folder
-      docs = docs.filter(doc => doc.folderId === args.folderId);
+      docs = await ctx.db
+        .query("internalDocuments")
+        .withIndex("by_folder", (q: any) => q.eq("folderId", args.folderId))
+        .collect();
     }
-    
-    return docs.sort((a, b) => 
+
+    return docs.sort((a, b) =>
       new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
     );
   },

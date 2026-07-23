@@ -203,4 +203,16 @@ crons.interval(
   {},
 );
 
+// Document-derived stat aggregates (statsCache keys: docFolderStats,
+// uniqueFileTypes, uniqueCategories, internalDocCounts, folderCountsByClient,
+// notesByProject) — feed the docs dashboard/sidebar stat queries. Chained
+// paginated walk of the heavy documents table + the notes table, so no single
+// execution exceeds the 16MB read limit.
+crons.interval(
+  "recompute-document-aggregates",
+  { minutes: 15 },
+  internal.documents.recomputeDocumentAggregates,
+  {},
+);
+
 export default crons;

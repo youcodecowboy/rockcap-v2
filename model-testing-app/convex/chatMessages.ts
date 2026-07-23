@@ -25,16 +25,22 @@ export const list = query({
       throw new Error("Unauthorized: Session does not belong to current user");
     }
     
-    const query = ctx.db
+    // Enforce a bounded window so a long-running session can't collect an
+    // unbounded number of chatMessages rows (each may carry heavy toolResults /
+    // metadata JSON) and blow the 16MB per-execution read limit. We return the
+    // MOST RECENT `limit` messages in ascending order (fetch desc, then reverse)
+    // so a capped session still shows its latest turns rather than its oldest.
+    const DEFAULT_LIMIT = 500;
+    const MAX_LIMIT = 1000;
+    const limit = Math.min(args.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+
+    const recent = await ctx.db
       .query("chatMessages")
       .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
-      .order("asc");
-    
-    if (args.limit) {
-      return await query.take(args.limit);
-    }
-    
-    return await query.collect();
+      .order("desc")
+      .take(limit);
+
+    return recent.reverse();
   },
 });
 

@@ -1486,22 +1486,18 @@ export const mergeEntities = internalMutation({
     if (entityType === "client") {
       const from = fromId as Id<"clients">;
       const to = toId as Id<"clients">;
-      const scopedAtoms = await ctx.db
-        .query("atoms")
-        .withIndex("by_client_status", (q) => q.eq("clientId", from))
-        .collect();
-      for (const a of scopedAtoms) {
-        await ctx.db.patch(a._id, { clientId: to });
-        scope.atomsRescoped++;
-      }
-      const chunks = await ctx.db
-        .query("documentChunks")
-        .withIndex("by_client", (q) => q.eq("clientId", from))
-        .collect();
-      for (const c of chunks) {
-        await ctx.db.patch(c._id, { clientId: to });
-        scope.chunksRescoped++;
-      }
+      // Heavy re-scope (ALL of the client's atoms + documentChunks, embeddings
+      // included) runs asynchronously in bounded pages — collecting them here
+      // could alone exceed the 16MB per-execution read limit. The atom identity
+      // repoint (subject/object refs) already completed synchronously above; the
+      // denormalized clientId columns these fix are not read by the caller's
+      // subsequent CRM/field-union merge steps, so async completion is safe.
+      // scope.atomsRescoped / chunksRescoped stay 0 here (done off-thread).
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.atomsCore.rescopeMergedAtomsChunks,
+        { entityType: "client", fromId: String(from), toId: String(to) },
+      );
       const lenderFacs = await ctx.db
         .query("facilities")
         .withIndex("by_lender", (q) => q.eq("lenderClientId", from))
@@ -1529,22 +1525,13 @@ export const mergeEntities = internalMutation({
     } else if (entityType === "project") {
       const from = fromId as Id<"projects">;
       const to = toId as Id<"projects">;
-      const scopedAtoms = await ctx.db
-        .query("atoms")
-        .withIndex("by_project", (q) => q.eq("projectId", from))
-        .collect();
-      for (const a of scopedAtoms) {
-        await ctx.db.patch(a._id, { projectId: to });
-        scope.atomsRescoped++;
-      }
-      const chunks = await ctx.db
-        .query("documentChunks")
-        .withIndex("by_project", (q) => q.eq("projectId", from))
-        .collect();
-      for (const c of chunks) {
-        await ctx.db.patch(c._id, { projectId: to });
-        scope.chunksRescoped++;
-      }
+      // Heavy atom + documentChunk re-scope runs asynchronously in bounded pages
+      // (see the client branch above for the rationale).
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.atomsCore.rescopeMergedAtomsChunks,
+        { entityType: "project", fromId: String(from), toId: String(to) },
+      );
       const facs = await ctx.db
         .query("facilities")
         .withIndex("by_project", (q) => q.eq("projectId", from))
@@ -1590,6 +1577,111 @@ export const mergeEntities = internalMutation({
         `atomsRescoped=${scope.atomsRescoped} chunksRescoped=${scope.chunksRescoped} facilitiesRescoped=${scope.facilitiesRescoped} appetiteRescoped=${scope.appetiteRescoped}`,
     );
     return { entityType, fromId, toId, ...counts, scope };
+  },
+});
+
+// ── rescopeMergedAtomsChunks — async tail of mergeEntities ──
+//
+// Re-points the denormalized clientId / projectId scope column on ALL of a
+// merged entity's atoms and documentChunks from → to, in bounded batches, self-
+// scheduling until the from-range is empty. Split out of mergeEntities because
+// those rows carry embeddings (~8KB each) and collecting them in the merge
+// transaction can exceed the 16MB per-execution read limit on a heavily-
+// atomized entity.
+//
+// Take-first (no cursor): each patch moves the row OUT of the from-range, so
+// re-reading the first page of the from-range always returns the next
+// unprocessed rows. Phases run atoms → chunks. Explicit return-type annotation
+// breaks the self-referential `internal` api inference cycle (TS2589 trap).
+const RESCOPE_PAGE = 100;
+export const rescopeMergedAtomsChunks = internalMutation({
+  args: {
+    entityType: v.union(v.literal("client"), v.literal("project")),
+    fromId: v.string(),
+    toId: v.string(),
+    phase: v.optional(v.union(v.literal("atoms"), v.literal("chunks"))),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ done: boolean; phase: "atoms" | "chunks"; rescoped: number }> => {
+    const phase = args.phase ?? "atoms";
+    let rescoped = 0;
+
+    const reschedule = async (next: "atoms" | "chunks") => {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.knowledge.atomsCore.rescopeMergedAtomsChunks,
+        { entityType: args.entityType, fromId: args.fromId, toId: args.toId, phase: next },
+      );
+    };
+
+    if (args.entityType === "client") {
+      const from = args.fromId as Id<"clients">;
+      const to = args.toId as Id<"clients">;
+      if (phase === "atoms") {
+        const batch = await ctx.db
+          .query("atoms")
+          .withIndex("by_client_status", (q) => q.eq("clientId", from))
+          .take(RESCOPE_PAGE);
+        for (const a of batch) {
+          await ctx.db.patch(a._id, { clientId: to });
+          rescoped++;
+        }
+        if (batch.length === RESCOPE_PAGE) {
+          await reschedule("atoms");
+          return { done: false, phase: "atoms", rescoped };
+        }
+        await reschedule("chunks");
+        return { done: false, phase: "chunks", rescoped };
+      }
+      const batch = await ctx.db
+        .query("documentChunks")
+        .withIndex("by_client", (q) => q.eq("clientId", from))
+        .take(RESCOPE_PAGE);
+      for (const c of batch) {
+        await ctx.db.patch(c._id, { clientId: to });
+        rescoped++;
+      }
+      if (batch.length === RESCOPE_PAGE) {
+        await reschedule("chunks");
+        return { done: false, phase: "chunks", rescoped };
+      }
+      return { done: true, phase: "chunks", rescoped };
+    }
+
+    // project
+    const from = args.fromId as Id<"projects">;
+    const to = args.toId as Id<"projects">;
+    if (phase === "atoms") {
+      const batch = await ctx.db
+        .query("atoms")
+        .withIndex("by_project", (q) => q.eq("projectId", from))
+        .take(RESCOPE_PAGE);
+      for (const a of batch) {
+        await ctx.db.patch(a._id, { projectId: to });
+        rescoped++;
+      }
+      if (batch.length === RESCOPE_PAGE) {
+        await reschedule("atoms");
+        return { done: false, phase: "atoms", rescoped };
+      }
+      await reschedule("chunks");
+      return { done: false, phase: "chunks", rescoped };
+    }
+    const batch = await ctx.db
+      .query("documentChunks")
+      .withIndex("by_project", (q) => q.eq("projectId", from))
+      .take(RESCOPE_PAGE);
+    for (const c of batch) {
+      await ctx.db.patch(c._id, { projectId: to });
+      rescoped++;
+    }
+    if (batch.length === RESCOPE_PAGE) {
+      await reschedule("chunks");
+      return { done: false, phase: "chunks", rescoped };
+    }
+    return { done: true, phase: "chunks", rescoped };
   },
 });
 
@@ -1871,6 +1963,13 @@ export const getAtomsForSubject = internalQuery({
     ),
   },
   handler: async (ctx, args) => {
+    // Bounded at 500: atoms carry an optional 1024-dim float64 embedding
+    // (~8KB each), so an unbounded collect over a subject with many atoms can
+    // approach the 16MB per-execution read limit. The `embedding` is stripped
+    // from every returned object (this is a coverage/idempotency check — callers
+    // want counts, not vectors), and the per-atom observation reads are batched
+    // with Promise.all instead of a serial N+1 loop.
+    const ATOM_CAP = 500;
     const atoms = args.status
       ? await ctx.db
           .query("atoms")
@@ -1880,26 +1979,28 @@ export const getAtomsForSubject = internalQuery({
               .eq("subjectId", args.subjectId)
               .eq("status", args.status!),
           )
-          .collect()
+          .take(ATOM_CAP)
       : await ctx.db
           .query("atoms")
           .withIndex("by_subject", (q) =>
             q.eq("subjectType", args.subjectType).eq("subjectId", args.subjectId),
           )
+          .take(ATOM_CAP);
+    const out = await Promise.all(
+      atoms.map(async (atom) => {
+        const observations = await ctx.db
+          .query("atomObservations")
+          .withIndex("by_atom", (q) => q.eq("atomId", atom._id))
           .collect();
-    const out = [];
-    for (const atom of atoms) {
-      const observations = await ctx.db
-        .query("atomObservations")
-        .withIndex("by_atom", (q) => q.eq("atomId", atom._id))
-        .collect();
-      out.push({
-        ...atom,
-        observationCount: observations.length,
-        liveObservationCount: observations.filter((o) => o.superseded !== true)
-          .length,
-      });
-    }
+        const { embedding, ...rest } = atom as any;
+        return {
+          ...rest,
+          observationCount: observations.length,
+          liveObservationCount: observations.filter((o) => o.superseded !== true)
+            .length,
+        };
+      }),
+    );
     return out;
   },
 });

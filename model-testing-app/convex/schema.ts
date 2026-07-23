@@ -279,7 +279,8 @@ export default defineSchema({
     .index("by_hubspot_id", ["hubspotCompanyId"])
     .index("by_promoted", ["promotedToClientId"])
     .index("by_lifecycle_stage", ["hubspotLifecycleStage"])
-    .index("by_owner", ["hubspotOwnerId"]),
+    .index("by_owner", ["hubspotOwnerId"])
+    .searchIndex("search_name", { searchField: "name" }),
 
   // Projects table - supports many-to-many with clients via clientRoles
   projects: defineTable({
@@ -499,6 +500,7 @@ export default defineSchema({
     .index("by_owner", ["ownerId"])
     .index("by_scope_owner", ["scope", "ownerId"])
     .index("by_duplicate_of", ["duplicateOf"])
+    .index("by_documentCode", ["documentCode"])
     .searchIndex("search_fileName", {
       searchField: "fileName",
       filterFields: ["scope", "clientId", "projectId"],

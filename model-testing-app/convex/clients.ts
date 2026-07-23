@@ -33,7 +33,15 @@ export const list = query({
         .collect();
     }
 
-    return await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // BOUNDED (Convex 16k-row / 16MB read-limit guard): the no-filter branch
+    // used to full-scan clients. clients grows slower than contacts, but this is
+    // imported in ~50 UI files, so cap it newest-first. Callers that need a
+    // specific slice pass status/type (indexed branches above).
+    return await ctx.db
+      .query("clients")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(2000);
   },
 });
 
@@ -924,8 +932,14 @@ export const exists = query({
 export const getStats = query({
   args: { clientId: v.id("clients") },
   handler: async (ctx, args) => {
-    // Get projects for this client
-    const allProjects = await ctx.db.query("projects").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
+    // Get projects for this client. clientRoles is an array (unindexable), so we
+    // filter in memory — bounded newest-first as a read-limit guard. Projects
+    // grow slowly; structural follow-up is a projectClients join table (report).
+    const allProjects = await ctx.db
+      .query("projects")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(2000);
     const clientProjects = allProjects.filter(p =>
       p.clientRoles.some(cr => cr.clientId === args.clientId)
     );
@@ -961,8 +975,15 @@ export const getRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit || 4;
-    const allClients = await ctx.db.query("clients").filter((q) => q.neq(q.field("isDeleted"), true)).collect();
-    const sorted = allClients.sort((a, b) => 
+    // Order desc by _creationTime (≈ createdAt) + take, instead of scanning all
+    // clients then JS-sorting. Take a small buffer so the createdAt re-sort below
+    // is exact even if _creationTime and createdAt disagree at the boundary.
+    const recent = await ctx.db
+      .query("clients")
+      .order("desc")
+      .filter((q) => q.neq(q.field("isDeleted"), true))
+      .take(Math.max(limit * 3, limit));
+    const sorted = recent.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     return sorted.slice(0, limit);
@@ -1685,10 +1706,16 @@ export const clearOutreachReadyInternal = internalMutation({
 export const listOutreachReady = query({
   args: {},
   handler: async (ctx) => {
+    // Narrow to status="prospect" via by_status before the flag filter, instead
+    // of full-scanning clients. outreachReadyAt is only ever set on prospects
+    // (the accept-intel gate), and a prospect that has been promoted moves to
+    // status="active" / prospectState="promoted" — excluded by the state filter
+    // anyway. Bounded cap as a read-limit guard (prospect count is modest).
     const all = await ctx.db
       .query("clients")
+      .withIndex("by_status", (q: any) => q.eq("status", "prospect"))
       .filter((q) => q.neq(q.field("isDeleted"), true))
-      .collect();
+      .take(2000);
     return all.filter((c: any) => {
       if (!c.outreachReadyAt) return false;
       // Not yet drafted: still at the initial `researched` state (or, defensively,
