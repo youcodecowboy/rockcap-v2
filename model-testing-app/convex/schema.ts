@@ -2170,6 +2170,16 @@ export default defineSchema({
     .index("by_google_event_id", ["googleEventId"])
     .searchIndex("search_title", { searchField: "title" }),
 
+  // Small precomputed aggregates (e.g. per-client document counts) refreshed
+  // by chained paginated mutations — full-table scans over `documents` exceed
+  // the 16MB per-execution read limit because rows carry textContent, so
+  // badge-count queries read this cache instead.
+  statsCache: defineTable({
+    key: v.string(),
+    value: v.any(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
   // Context cache for AI assistant - caches gathered context for clients/projects
   contextCache: defineTable({
     contextType: v.union(v.literal("client"), v.literal("project")),
